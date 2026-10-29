@@ -37,6 +37,17 @@ export const EMPTY_TEXT_MESSAGE = 'OCR produced empty text';
 export const UNSUPPORTED_FILE_MESSAGE = 'Unsupported file_type for OCR';
 
 /**
+ * visionOcrAdapter / llmStructurer (openRouterRefusal.js callError): OpenRouter
+ * turned the key away — 401 (the key is invalid, disabled or deleted), 402 (the
+ * key's limit or the account's balance is spent) or 403 of a spent budget.
+ * Every file fails the same until the owner acts in OpenRouter's panel, so the
+ * job fails for good at once (ocrService processJob, directive D8 of
+ * 28.10.2026). Followed by « (<stage> call): <status> …»; a page's failure is
+ * wrapped as «page N of M: …» (ocrService firstPageFailure).
+ */
+export const KEY_REFUSED_MESSAGE = 'OpenRouter refused the key';
+
+/**
  * The cause as the partner's menu answer names it (`recognition.cause`): the
  * app gives advice by it — a restart helps after a failure of the service,
  * not when the file itself cannot be read.
@@ -45,6 +56,10 @@ export const RECOGNITION_FAILURE_CAUSES = Object.freeze({
   unreadable: 'unreadable',
   overLimit: 'over_limit',
   serviceFailure: 'service_failure',
+  // The key turned away is a failure of the service too: a restart helps once
+  // the key or the balance is back. A code of its own would need a new build
+  // of the app, and the advice would be the same.
+  unavailable: 'service_failure',
 });
 
 /**
@@ -64,6 +79,9 @@ const UNREADABLE = new RegExp(
   `^(${[PAGES_BLANK_MESSAGE, EMPTY_TEXT_MESSAGE, UNSUPPORTED_FILE_MESSAGE].map(escapeRegExp).join('|')})`,
 );
 
+/** The key refused: the message above, at the start or behind a page's «page N of M: ». */
+const KEY_REFUSED = new RegExp(`^(page \\d+ of \\d+: )?${escapeRegExp(KEY_REFUSED_MESSAGE)}`);
+
 /**
  * The key of MENU_RECOGNITION_FAILURES for a failed job's error_message:
  *   - overLimit — the PDF's parse broke its time or memory limit, or its
@@ -71,6 +89,10 @@ const UNREADABLE = new RegExp(
  *     memory sample; PDF_PARSE_LIMIT fails the job for good at once);
  *   - unreadable — the file gave no text: every page of a PDF blank, a photo
  *     read blank, or a file type the recognition does not read;
+ *   - unavailable — OpenRouter refused the key (KEY_REFUSED_MESSAGE, also
+ *     behind «page N of M: »): spent or revoked, not the file's fault. A job
+ *     failed by a 401 or 402 before 28.10.2026 kept the old message and stays
+ *     serviceFailure;
  *   - serviceFailure — anything else: the recognition service failed or timed
  *     out, the attempt was cut short (a deploy, a dead process — the
  *     reaper's and the poller's messages). The file itself may be fine.
@@ -78,12 +100,13 @@ const UNREADABLE = new RegExp(
  * «page N of M: …» (ocrService firstPageFailure) and stays the service's.
  *
  * @param {string|null|undefined} errorMessage - ocr_jobs.error_message
- * @returns {'overLimit'|'unreadable'|'serviceFailure'}
+ * @returns {'overLimit'|'unreadable'|'unavailable'|'serviceFailure'}
  */
 export const failureReasonOf = (errorMessage) => {
   const message = typeof errorMessage === 'string' ? errorMessage : '';
   if (OVER_LIMIT.test(message)) return 'overLimit';
   if (UNREADABLE.test(message)) return 'unreadable';
+  if (KEY_REFUSED.test(message)) return 'unavailable';
   return 'serviceFailure';
 };
 

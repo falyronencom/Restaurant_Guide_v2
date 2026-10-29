@@ -67,6 +67,8 @@ const pdfTextExtractor = await import('../../services/ocr/pdfTextExtractor.js');
 const ocrJobPoller = await import('../../services/ocr/ocrJobPoller.js');
 const { createPartnerAndGetToken, createTestEstablishment, createUserAndGetTokens } = await import('../utils/auth.js');
 const adminService = await import('../../services/adminService.js');
+const { failureCauseOf, failureTextOf } = await import('../../services/ocr/failureReason.js');
+const { MENU_RECOGNITION_FAILURES } = await import('../../constants/partnerSectionRefusals.js');
 
 const OCR_CONFIG = {
   apiKey: 'test-key',
@@ -612,6 +614,146 @@ describe('OCR pipeline integration', () => {
       const visionCalls = global.fetch.mock.calls.filter(([url]) => url.includes('/chat/completions'));
       expect(visionCalls.length).toBe(ocrService.VISION_FALLBACK_PAGE_LIMIT);
       expect((await ocrJobModel.getJobStatus(picked.id)).status).toBe('pending');
+    });
+  });
+
+  // ── OpenRouter refusing the key ───────────────────────────────────────────
+  // Directive D8 of 28.10.2026: the server's key has a spending limit and the
+  // account's balance is shared by every key. Spent or revoked, every call
+  // answers the same refusal until the owner acts; the job used to repeat it
+  // three times and tell the partner «Сбой распознавания». Now it fails on
+  // its first attempt and the partner reads that recognition is down for a
+  // while. Any other error is retried as before. The bodies are the shapes of
+  // OpenRouter's docs, not live answers (unit/openRouterRefusal.test.js).
+  describe('OpenRouter refusing the key — failed at once, the partner told the truth', () => {
+    const refusalBody = (code, limitSource) => JSON.stringify({
+      error: { code, message: 'refused', ...(limitSource && { metadata: { limit_source: limitSource } }) },
+    });
+    const answer = (status, text) => ({ ok: false, status, text: async () => text });
+    const chatOk = (content) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content }, finish_reason: 'stop' }] }),
+      text: async () => '',
+    });
+    const UNAVAILABLE_NOTICE = 'Распознавание меню «Test Restaurant» временно недоступно. Попробуйте позже.';
+
+    /**
+     * fetch: the PDF download, then each chat call by its stage — the
+     * structurer asks for a JSON object, vision sends an image. A stage's
+     * function returns the answer, or throws as fetch does on a timeout.
+     */
+    const stagedFetch = ({
+      vision = () => chatOk('Борщ 15 руб.'),
+      structurer = () => chatOk(JSON.stringify({ items: [{ item_name: 'Борщ', price_byn: 15, category_raw: null, confidence: 0.9 }] })),
+    } = {}) => jest.fn(async (url, init) => {
+      if (!url.includes('/chat/completions')) {
+        return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(64) };
+      }
+      const request = JSON.parse(init.body);
+      if (request.response_format) return structurer(request);
+      return vision(request.messages[1].content[1].image_url.url);
+    });
+    const chatCalls = () => global.fetch.mock.calls.filter(([url]) => url.includes('/chat/completions'));
+
+    /** A photo of a menu, queued and run once. */
+    const runPhoto = async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'image');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      const result = await ocrService.processJob(picked.id);
+      return { result, after: await ocrJobModel.getJobStatus(picked.id) };
+    };
+
+    test.each([
+      ['401, the key disabled or deleted', 401, '{"error":{"message":"User not found.","code":401}}', ''],
+      ['402, the key\'s limit spent', 402, refusalBody(402, 'openrouter_key_limit'), ' openrouter_key_limit'],
+      ['402, the account\'s balance spent', 402, refusalBody(402, 'openrouter_credits'), ' openrouter_credits'],
+      ['403, the key\'s own limit spent', 403, refusalBody(403, 'openrouter_key_limit'), ' openrouter_key_limit'],
+    ])('%s → one call, failed on the first attempt, «временно недоступно»', async (_label, status, text, source) => {
+      global.fetch = stagedFetch({ vision: () => answer(status, text) });
+
+      const { result, after } = await runPhoto();
+
+      expect(result.success).toBe(false);
+      expect(chatCalls()).toHaveLength(1);
+      expect(after).toMatchObject({ status: 'failed', attempts: 1 });
+      expect(after.completed_at).not.toBeNull();
+      expect(after.error_message).toBe(`OpenRouter refused the key (vision call): ${status}${source} ${text}`);
+      // The partner's menu screen and the notice.
+      expect(failureTextOf(after.error_message)).toBe(MENU_RECOGNITION_FAILURES.unavailable);
+      expect(failureTextOf(after.error_message)).toBe('Распознавание меню временно недоступно — попробуйте позже.');
+      expect(failureCauseOf(after.error_message)).toBe('service_failure');
+      expect((await failureNotices()).map((n) => n.message)).toEqual([UNAVAILABLE_NOTICE]);
+    });
+
+    test('the structurer refused (the balance spent between the two calls) → failed at once as well', async () => {
+      global.fetch = stagedFetch({ structurer: () => answer(402, refusalBody(402, 'openrouter_credits')) });
+
+      const { after } = await runPhoto();
+
+      expect(chatCalls()).toHaveLength(2);
+      expect(after).toMatchObject({ status: 'failed', attempts: 1 });
+      expect(after.error_message).toMatch(/^OpenRouter refused the key \(structurer call\): 402 openrouter_credits /);
+      expect(failureTextOf(after.error_message)).toBe(MENU_RECOGNITION_FAILURES.unavailable);
+    });
+
+    /**
+     * A PDF of three pages with a usable text layer (≥ 50 characters a page,
+     * digits — pdfTextExtractor hasUsableTextLayer), its second page refused;
+     * run once, on the attempt given.
+     */
+    const runPdfPageTwoRefused = async ({ lastAttempt }) => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      const pageText = 'Борщ украинский со сметаной — 15 руб.\nСалат Цезарь с курицей — 12 руб.\n';
+      pdfParseModule.default.mockResolvedValue({ text: pageText.repeat(3), numpages: 3 });
+      global.fetch = stagedFetch({
+        vision: (imageUrl) => (imageUrl.includes('/pg_2/')
+          ? answer(402, refusalBody(402, 'openrouter_key_limit'))
+          : chatOk(pageText)),
+      });
+      const job = await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      if (lastAttempt) await pool.query('UPDATE ocr_jobs SET attempts = max_attempts - 1 WHERE id = $1', [job.id]);
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.attempts).toBe(lastAttempt ? picked.max_attempts : 1);
+      await ocrService.processJob(picked.id);
+      return ocrJobModel.getJobStatus(picked.id);
+    };
+
+    test('one page of a PDF refused → the job failed on its first attempt, the page named', async () => {
+      const after = await runPdfPageTwoRefused({ lastAttempt: false });
+
+      expect(after).toMatchObject({ status: 'failed', attempts: 1 });
+      expect(after.error_message).toMatch(/^page 2 of 3: OpenRouter refused the key \(vision call\): 402 openrouter_key_limit /);
+      expect(failureTextOf(after.error_message)).toBe(MENU_RECOGNITION_FAILURES.unavailable);
+      expect(chatCalls()).toHaveLength(3);
+    });
+
+    test('one page refused on the job\'s last attempt → no text-layer fallback: it would ask with the same key', async () => {
+      const after = await runPdfPageTwoRefused({ lastAttempt: true });
+
+      expect(after.status).toBe('failed');
+      expect(failureTextOf(after.error_message)).toBe(MENU_RECOGNITION_FAILURES.unavailable);
+      // Three page reads and not one structurer call.
+      expect(chatCalls()).toHaveLength(3);
+      expect(chatCalls().every(([, init]) => !JSON.parse(init.body).response_format)).toBe(true);
+    });
+
+    test.each([
+      ['500', () => answer(500, 'upstream failure')],
+      ['429, rate limited', () => answer(429, refusalBody(429, null))],
+      ['402 of the in-flight budget — passing', () => answer(402, refusalBody(402, 'openrouter_in_flight_budget'))],
+      ['403 of a moderation flag — not the key', () => answer(403, JSON.stringify({ error: { code: 403, message: 'flagged', metadata: { reasons: ['x'] } } }))],
+      ['a timeout', () => { throw new DOMException('This operation was aborted', 'AbortError'); }],
+    ])('%s → retried as before: back to the queue, the service\'s text, no notice', async (_label, vision) => {
+      global.fetch = stagedFetch({ vision });
+
+      const { after } = await runPhoto();
+
+      expect(chatCalls()).toHaveLength(1);
+      expect(after).toMatchObject({ status: 'pending', attempts: 1, completed_at: null });
+      expect(failureTextOf(after.error_message)).toBe(MENU_RECOGNITION_FAILURES.serviceFailure);
+      expect(await failureNotices()).toHaveLength(0);
     });
   });
 

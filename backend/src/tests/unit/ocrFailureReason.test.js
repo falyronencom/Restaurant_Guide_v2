@@ -23,6 +23,7 @@ jest.unstable_mockModule('../../config/database.js', () => ({
 
 const {
   EMPTY_TEXT_MESSAGE,
+  KEY_REFUSED_MESSAGE,
   PAGES_BLANK_MESSAGE,
   UNSUPPORTED_FILE_MESSAGE,
   failureCauseOf,
@@ -74,7 +75,14 @@ describe('failureReasonOf — the other causes', () => {
     [`${EMPTY_TEXT_MESSAGE} via strategy=vision_image`, 'unreadable'],
     [`${UNSUPPORTED_FILE_MESSAGE}: docx`, 'unreadable'],
     // The recognition service — the incident of 22–23.10.2026 was a 401 here.
+    // A job failed before 28.10.2026 keeps this message: the service's, as it
+    // was told then.
     ['page 1 of 3: OpenRouter vision call failed: 401 {"error":{"message":"User not found."}}', 'serviceFailure'],
+    // OpenRouter refused the key — what openRouterRefusal.callError writes
+    // since then (unit/openRouterRefusal.test.js builds it from the code).
+    [`${KEY_REFUSED_MESSAGE} (vision call): 402 openrouter_key_limit {}`, 'unavailable'],
+    [`page 2 of 9: ${KEY_REFUSED_MESSAGE} (structurer call): 401 {}`, 'unavailable'],
+    [`quoted: ${KEY_REFUSED_MESSAGE}`, 'serviceFailure'],
     ['OpenRouter structurer call failed: 500 upstream', 'serviceFailure'],
     ['LLM structurer returned invalid JSON: Unexpected token', 'serviceFailure'],
     ['vision OCR answer cut short: finish_reason=length', 'serviceFailure'],
@@ -95,6 +103,7 @@ describe('failureReasonOf — the other causes', () => {
     expect(PAGES_BLANK_MESSAGE).toBe('vision OCR returned empty text');
     expect(EMPTY_TEXT_MESSAGE).toBe('OCR produced empty text');
     expect(UNSUPPORTED_FILE_MESSAGE).toBe('Unsupported file_type for OCR');
+    expect(KEY_REFUSED_MESSAGE).toBe('OpenRouter refused the key');
   });
 
   // Synthetic on purpose: no code builds these. A provider's error body is
@@ -111,6 +120,9 @@ describe('failureTextOf and failureCauseOf — the dictionary\'s text and the ca
     ['PDF parse exceeded its time limit (20 s)', MENU_RECOGNITION_FAILURES.overLimit, 'over_limit'],
     [PAGES_BLANK_MESSAGE, MENU_RECOGNITION_FAILURES.unreadable, 'unreadable'],
     ['OpenRouter vision call failed: 401 User not found', MENU_RECOGNITION_FAILURES.serviceFailure, 'service_failure'],
+    // Its own text, the service's code: the app advises a restart, which
+    // helps once the key or the balance is back — no new build needed.
+    [`${KEY_REFUSED_MESSAGE} (vision call): 402 openrouter_credits {}`, MENU_RECOGNITION_FAILURES.unavailable, 'service_failure'],
   ])('%s', (message, text, cause) => {
     expect(failureTextOf(message)).toBe(text);
     expect(failureTextOf(message)).toMatch(/[А-Яа-яЁё]/);

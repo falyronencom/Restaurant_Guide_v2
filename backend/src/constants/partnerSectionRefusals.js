@@ -184,7 +184,8 @@ export const MEDIA_REFUSALS = Object.freeze({
  * the partner sees is decided by services/ocr/failureReason.js
  * failureReasonOf, and the app gives its advice by the cause's code. Three causes, by
  * the directive of 24.10.2026 (Trunk, finding 3 of the Railway incident);
- * wording approved by the Coordinator on 24.10.2026 (PR #128).
+ * wording approved by the Coordinator on 24.10.2026 (PR #128). The fourth,
+ * unavailable, by directive D8 of 28.10.2026.
  */
 export const MENU_RECOGNITION_FAILURES = Object.freeze({
   // Nothing readable came out of the file: blank pages, a scan without text.
@@ -192,6 +193,11 @@ export const MENU_RECOGNITION_FAILURES = Object.freeze({
   // The PDF's parse broke its time or memory limit — the same file breaks it
   // on every attempt (pdfParseRunner PDF_PARSE_LIMIT).
   overLimit: 'Файл слишком большой или сложный — превышен предел распознавания.',
+  // OpenRouter refused the key — its limit or the account's balance spent,
+  // or the key revoked: every file fails alike until the owner acts, and the
+  // file is not to blame (directive D8 of 28.10.2026; wording proposed by the
+  // executor, awaits the Coordinator).
+  unavailable: 'Распознавание меню временно недоступно — попробуйте позже.',
   // Everything else: the recognition service failed, timed out, or the
   // attempt was cut short by the server — the file may well be fine.
   serviceFailure: 'Сбой распознавания — попробуйте позже.',

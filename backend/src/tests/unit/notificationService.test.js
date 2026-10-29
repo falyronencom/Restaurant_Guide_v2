@@ -1206,6 +1206,26 @@ describe('notificationService', () => {
       });
     });
 
+    // Directive D8 of 28.10.2026: when OpenRouter refused the key, «another
+    // file» would send the partner after a fault that is not the file's.
+    test.each([
+      ['unavailable', 'Распознавание меню «Кофе Плюс» временно недоступно. Попробуйте позже.'],
+      ['serviceFailure', TEXT],
+      ['unreadable', TEXT],
+      ['overLimit', TEXT],
+    ])('reason %s → its message, the same title', async (reason, message) => {
+      await expect(notifyMenuRecognitionFailed(establishmentId, { jobId, reason })).resolves.toBe(true);
+
+      expect(NotificationModel.create).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Меню не распознано',
+        message,
+      }));
+      expect(PushService.sendPush).toHaveBeenCalledWith(partnerId, expect.objectContaining({
+        title: 'Меню не распознано',
+        message,
+      }));
+    });
+
     test('already told about this upload batch → nothing written, no push', async () => {
       NotificationModel.existsSinceOcrJobEnqueued.mockResolvedValue(true);
 

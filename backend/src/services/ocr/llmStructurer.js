@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import logger from '../../utils/logger.js';
 import { getOcrConfig } from '../../config/openrouter.js';
+import { callError } from './openRouterRefusal.js';
 
 const STRUCTURER_SYSTEM_PROMPT = `You convert raw menu text into structured JSON.
 
@@ -81,7 +82,9 @@ const ResponseSchema = z.object({
  *
  * @param {string} rawText - OCR output
  * @returns {Promise<Object[]>} Array of validated items (may be empty)
- * @throws {Error} on API error, malformed response, or validation failure
+ * @throws {Error} on API error, malformed response, or validation failure;
+ *   OpenRouter's refusal of the key has the code KEY_REFUSED
+ *   (openRouterRefusal.js)
  */
 export const structureMenu = async (rawText) => {
   if (!rawText || rawText.trim().length === 0) {
@@ -119,8 +122,9 @@ export const structureMenu = async (rawText) => {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenRouter structurer call failed: ${response.status} ${errorText.slice(0, 200)}`);
+      // The key's refusal (401, 402, 403 of a spent budget) comes out with the
+      // code KEY_REFUSED: the job fails at once (openRouterRefusal.js).
+      throw callError({ stage: 'structurer', status: response.status, bodyText: await response.text() });
     }
 
     const data = await response.json();
