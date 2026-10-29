@@ -295,7 +295,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Show login prompt dialog
   void _showLoginPrompt({
-    String message = 'Для добавления в избранное необходимо войти в аккаунт.',
+    String message = 'Для добавления в избранное необходимо войти в учётную запись.',
   }) {
     showDialog(
       context: context,
@@ -1732,7 +1732,7 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           // «Ошибка создания бронирования». Вход — до формы.
           if (!context.read<AuthProvider>().isAuthenticated) {
             _showLoginPrompt(
-              message: 'Чтобы забронировать столик, войдите в аккаунт.',
+              message: 'Чтобы забронировать столик, войдите в учётную запись.',
             );
             return;
           }

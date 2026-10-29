@@ -101,6 +101,10 @@ void main() {
     expect(auth.errorMessage, contains('support@nirivio.by'));
   });
 
+  test('учётную запись отключили посреди работы — слова сервера', () {
+    expect(ApiClient.accountInactiveMessage, server['accountInactive']);
+  });
+
   test('русский текст сервера — на экран как есть, поверх таблицы', () async {
     final auth = await guest((_) => jsonBody({
           'success': false,

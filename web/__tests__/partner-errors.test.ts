@@ -65,7 +65,7 @@ describe('messageForEstablishmentError — cabinet code coverage (B1 anti-drift)
 
   it('media link not from the partner\'s own uploads — the Coordinator decision of 06.10.2026, same words as the server', () => {
     expect(messageForEstablishmentError('MEDIA_URL_NOT_OWNED')).toBe(
-      'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.',
+      'Одно из фото или файлов меню загружено не с этой учётной записи. Удалите его и загрузите заново.',
     );
   });
 

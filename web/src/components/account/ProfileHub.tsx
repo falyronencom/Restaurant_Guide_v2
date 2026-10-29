@@ -256,7 +256,7 @@ export function ProfileHub() {
       </section>
 
       <section className="flex items-center justify-between gap-m rounded-card bg-figma-bg-warm p-l">
-        <span className="text-body-m text-foreground">Выйти из аккаунта</span>
+        <span className="text-body-m text-foreground">Выйти из учётной записи</span>
         <Button
           variant="outline"
           onClick={() => void handleLogout()}

@@ -47,7 +47,7 @@ const CODE_RU: Record<string, string> = {
   // folders, so this surfaces only on stale state — same words as the server's
   // message.
   MEDIA_URL_NOT_OWNED:
-    'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.',
+    'Одно из фото или файлов меню загружено не с этой учётной записи. Удалите его и загрузите заново.',
   // Upload / streaming-proxy codes (also surfaced from the media routes).
   FILE_TOO_LARGE: 'Файл слишком большой.',
   HTTP_413: 'Файл слишком большой.',

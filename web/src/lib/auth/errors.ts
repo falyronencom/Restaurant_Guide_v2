@@ -31,6 +31,9 @@ export function messageForCode(code: string | undefined, status: number): string
       return 'Почта в этом сервисе не подтверждена. Подтвердите её там или войдите другим способом.';
     case 'ACCOUNT_DEACTIVATED':
       return `Учётная запись отключена. Если это ошибка — напишите в поддержку: ${SUPPORT_EMAIL}`;
+    case 'ACCOUNT_INACTIVE':
+      // The session ended because the account was switched off or deleted.
+      return `Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: ${SUPPORT_EMAIL}`;
     case 'ACCOUNT_CONFLICT':
       // Two first sign-ins with one address collided — a retry goes through.
       return 'Не удалось завершить вход. Попробуйте ещё раз.';

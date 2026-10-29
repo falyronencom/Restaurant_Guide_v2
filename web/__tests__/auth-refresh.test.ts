@@ -150,6 +150,47 @@ describe('refreshSession', () => {
     expect(mockStore.delete).toHaveBeenCalledWith('rg_user');
   });
 
+  // The account was switched off or deleted while signed in: /login says so in
+  // the backend's words (Coordinator, 29.10.2026). Only this verdict leaves the
+  // notice — any other refusal is a plain end of session.
+  it('leaves the «account switched off» notice when the refresh is refused with ACCOUNT_INACTIVE', async () => {
+    mockFetch.mockRejectedValue(
+      new ApiError(401, 'Учётная запись отключена или удалена.', 'ACCOUNT_INACTIVE'),
+    );
+
+    expect(await refreshSession()).toBeNull();
+
+    expect(mockStore.delete).toHaveBeenCalledWith('rg_rt');
+    expect(mockStore.set).toHaveBeenCalledWith(
+      'rg_auth_notice',
+      'ACCOUNT_INACTIVE',
+      expect.objectContaining({ httpOnly: true, maxAge: 600 }),
+    );
+  });
+
+  it.each([
+    ['401 TOKEN_EXPIRED', new ApiError(401, 'expired', 'TOKEN_EXPIRED')],
+    ['403 TOKEN_REUSE_DETECTED', new ApiError(403, 'reuse', 'TOKEN_REUSE_DETECTED')],
+  ])('leaves no notice on any other refusal (%s)', async (_kind, err) => {
+    mockFetch.mockRejectedValue(err);
+
+    await refreshSession();
+
+    expect(mockStore.set).not.toHaveBeenCalledWith(
+      'rg_auth_notice',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('a live session again drops the notice', async () => {
+    mockFetch.mockResolvedValue(REFRESH_DATA);
+
+    await refreshSession();
+
+    expect(mockStore.delete).toHaveBeenCalledWith('rg_auth_notice');
+  });
+
   // Transient is every failure that is not an auth verdict (session.ts lists
   // transport, 5xx and 429): the refresh route answers 429 under its limiter,
   // and wiping the session there would log people out under load.

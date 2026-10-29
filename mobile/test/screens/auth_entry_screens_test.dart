@@ -158,7 +158,7 @@ void main() {
       await pumpApp(tester, start: '/auth/method-selection');
 
       expect(
-          find.text('Войдите в аккаунт и начните свое путешествие по миру '
+          find.text('Войдите в учётную запись и начните свое путешествие по миру '
               'гастрономии'),
           findsOneWidget);
       expect(find.textContaining('гастраном'), findsNothing);

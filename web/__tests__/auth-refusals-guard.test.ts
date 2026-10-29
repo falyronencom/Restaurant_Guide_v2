@@ -37,6 +37,7 @@ const SHARED: Array<[string, number, string]> = [
   ['OAUTH_NO_EMAIL', 400, 'oauthNoEmail'],
   ['OAUTH_EMAIL_NOT_VERIFIED', 403, 'oauthEmailNotVerified'],
   ['ACCOUNT_DEACTIVATED', 403, 'accountDeactivated'],
+  ['ACCOUNT_INACTIVE', 401, 'accountInactive'],
   ['ACCOUNT_CONFLICT', 409, 'oauthConflict'],
   ['EMAIL_EXISTS', 409, 'emailExists'],
   ['INVALID_OR_EXPIRED_TOKEN', 410, 'resetLinkInvalid'],

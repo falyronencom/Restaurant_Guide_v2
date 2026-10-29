@@ -32,7 +32,32 @@ jest.mock('@/components/auth/OAuthButtons', () => ({
   ),
 }));
 
+// Why the server ended the last session (session.ts, COOKIE_AUTH_NOTICE).
+const mockAuthNotice = jest.fn<Promise<string | null>, []>(() => Promise.resolve(null));
+jest.mock('@/lib/auth/session', () => ({
+  getAuthNotice: () => mockAuthNotice(),
+}));
+
 import LoginPage, { metadata } from '@/app/(public)/login/page';
+
+beforeEach(() => {
+  mockAuthNotice.mockReset();
+  mockAuthNotice.mockResolvedValue(null);
+});
+
+it('a session the server ended because the account was switched off — its words, with the support address', async () => {
+  mockAuthNotice.mockResolvedValue('ACCOUNT_INACTIVE');
+  render(await LoginPage({ searchParams: Promise.resolve({}) }));
+  expect(screen.getByTestId('oauth-buttons')).toHaveAttribute(
+    'data-error',
+    'Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: support@nirivio.by',
+  );
+});
+
+it('no notice, no auth_error — no text under the buttons', async () => {
+  render(await LoginPage({ searchParams: Promise.resolve({}) }));
+  expect(screen.getByTestId('oauth-buttons')).toHaveAttribute('data-error', '');
+});
 
 it('threads a safe returnTo into every island and preserves it in the /register link', async () => {
   const ui = await LoginPage({

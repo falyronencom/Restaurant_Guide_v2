@@ -61,12 +61,17 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   String? _pendingEmail;
   String? _authMethod; // 'email'
 
-  StreamSubscription<void>? _sessionExpiredSubscription;
+  /// Почему сервер закончил сеанс, если он это сказал: учётную запись
+  /// отключили или удалили. Главный экран показывает это один раз и
+  /// снимает ([clearSessionEndedNotice]).
+  String? _sessionEndedNotice;
+
+  StreamSubscription<String?>? _sessionExpiredSubscription;
 
   AuthProvider({AuthService? authService})
       : _authService = authService ?? AuthService() {
     _sessionExpiredSubscription =
-        SessionEvents.expired.listen((_) => _onSessionExpired());
+        SessionEvents.expired.listen(_onSessionExpired);
     WidgetsBinding.instance.addObserver(this);
     _initialize();
   }
@@ -100,6 +105,16 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
 
   /// Current error message
   String? get errorMessage => _errorMessage;
+
+  /// Слова сервера о том, почему сеанс кончился (учётную запись отключили
+  /// или удалили), — ещё не показанные. `null` — показывать нечего.
+  String? get sessionEndedNotice => _sessionEndedNotice;
+
+  /// Причина показана — снять. Без оповещения слушателей: снимает её тот,
+  /// кто показывает, из своего же обработчика.
+  void clearSessionEndedNotice() {
+    _sessionEndedNotice = null;
+  }
 
   /// Current authenticated user
   User? get currentUser => _currentUser;
@@ -250,7 +265,7 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     if (error is! DioException) return false;
     final status = error.response?.statusCode;
     if (status != null) return status == 429 || status >= 500;
-    return error.error != ApiClient.sessionExpiredMessage;
+    return !ApiClient.isSessionEnded(error);
   }
 
   /// Возврат приложения на экран — повод проверить сессию ещё раз.
@@ -591,7 +606,15 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
   /// Сигнал приходит и от запроса без входа (refresh-токена нет — обновлять
   /// нечем), и во время инициализации с мёртвой сессией; в этих состояниях
   /// менять нечего. Только «вошёл» превращается в «не вошёл».
-  Future<void> _onSessionExpired() async {
+  ///
+  /// [reason] — слова сервера о причине (учётную запись отключили или
+  /// удалили). Запоминается и при старте, когда «вошёл» ещё не наступило:
+  /// человек с сохранённым сеансом вошедшим себя и считает.
+  Future<void> _onSessionExpired(String? reason) async {
+    if (reason != null) {
+      _sessionEndedNotice = reason;
+      if (_status != AuthenticationStatus.authenticated) notifyListeners();
+    }
     if (_status != AuthenticationStatus.authenticated) return;
     _accountGeneration++;
     _currentUser = null;
@@ -720,6 +743,8 @@ class AuthProvider with ChangeNotifier, WidgetsBindingObserver {
     _lastAccountId = user.id;
     _currentUser = user;
     _sessionUnconfirmed = false;
+    // Вошёл снова — прежняя причина конца сеанса уже не новость.
+    _sessionEndedNotice = null;
   }
 
   /// Set loading state

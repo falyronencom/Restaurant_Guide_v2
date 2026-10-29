@@ -179,7 +179,7 @@ describe('Бронь или заведение не найдены', () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('FORBIDDEN');
-    expect(res.body.message).toBe('Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.');
+    expect(res.body.message).toBe('Заведение не найдено или принадлежит другой учётной записи. Обновите список заведений.');
 
     // «Не говорит, есть ли оно»: заведения, которого нет вовсе, ответ тот же.
     const missing = await act('confirm', id, { token: strangerToken, establishmentId: randomUUID() });
@@ -193,7 +193,7 @@ describe('Бронь или заведение не найдены', () => {
       .set('Authorization', `Bearer ${strangerToken}`);
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toBe('Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.');
+    expect(res.body.message).toBe('Заведение не найдено или принадлежит другой учётной записи. Обновите список заведений.');
   });
 });
 
