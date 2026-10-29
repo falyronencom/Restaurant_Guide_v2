@@ -91,11 +91,11 @@ void main() {
 
       expect(
         tester.widget<Text>(find.text('↑ 12,4%')).style?.color,
-        AppTheme.statusGreen,
+        AppTheme.successStrong,
       );
       expect(
         tester.widget<Text>(find.text('↓ 2,3%')).style?.color,
-        AppTheme.errorRed,
+        AppTheme.errorStrong,
       );
     });
 
@@ -159,7 +159,7 @@ void main() {
       );
       expect(
         tester.widget<Text>(find.text('0')).style?.color,
-        AppTheme.statusGreen,
+        AppTheme.successStrong,
       );
       expect(find.text('жалоб нет'), findsOneWidget);
     });

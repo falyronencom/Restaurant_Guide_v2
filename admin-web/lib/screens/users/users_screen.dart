@@ -470,7 +470,7 @@ class _StateChip extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: deleted ? AppTheme.textSecondary : AppTheme.errorRed,
+          color: deleted ? AppTheme.textSecondary : AppTheme.errorStrong,
         ),
       ),
     );
@@ -841,7 +841,7 @@ class _Actions extends StatelessWidget {
                           : () => _ask(context, _ReasonDialog.block,
                               (answer) => provider.block(answer.reason)),
                       style: AppTheme.canonCtaL(
-                          backgroundColor: AppTheme.errorRed),
+                          backgroundColor: AppTheme.errorStrong),
                       icon: const Icon(Icons.block, size: 19),
                       label: const Text('Заблокировать'),
                     )
@@ -892,7 +892,7 @@ class _Actions extends StatelessWidget {
           Text(
             error,
             key: const ValueKey<String>('user-action-error'),
-            style: const TextStyle(fontSize: 13, color: AppTheme.errorRed),
+            style: const TextStyle(fontSize: 13, color: AppTheme.errorStrong),
           )
         else if (done != null)
           Text(
@@ -1042,7 +1042,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
         FilledButton(
           key: const ValueKey<String>('user-reason-confirm'),
           style: widget.destructive
-              ? FilledButton.styleFrom(backgroundColor: AppTheme.errorRed)
+              ? FilledButton.styleFrom(backgroundColor: AppTheme.errorStrong)
               : null,
           // Без причины подтвердить нельзя: сервер всё равно откажет, а
           // кнопка, которая ничего не делает, читается как поломка.

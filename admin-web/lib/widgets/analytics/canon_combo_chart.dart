@@ -241,7 +241,7 @@ class CanonComboChart extends StatelessWidget {
                     value.round().toString(),
                     style: const TextStyle(
                       fontSize: 11,
-                      color: AppTheme.statusGreen,
+                      color: AppTheme.successStrong,
                     ),
                   ),
                 ),

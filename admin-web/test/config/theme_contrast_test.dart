@@ -20,10 +20,16 @@ import '../helpers/dart_source_scan.dart';
 ///    из серой шкалы, `Colors.grey` или шестнадцатеричного литерала. Именно
 ///    так туда и попадал бледный серый — мимо токенов.
 ///
+/// Красный и зелёный (решение Координатора 29.10, находка PALETTE):
+/// статусные [AppTheme.errorRed] и [AppTheme.statusGreen] дают на белом 3,7
+/// и 2,2 : 1 и остаются точкам, значкам, рамкам и линиям графиков. Надписи и
+/// кнопки — тёмные [AppTheme.errorStrong] и [AppTheme.successStrong]; пары
+/// ниже держат их контраст, сканеры — то, что статусные не вернутся в текст
+/// и в стили кнопок.
+///
 /// Вне сторожа сознательно: белая подпись на брендовом оранжевом
-/// ([AppTheme.primaryOrange], кнопки «Одобрить», «Отклонить») — 3,06 : 1;
-/// бренд директива не трогала, вопрос открыт. Статусные красный и зелёный
-/// тоже не текстовые токены и в пары не входят.
+/// ([AppTheme.primaryOrange], «Одобрить заведение» и другие основные
+/// кнопки) — 3,06 : 1; бренд оставлен решением Координатора 29.10.
 void main() {
   group('пары «текст — фон»: не ниже 4,5 : 1', () {
     const white = AppTheme.backgroundPrimary;
@@ -95,6 +101,53 @@ void main() {
         text: AppTheme.textOnPrimary,
         background: AppTheme.textTertiary,
       ),
+      // Красный и зелёный надписей и кнопок: ошибки и пометки на белом и на
+      // розовых подложках, числа сигналов на светлой поверхности, белая
+      // подпись на красной и зелёной кнопке и на активном ✓ / ✗ разбора.
+      for (final (name, color) in <(String, Color)>[
+        ('errorStrong', AppTheme.errorStrong),
+        ('successStrong', AppTheme.successStrong),
+      ]) ...<({String where, Color text, Color background})>[
+        (where: '$name на белом', text: color, background: white),
+        (
+          where: '$name на светлой поверхности',
+          text: color,
+          background: AppTheme.backgroundWarm,
+        ),
+        (
+          where: 'белый на $name (кнопка)',
+          text: AppTheme.textOnPrimary,
+          background: color,
+        ),
+      ],
+      for (final opacity in <double>[0.06, 0.08, 0.10])
+        (
+          where: 'errorStrong на розовой подложке @${(opacity * 100).round()}%',
+          text: AppTheme.errorStrong,
+          background: Color.alphaBlend(AppTheme.errorTint(opacity), white),
+        ),
+      // Тексты на подложках разбора: строка поля с вердиктом, блок причины
+      // блокировки, чипы атрибутов.
+      for (final (name, color) in <(String, Color)>[
+        ('textPrimary', AppTheme.textPrimary),
+        ('textSecondary', AppTheme.textSecondary),
+      ]) ...<({String where, Color text, Color background})>[
+        (
+          where: '$name на розовой строке поля',
+          text: color,
+          background: Color.alphaBlend(AppTheme.errorTint(0.06), white),
+        ),
+        (
+          where: '$name на зелёной строке поля',
+          text: color,
+          background: Color.alphaBlend(AppTheme.successTint(0.06), white),
+        ),
+      ],
+      (
+        where: 'textDark на зелёном чипе атрибута',
+        text: AppTheme.textDark,
+        background: Color.alphaBlend(AppTheme.successTint(0.10), white),
+      ),
       // Тёмное меню слева.
       (
         where: 'railText на меню',
@@ -163,8 +216,43 @@ void main() {
         .toList();
     final forbidden = RegExp(
       r'AppTheme\.gray\d+|Colors\.grey|Colors\.black(?!\.withValues)'
-      r'|Colors\.black\d+|Color\(0x[0-9A-Fa-f]{8}\)',
+      r'|Colors\.black\d+|Color\(0x[0-9A-Fa-f]{8}\)'
+      r'|AppTheme\.errorRed|AppTheme\.statusGreen|Colors\.red|Colors\.green',
     );
+
+    // Статусные красный и зелёный в стиле кнопки — это подпись или заливка
+    // под белой подписью: обе ниже нормы. Кнопкам — тёмные варианты.
+    final status = RegExp(r'AppTheme\.errorRed|AppTheme\.statusGreen');
+
+    test('стили кнопок не берут статусные красный и зелёный', () {
+      final offenders = <String>[];
+      var calls = 0;
+      for (final file in sources) {
+        final source = stripped(file.readAsStringSync());
+        final call = RegExp(r'\b(canonCtaL|canonCtaOutlined|styleFrom)\(');
+        for (final match in call.allMatches(source)) {
+          calls++;
+          final args = namedArgs(argsAt(source, match.end - 1));
+          for (final name in <String>[
+            'backgroundColor',
+            'foregroundColor',
+            'color',
+          ]) {
+            final value = args[name]?.value.trim();
+            if (value != null && status.hasMatch(value)) {
+              offenders.add('${unixPath(file)}:'
+                  '${lineAt(source, match.start)} — $name: $value');
+            }
+          }
+        }
+      }
+      // Якорь: стили кнопок в панели есть — ноль значил бы слепой сканер.
+      expect(calls, greaterThan(20),
+          reason: 'сканер не нашёл стилей кнопок в lib/ — разбор сломан');
+      expect(offenders, isEmpty,
+          reason: 'кнопке — errorStrong или successStrong:\n'
+              '${offenders.join('\n')}');
+    });
 
     test('ни один TextStyle не красит текст мимо токенов', () {
       final offenders = <String>[];
@@ -189,10 +277,12 @@ void main() {
               'textTertiary или textGrey:\n${offenders.join('\n')}');
     });
 
-    test('непрозрачных литералов и Colors.grey в lib/ нет', () {
+    test('непрозрачных литералов и Colors.grey/red/green в lib/ нет', () {
       // Непрозрачный литерал — `0xFF…`. Полупрозрачные (тень тоста, дорожка
       // спиннера) — не цвет текста и остаются на месте.
-      final literal = RegExp(r'Color\(0xFF[0-9A-Fa-f]{6}\)|Colors\.grey');
+      final literal = RegExp(
+        r'Color\(0xFF[0-9A-Fa-f]{6}\)|Colors\.(grey|red|green)\b',
+      );
       final offenders = <String>[];
       for (final file in sources) {
         final source = stripped(file.readAsStringSync());

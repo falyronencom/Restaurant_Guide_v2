@@ -70,7 +70,7 @@ class HealthSummaryBar extends StatelessWidget {
       // внимания» сообщает ровно обратное тому, чем является.
       return _SummaryBlock(
         icon: Icons.check_circle_outline,
-        accent: AppTheme.statusGreen,
+        accent: AppTheme.successStrong,
         count: kQualitySignals.length,
         label: plural(
           kQualitySignals.length,
@@ -88,7 +88,7 @@ class HealthSummaryBar extends StatelessWidget {
         Expanded(
           child: _SummaryBlock(
             icon: Icons.error_outline,
-            accent: AppTheme.errorRed,
+            accent: AppTheme.errorStrong,
             count: red.length,
             label: plural(
               red.length,
@@ -108,7 +108,7 @@ class HealthSummaryBar extends StatelessWidget {
           Expanded(
             child: _SummaryBlock(
               icon: Icons.check_circle_outline,
-              accent: AppTheme.statusGreen,
+              accent: AppTheme.successStrong,
               count: clean.length,
               label: plural(
                 clean.length,

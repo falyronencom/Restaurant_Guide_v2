@@ -153,7 +153,7 @@ class _VerdictGroup extends StatelessWidget {
         _VerdictButton(
           icon: Icons.check,
           isActive: approved,
-          activeColor: AppTheme.statusGreen,
+          activeColor: AppTheme.successStrong,
           tooltip: 'Одобрить',
           // Повторное нажатие снимает вердикт — иначе ошибочный клик
           // нечем отменить.
@@ -164,7 +164,7 @@ class _VerdictGroup extends StatelessWidget {
         _VerdictButton(
           icon: Icons.close,
           isActive: rejected,
-          activeColor: AppTheme.errorRed,
+          activeColor: AppTheme.errorStrong,
           tooltip: 'Отклонить',
           onTap: () => rejected
               ? provider.resetField(fieldName)
@@ -310,7 +310,7 @@ class _FieldNoteDialogState extends State<_FieldNoteDialog> {
                       ? null
                       : () => Navigator.pop(context, _controller.text.trim()),
                   style: AppTheme.canonCtaL(
-                    backgroundColor: widget.danger ? AppTheme.errorRed : null,
+                    backgroundColor: widget.danger ? AppTheme.errorStrong : null,
                   ),
                   child: Text(widget.confirm),
                 ),

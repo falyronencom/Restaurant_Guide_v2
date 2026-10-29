@@ -87,14 +87,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: Colors.red.shade50,
+                                color: AppTheme.errorTint(0.10),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.red.shade200),
+                                border: Border.all(color: AppTheme.errorTint(0.35)),
                               ),
                               child: Text(
                                 auth.errorMessage!,
-                                style: TextStyle(
-                                  color: Colors.red.shade700,
+                                style: const TextStyle(
+                                  color: AppTheme.errorStrong,
                                   fontSize: 14,
                                 ),
                               ),
