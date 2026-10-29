@@ -18,6 +18,40 @@
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
 		-Server
+
+		# Политика источников — «второй замок» страницы модератора (сверка
+		# меток панели 29.10, S2): если чужой скрипт и окажется на странице,
+		# он не догрузит свой код и не отправит фоновый запрос на чужой адрес.
+		# Это не всё: увести страницу на чужой адрес (переход, новая вкладка)
+		# политика не запрещает, и через сам API скрипт может то же, что
+		# модератор. Главное — не пустить чужой скрипт; политика сужает вред.
+		# - script-src: только свои файлы; 'wasm-unsafe-eval' — движку
+		#   отрисовки CanvasKit (WebAssembly). Встроенных скриптов нет
+		#   (web/boot_placeholder.js), движок — со своего сервера (Dockerfile,
+		#   --no-web-resources-cdn).
+		# - style-src 'unsafe-inline': стили создаёт сам движок Flutter, и
+		#   заглушка в index.html — встроенный <style>.
+		# - connect-src: API (адрес — тот же, что в lib/config/environment.dart;
+		#   PANEL_API_ORIGIN — только для локальной проверки собранной панели,
+		#   на Railway не задаётся), фото Cloudinary (Image.network под
+		#   CanvasKit берёт байты запросом) — только НАШЕ облако davrzdre8:
+		#   res.cloudinary.com общий для всех клиентов Cloudinary, и без пути
+		#   политика пускала бы запрос в чужое облако (так же сужен сайт,
+		#   web/next.config.ts; сервер принимает только ссылки своего облака),
+		#   и шрифты-заменители Google: движок сам докачивает Roboto и Noto
+		#   (решение Координатора 29.10 — шрифты пока у Google).
+		# - frame-ancestors 'none' — то же, что X-Frame-Options DENY.
+		# Ошибка здесь — белый экран у модератора: правка политики проверяется
+		# в браузере на собранной панели (консоль без нарушений).
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' {$PANEL_API_ORIGIN:https://restaurantguidev2-production.up.railway.app} https://res.cloudinary.com/davrzdre8/ https://fonts.gstatic.com; img-src 'self' data: blob: https://res.cloudinary.com/davrzdre8/; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+		# Только https на год. Без includeSubDomains: адрес панели — поддомен
+		# Railway, соседние поддомены не наши.
+		Strict-Transport-Security "max-age=31536000"
+		# Новая вкладка из панели — в своей группе окон, без связи с панелью
+		# (вместе с noopener в lib/utils/open_url_web.dart).
+		Cross-Origin-Opener-Policy same-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+
 		# У бандла Flutter нет хэшей в именах: main.dart.js, манифесты в
 		# assets/, шрифты, иконки и CanvasKit переживают редеплой под теми же
 		# адресами. Любой долгий кэш пары «свежая оболочка + старый ассет»

@@ -1,5 +1,6 @@
 import 'package:restaurant_guide_admin_web/models/admin_review_item.dart';
 import 'package:restaurant_guide_admin_web/services/api_client.dart';
+import 'package:restaurant_guide_admin_web/utils/id_format.dart';
 
 /// API service for admin review management endpoints
 class AdminReviewService {
@@ -85,7 +86,7 @@ class AdminReviewService {
     String? reason,
   }) async {
     await _apiClient.post(
-      '/api/v1/admin/reviews/$id/visibility',
+      '/api/v1/admin/reviews/${idPathSegment(id)}/visibility',
       data: <String, dynamic>{
         'is_visible': isVisible,
         if (reason != null && reason.isNotEmpty) 'reason': reason,
@@ -121,7 +122,7 @@ class AdminReviewService {
     if (reason != null && reason.isNotEmpty) data['reason'] = reason;
 
     await _apiClient.post(
-      '/api/v1/admin/reviews/$id/delete',
+      '/api/v1/admin/reviews/${idPathSegment(id)}/delete',
       data: data.isNotEmpty ? data : null,
     );
   }

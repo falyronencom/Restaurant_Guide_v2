@@ -1,5 +1,6 @@
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/services/api_client.dart';
+import 'package:restaurant_guide_admin_web/utils/id_format.dart';
 
 /// API экрана «Пользователи»: найти человека, заблокировать, разблокировать,
 /// сбросить имя (проход тестировщика 17.10, п. 8).
@@ -52,7 +53,7 @@ class AdminUserService {
 
   /// GET /api/v1/admin/users/:id
   Future<AdminUser> getUser(String id) async {
-    final response = await _apiClient.get('/api/v1/admin/users/$id');
+    final response = await _apiClient.get('/api/v1/admin/users/${idPathSegment(id)}');
     final data = response.data as Map<String, dynamic>;
     return AdminUser.fromJson(data['data'] as Map<String, dynamic>);
   }
@@ -98,7 +99,7 @@ class AdminUserService {
     Map<String, dynamic> extra = const <String, dynamic>{},
   }) async {
     final response = await _apiClient.post(
-      '/api/v1/admin/users/$id/$action',
+      '/api/v1/admin/users/${idPathSegment(id)}/$action',
       data: <String, dynamic>{'reason': reason, ...extra},
     );
     final body = response.data;
