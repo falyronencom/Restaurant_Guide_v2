@@ -17,6 +17,7 @@
 import argon2 from 'argon2';
 import { pool, getClient } from '../config/database.js';
 import { resolveRefreshReuseGraceSeconds } from '../config/auth.js';
+import { accessTokenLifetimeSeconds } from '../config/accessToken.js';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -91,14 +92,34 @@ const DUMMY_PASSWORD_HASH = [
 ].join('$');
 
 /**
- * Access token lifetime reported to clients, in seconds.
+ * What a failed password login writes to the log: by what the person came in
+ * (e-mail, phone), the account's id when there is one, and why — never the
+ * e-mail or the phone itself (finding 27 of the Railway incident, 29.10.2026:
+ * a wrong password at any door wrote the e-mail into the log). The id is
+ * enough to look the account up; for an unknown address there is nothing to
+ * look up. With both an e-mail and a phone the row found may be the phone's
+ * account, not the e-mail's (email = $1 OR phone = $2), so no id is written.
  *
- * Mirrors JWT_ACCESS_EXPIRY ('4h' by default, utils/jwt.js) — the JWT carries
- * its own exp, this number only tells the client when to come back. Shared by
- * the two paths that mint an access token (generateTokenPair and a replay
- * inside the reuse grace window) so they cannot drift apart.
+ * @param {Object} credentials - { email, phone } as the caller passed them
+ * @param {Object|null} user - The row found, or null
+ * @param {string} reason
+ * @returns {Object}
  */
-const ACCESS_TOKEN_EXPIRES_IN_SECONDS = 14400;
+const loginFailureFields = ({ email, phone }, user, reason) => {
+  let loginBy = 'none';
+  if (email && phone) {
+    loginBy = 'email_and_phone';
+  } else if (email) {
+    loginBy = 'email';
+  } else if (phone) {
+    loginBy = 'phone';
+  }
+  return {
+    loginBy,
+    ...(user && loginBy !== 'email_and_phone' ? { userId: user.id } : {}),
+    reason,
+  };
+};
 
 /**
  * A refresh-token row joined with its user — what refreshAccessToken starts
@@ -314,11 +335,10 @@ export async function verifyCredentials(credentials, { panelAccounts = true, oth
           [new Date(), user.id, user.password_hash],
         );
         if (stillCurrent.rowCount === 0) {
-          logger.warn('Login attempt failed', {
-            email: email || 'not_provided',
-            phone: phone || 'not_provided',
-            reason: 'password_changed_during_verification',
-          });
+          logger.warn(
+            'Login attempt failed',
+            loginFailureFields(credentials, user, 'password_changed_during_verification'),
+          );
           return null;
         }
         
@@ -339,11 +359,10 @@ export async function verifyCredentials(credentials, { panelAccounts = true, oth
     }
 
     // Log failed login attempt for security monitoring
-    logger.warn('Login attempt failed', {
-      email: email || 'not_provided',
-      phone: phone || 'not_provided',
-      reason: failureReason,
-    });
+    logger.warn(
+      'Login attempt failed',
+      loginFailureFields(credentials, result.rows[0] ?? null, failureReason),
+    );
     
     return null;
     
@@ -356,7 +375,10 @@ export async function verifyCredentials(credentials, { panelAccounts = true, oth
 /**
  * Generates a new pair of access and refresh tokens for a user
  * 
- * Access tokens are short-lived (4 hours, JWT_ACCESS_EXPIRY) JWT tokens that authenticate API requests.
+ * Access tokens are short-lived (4 hours, JWT_ACCESS_EXPIRY; the panel's accounts one hour,
+ * config/accessToken.js) JWT tokens that authenticate API requests. expiresIn tells the
+ * client the same lifetime the token carries (accessTokenLifetimeSeconds),
+ * here and on a replay inside the reuse grace window.
  * Refresh tokens are long-lived (30 days) and stored in database for validation.
  * 
  * The token pair allows secure, stateless authentication while maintaining the ability
@@ -422,7 +444,7 @@ export async function generateTokenPair(user, { replaces = null } = {}) {
     return {
       accessToken,
       refreshToken,
-      expiresIn: ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+      expiresIn: accessTokenLifetimeSeconds(user.role),
       // Row id of the refresh token just inserted. refreshAccessToken writes
       // it into the predecessor's replaced_by so a replay inside the grace
       // window can find this successor (config/auth.js). Callers that only
@@ -753,7 +775,7 @@ async function handleReusedToken(tokenData, presentedToken, { concurrentClaim = 
       return {
         accessToken,
         refreshToken: successorToken,
-        expiresIn: ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+        expiresIn: accessTokenLifetimeSeconds(user.role),
         user,
       };
     }
