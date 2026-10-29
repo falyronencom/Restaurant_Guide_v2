@@ -5,6 +5,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/menu_recognition.dart';
 import 'package:restaurant_guide_mobile/models/partner_menu_item.dart';
 import 'package:restaurant_guide_mobile/providers/partner_menu_provider.dart';
+import 'package:restaurant_guide_mobile/screens/profile/delete_account_screen.dart';
 import 'package:restaurant_guide_mobile/widgets/canon_app_bar.dart';
 
 /// Partner view of parsed menu items for a single establishment.
@@ -93,8 +94,9 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
 
     if (provider.items.isEmpty) {
       // Случаи одного пустого списка — по состоянию распознавания с сервера
-      // (находка 3 инцидента Railway, 24.10.2026; Н38 и Н39, 25.10.2026).
-      // Нет поля (сервер до правки) или «ничего» — прежний пустой экран.
+      // (находка 3 инцидента Railway, 24.10.2026; Н38 и Н39, 25.10.2026;
+      // КО-1 и КО-5, 29.10.2026). Нет поля (сервер до правки) или статус
+      // незнаком — прежний пустой экран.
       final recognition = provider.recognition;
       switch (recognition?.status) {
         case MenuRecognitionStatus.processing:
@@ -104,8 +106,11 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
         case MenuRecognitionStatus.notStarted:
           return _buildNotStartedState();
         case MenuRecognitionStatus.done:
-          return _buildNothingFoundState();
+          return provider.hasHiddenItems
+              ? _buildHiddenState()
+              : _buildNothingFoundState();
         case MenuRecognitionStatus.none:
+          return _buildNoFilesState();
         case null:
           return _buildEmptyState();
       }
@@ -181,6 +186,22 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
     );
   }
 
+  /// У заведения нет ни одного файла меню — сервер знает это точно (статус
+  /// «none» с 26.10.2026: добавленный файл даёт другой статус). Текст —
+  /// решение Координатора 29.10.2026 (КО-5): прежний «если вы добавили…»
+  /// говорил о файле тому, кто его не добавлял.
+  Widget _buildNoFilesState() {
+    return _buildMessageState(
+      icon: Icons.menu_book_outlined,
+      title: 'Меню ещё не загружено',
+      hint: 'Добавьте фото страниц меню или PDF в разделе «Медиа» — позиции '
+          'появятся здесь сами через несколько минут.',
+    );
+  }
+
+  /// Запасной пустой экран: сервер не прислал состояние (сервер до
+  /// 24.10.2026, состояние не прочиталось при первой загрузке) или прислал
+  /// незнакомое — тогда неизвестно, добавлен ли файл.
   Widget _buildEmptyState() {
     return Center(
       child: Padding(
@@ -274,6 +295,22 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
       title: 'Позиций не нашлось',
       hint: 'Файл прочитан, но блюд и цен в нём не нашлось. Загрузите более '
           'чёткое фото или другой файл в разделе «Медиа».',
+    );
+  }
+
+  /// Файл прочитан, а список пуст потому, что позиции скрыты модератором
+  /// (`hasHiddenItems`, находка КО-1). Скрытие держится за название блюда и
+  /// переживает повторное распознавание, поэтому совет «более чёткое фото»
+  /// здесь только тратил суточные попытки. Текст — решение Координатора
+  /// 29.10.2026 (вариант Б): модератор не назван, адрес поддержки — тот же,
+  /// что в отказах сервера.
+  Widget _buildHiddenState() {
+    return _buildMessageState(
+      icon: Icons.visibility_off_outlined,
+      title: 'Позиции не показываются',
+      hint: 'Файл прочитан, но позиции из него сейчас не показываются гостям. '
+          'Новое фото того же меню этого не изменит — напишите в поддержку: '
+          '${DeleteAccountScreen.supportEmail}',
     );
   }
 

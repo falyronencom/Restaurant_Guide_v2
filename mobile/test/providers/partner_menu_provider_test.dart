@@ -12,6 +12,8 @@ class _FakeMenuService implements PartnerMenuService {
   List<PartnerMenuItem> fetchResult = [];
   MenuRecognition? recognitionResult;
   bool recognitionUnread = false;
+  bool hasHiddenItems = false;
+  bool hiddenItemsUnread = false;
   Exception? fetchThrow;
 
   PartnerMenuItem? updateResult;
@@ -30,7 +32,9 @@ class _FakeMenuService implements PartnerMenuService {
     return PartnerMenuSnapshot(
         items: fetchResult,
         recognition: recognitionResult,
-        recognitionUnread: recognitionUnread);
+        recognitionUnread: recognitionUnread,
+        hasHiddenItems: hasHiddenItems,
+        hiddenItemsUnread: hiddenItemsUnread);
   }
 
   @override
@@ -178,6 +182,83 @@ void main() {
       await provider.fetchMenuItems(silent: true);
       expect(provider.recognition?.status, MenuRecognitionStatus.done);
       expect(provider.isStale, isFalse);
+    });
+
+    // КО-1 (29.10.2026): признак скрытых модератором позиций — из ответа;
+    // не прочитан сервером — как состояние: показанное остаётся, неудача
+    // считается; другой карточке и другой учётке он не достаётся.
+    test('hasHiddenItems comes from the answer, survives an unread one, and is '
+        'dropped on another establishment and on account reset', () async {
+      final fake = _FakeMenuService();
+      fake.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.done);
+      fake.hasHiddenItems = true;
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+      expect(provider.hasHiddenItems, isTrue);
+
+      fake.hasHiddenItems = false;
+      fake.hiddenItemsUnread = true;
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.hasHiddenItems, isTrue, reason: 'не прочитан — не «нет»');
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isTrue);
+
+      fake.hiddenItemsUnread = false;
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.hasHiddenItems, isFalse);
+      expect(provider.isStale, isFalse);
+
+      fake.hasHiddenItems = true;
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.hasHiddenItems, isTrue);
+
+      // Другая карточка: до её ответа — ничего от прежней.
+      fake.fetchThrow = Exception('network');
+      await provider.loadForEstablishment('est-2');
+      provider.stopPolling();
+      expect(provider.hasHiddenItems, isFalse);
+
+      fake.fetchThrow = null;
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+      expect(provider.hasHiddenItems, isTrue);
+      provider.resetAccountScope();
+      expect(provider.hasHiddenItems, isFalse);
+    });
+
+    // Ревью 29.10.2026: два вспомогательных поля одного ответа — одна неудача,
+    // и каждое обновляется само по себе.
+    test('both helper fields unread in one answer count as one failure; '
+        'each field updates on its own', () async {
+      final fake = _FakeMenuService();
+      fake.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.processing);
+      final provider = PartnerMenuProvider(service: fake);
+      await provider.loadForEstablishment('est-1');
+      provider.stopPolling();
+
+      fake.recognitionUnread = true;
+      fake.hiddenItemsUnread = true;
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.isStale, isFalse, reason: 'один ответ — одна неудача');
+
+      fake.recognitionUnread = false;
+      fake.recognitionResult =
+          const MenuRecognition(status: MenuRecognitionStatus.done);
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.recognition?.status, MenuRecognitionStatus.done,
+          reason: 'состояние прочитано — обновляется, хоть признак и нет');
+      expect(provider.hasHiddenItems, isFalse);
+
+      fake.hiddenItemsUnread = false;
+      fake.recognitionUnread = true;
+      fake.hasHiddenItems = true;
+      await provider.fetchMenuItems(silent: true);
+      expect(provider.hasHiddenItems, isTrue,
+          reason: 'признак прочитан — обновляется, хоть состояние и нет');
+      expect(provider.recognition?.status, MenuRecognitionStatus.done);
     });
 
     test('a failed pull-to-refresh counts too; reopening the screen starts afresh',
