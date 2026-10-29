@@ -34,9 +34,17 @@ COPY . .
 # жила со сборкой 18.10). Номер — время сборки: `version` из pubspec между
 # сборками не меняется. Слой с этой командой Docker берёт из кэша, только
 # когда исходники те же, — тогда и бандл тот же, и номер прежний верно.
+#
+# --no-web-resources-cdn — движок отрисовки CanvasKit грузится из canvaskit/
+# рядом с панелью, а не с www.gstatic.com (сверка меток панели 29.10, S3):
+# движок видит всё на экране модератора, и третьей стороны в этой цепочке не
+# должно быть. Шрифты-заменители (Roboto, Noto) движок по-прежнему берёт у
+# fonts.gstatic.com — решение Координатора 29.10; их пропускает политика
+# источников в Caddyfile.
 RUN PANEL_BUILD="$(date -u +%Y%m%dT%H%M%SZ)" \
  && flutter build web --release --dart-define=ENV=production \
       --dart-define=PANEL_BUILD="$PANEL_BUILD" --pwa-strategy=none \
+      --no-web-resources-cdn \
  && printf '{"build":"%s"}\n' "$PANEL_BUILD" > build/web/build.json
 
 # Минор закреплён по той же причине, что и Flutter выше: `2-alpine` плавал бы
