@@ -117,11 +117,35 @@ const readRecognitionState = async (establishmentId) => {
 };
 
 /**
+ * Whether the card has items hidden by admin, or null when it cannot be read —
+ * a helper field, like the recognition state: its failure must not take the
+ * list down. A client reads null as «not known» and shows what it always did.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<boolean|null>}
+ */
+const readHasHiddenItems = async (establishmentId) => {
+  try {
+    return await MenuItemModel.hasHiddenByEstablishment(establishmentId);
+  } catch (error) {
+    logger.error('Hidden items of the partner menu could not be read — answered without them', {
+      establishmentId,
+      error: error.message,
+    });
+    return null;
+  }
+};
+
+/**
  * List parsed menu items for an establishment owned by the partner.
  *
  * Phase 1 policy: admin-hidden items are filtered out at the service layer.
- * Partners see only non-hidden items; no UI indication of hidden state.
+ * Partners see only non-hidden items: no names, no reasons, no moderator.
  * Rationale: platform owns content quality; hiding is not the partner's concern.
+ * One exception, a fact without content (finding КО-1, Coordinator's choice
+ * «Б» of 29.10.2026): `hasHiddenItems` tells the screen that an empty list is
+ * empty because items are hidden, so that it does not advise a clearer photo
+ * — the hiding is tied to the dish name and survives a re-read.
  *
  * With the items comes the state of the menu's recognition (recognitionState;
  * null when it cannot be read); the controller sends it beside `data`, which
@@ -129,8 +153,9 @@ const readRecognitionState = async (establishmentId) => {
  *
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
- * @returns {Promise<{items: Object[], recognition: Object}>} Non-hidden menu
- *   items ordered by position, and the recognition state
+ * @returns {Promise<{items: Object[], recognition: Object, hasHiddenItems: boolean|null}>}
+ *   Non-hidden menu items ordered by position, the recognition state, and
+ *   whether any items are hidden by admin
  */
 export const listMenuItems = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
@@ -142,11 +167,12 @@ export const listMenuItems = async (partnerId, establishmentId) => {
     );
   }
 
-  const [items, recognition] = await Promise.all([
+  const [items, recognition, hasHiddenItems] = await Promise.all([
     MenuItemModel.getByEstablishmentId(establishmentId, { includeHidden: false }),
     readRecognitionState(establishmentId),
+    readHasHiddenItems(establishmentId),
   ]);
-  return { items, recognition };
+  return { items, recognition, hasHiddenItems };
 };
 
 /**

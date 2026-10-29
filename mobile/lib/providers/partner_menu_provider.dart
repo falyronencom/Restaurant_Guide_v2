@@ -25,6 +25,7 @@ class PartnerMenuProvider with ChangeNotifier {
   String? _currentEstablishmentId;
   List<PartnerMenuItem> _items = [];
   MenuRecognition? _recognition;
+  bool _hasHiddenItems = false;
   bool _isLoading = false;
   String? _error;
   Timer? _pollingTimer;
@@ -66,6 +67,7 @@ class PartnerMenuProvider with ChangeNotifier {
     _currentEstablishmentId = null;
     _items = [];
     _recognition = null;
+    _hasHiddenItems = false;
     _isLoading = false;
     _error = null;
     _failedRefreshes = 0;
@@ -78,6 +80,11 @@ class PartnerMenuProvider with ChangeNotifier {
   /// State of the menu's recognition from the last answer; `null` — not
   /// loaded yet, or a server that does not send it.
   MenuRecognition? get recognition => _recognition;
+
+  /// У заведения есть позиции, скрытые модератором (из последнего ответа;
+  /// `false` — нет, не загружено или сервер поля не присылает). Экран по нему
+  /// отличает «позиции не показываются» от «позиций не нашлось» (КО-1).
+  bool get hasHiddenItems => _hasHiddenItems;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get hasItems => _items.isNotEmpty;
@@ -114,6 +121,7 @@ class PartnerMenuProvider with ChangeNotifier {
       _currentEstablishmentId = establishmentId;
       _items = [];
       _recognition = null;
+      _hasHiddenItems = false;
       _error = null;
     }
     // Экран открылся заново — прежние неудачи к нему не относятся.
@@ -206,14 +214,15 @@ class PartnerMenuProvider with ChangeNotifier {
       if (generation != _generation || id != _currentEstablishmentId) return;
       _items = fetched.items;
       _error = null;
-      if (fetched.recognitionUnread) {
-        // Список пришёл, а состояние сервер прочитать не смог: показанное
-        // состояние остаётся (ревью 25.10.2026, линза: иначе экран падал на
-        // прежний пустой «…выполняется автоматически» и снимал плашку), и это
-        // неудача обновления, как и сбой запроса.
+      // Список пришёл, а состояние или признак скрытых сервер прочитать не
+      // смог: показанное остаётся (ревью 25.10.2026, линза: иначе экран падал
+      // на прежний пустой «…выполняется автоматически» и снимал плашку), и это
+      // неудача обновления, как и сбой запроса.
+      if (!fetched.recognitionUnread) _recognition = fetched.recognition;
+      if (!fetched.hiddenItemsUnread) _hasHiddenItems = fetched.hasHiddenItems;
+      if (fetched.recognitionUnread || fetched.hiddenItemsUnread) {
         _failedRefreshes++;
       } else {
-        _recognition = fetched.recognition;
         _failedRefreshes = 0;
       }
     } catch (e) {
