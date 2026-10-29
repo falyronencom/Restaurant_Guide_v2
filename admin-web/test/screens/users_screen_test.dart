@@ -138,6 +138,9 @@ AdminUser _user({
       createdAt: DateTime.utc(2026, 10, 1, 9),
     );
 
+/// Номер человека в формате сервера — только такой уходит в запрос из ссылки.
+const String _authorUuid = '0d9a6c1e-4b7f-4a52-9e3d-1f2a3b4c5d6e';
+
 void main() {
   Future<_FakeUserService> pumpScreen(
     WidgetTester tester,
@@ -451,17 +454,123 @@ void main() {
   testWidgets('ссылка из отзыва открывает карточку автора сразу',
       (tester) async {
     // Автор не на первой странице списка — карточка читается по id.
-    final author = _user(id: 'author-9', name: 'Автор Отзыва');
+    final author = _user(id: _authorUuid, name: 'Автор Отзыва');
     final fake = await pumpScreen(
       tester,
       [_user()],
-      initialUserId: 'author-9',
-      cards: {'author-9': author},
+      initialUserId: _authorUuid,
+      cards: {_authorUuid: author},
     );
     await settle(tester);
 
-    expect(fake.calls, contains('get author-9'));
+    expect(fake.calls, contains('get $_authorUuid'));
     expect(find.text('Автор Отзыва'), findsOneWidget);
+  });
+
+  // Ссылку `?user=…` мог прислать кто угодно; номер из неё склеивается с
+  // путём запроса (сверка меток панели 29.10, S4). Не номер человека — запроса
+  // нет, справа «Пользователь не найден», список работает как обычно.
+  for (final bad in <String>[
+    '../reviews',
+    '$_authorUuid/../../reviews',
+    'author-9',
+    ' $_authorUuid',
+  ]) {
+    testWidgets('ссылка с «$bad» — без запроса карточки, «не найден»',
+        (tester) async {
+      final fake = await pumpScreen(tester, [_user()], initialUserId: bad);
+      await settle(tester);
+
+      expect(fake.calls.where((c) => c.startsWith('get ')), isEmpty,
+          reason: 'запрос карточки по номеру из ссылки');
+      expect(find.byKey(const ValueKey<String>('user-link-rejected')),
+          findsOneWidget);
+      expect(find.text('Пользователь не найден'), findsOneWidget);
+
+      // Человека из списка модератор открывает как обычно.
+      await openRow(tester, 'Злой Комментатор');
+      expect(fake.calls, contains('get u1'));
+      expect(find.byKey(const ValueKey<String>('user-link-rejected')),
+          findsNothing);
+      expect(find.text('Активен'), findsOneWidget);
+    });
+  }
+
+  testWidgets('после неправильной ссылки правильная открывает карточку',
+      (tester) async {
+    // Модератор открыл битую ссылку, затем верную — на том же экране. Номер
+    // меняется в адресе, маршрут тот же: экран получает новый номер, а
+    // «не найден» от прошлой ссылки не должен остаться поверх карточки.
+    final author = _user(id: _authorUuid, name: 'Автор Отзыва');
+    final fake = _FakeUserService([_user()], cards: {_authorUuid: author});
+    tester.view.physicalSize = const Size(1440, 820);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final router = GoRouter(
+      initialLocation: userCardLocation('../reviews'),
+      routes: <RouteBase>[
+        GoRoute(
+          path: kUsersPath,
+          builder: (_, state) => Scaffold(
+            body: UsersScreen(initialUserId: state.uri.queryParameters['user']),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<AdminUsersProvider>(
+            create: (_) => AdminUsersProvider(service: fake)),
+        ChangeNotifierProvider<AuthProvider>(
+            create: (_) => StubAuthProvider.admin()),
+      ],
+      child: MaterialApp.router(
+          theme: AppTheme.lightTheme, routerConfig: router),
+    ));
+    await settle(tester);
+    expect(find.byKey(const ValueKey<String>('user-link-rejected')),
+        findsOneWidget);
+
+    router.go(userCardLocation(_authorUuid));
+    await settle(tester);
+    await settle(tester);
+
+    expect(fake.calls, contains('get $_authorUuid'));
+    expect(find.byKey(const ValueKey<String>('user-link-rejected')),
+        findsNothing);
+    expect(find.text('Автор Отзыва'), findsWidgets);
+
+    // Снова битая, затем тот же экран без ссылки (боковое меню): «не найден»
+    // от прошлой ссылки не остаётся — провайдер живёт дольше экрана.
+    router.go(userCardLocation('author-9'));
+    await settle(tester);
+    expect(find.byKey(const ValueKey<String>('user-link-rejected')),
+        findsOneWidget);
+    router.go(kUsersPath);
+    await settle(tester);
+    expect(find.byKey(const ValueKey<String>('user-link-rejected')),
+        findsNothing);
+    expect(find.text('Выберите человека слева'), findsOneWidget);
+  });
+
+  test('поиск и фильтры убирают «не найден» битой ссылки', () async {
+    final fake = _FakeUserService([_user()]);
+    final provider = AdminUsersProvider(service: fake);
+    addTearDown(provider.dispose);
+
+    for (final close in <void Function()>[
+      () => provider.setStatusFilter('blocked'),
+      () => provider.setRoleFilter('partner'),
+      provider.resetFilters,
+      provider.clearSearch,
+    ]) {
+      await provider.openUserFromLink('../reviews');
+      expect(provider.linkRejected, isTrue);
+      close();
+      expect(provider.linkRejected, isFalse);
+    }
+    expect(fake.calls.where((c) => c.startsWith('get ')), isEmpty);
   });
 
   test('userCardLocation ведёт на экран с id в запросе', () {

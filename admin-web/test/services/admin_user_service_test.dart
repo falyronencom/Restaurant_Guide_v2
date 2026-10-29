@@ -123,6 +123,37 @@ void main() {
     expect(user.name, 'Автор Отзыва');
   });
 
+  test('номер человека — одним сегментом пути, не уводит запрос на другой маршрут',
+      () async {
+    // Сверка меток панели 29.10, S4: номер склеивается с путём, и «/..» в нём
+    // вывел бы запрос с токеном модератора с /admin/users/ на другой маршрут
+    // API. Экран из ссылки такой номер не пропускает; сервис держит номер
+    // одним сегментом сам — второй рубеж (utils/id_format.dart).
+    final adapter = _StubAdapter((_) => _json(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{'id': 'x', 'role': 'user'},
+        }));
+    final service = serviceOver(adapter);
+
+    await service.getUser('x/../../reviews');
+    await service.resetName('x/../y', reason: 'r');
+
+    expect(adapter.requests.map((r) => r.uri.path), <String>[
+      '/api/v1/admin/users/x%2F..%2F..%2Freviews',
+      '/api/v1/admin/users/x%2F..%2Fy/reset-name',
+    ]);
+
+    // Номер из одних точек кодирование не прячет — сервис отказывает до
+    // запроса: `/users/../block` ушёл бы на `/admin/block`.
+    for (final dots in <String>['..', '.', '']) {
+      await expectLater(service.block(dots, reason: 'r'),
+          throwsArgumentError, reason: '«$dots»');
+      await expectLater(service.getUser(dots), throwsArgumentError,
+          reason: '«$dots»');
+    }
+    expect(adapter.requests, hasLength(2), reason: 'лишних запросов нет');
+  });
+
   test('блокировка: причина в теле, флаг changed разобран', () async {
     var changed = true;
     final adapter = _StubAdapter((_) => _json(<String, dynamic>{

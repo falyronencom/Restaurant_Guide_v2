@@ -59,11 +59,13 @@ export async function adminLogin(req, res, next) {
     }
 
     // Verify credentials using existing auth service
+    // otherAccounts: false — a right password of another role comes back
+    // without its last login written; the role gate below refuses it.
     const user = await authService.verifyCredentials({
       email,
       phone,
       password,
-    });
+    }, { otherAccounts: false });
 
     // Generic error for invalid credentials (prevents enumeration)
     if (!user) {
@@ -78,12 +80,12 @@ export async function adminLogin(req, res, next) {
 
     // Role gate: only panel roles enter (admin acts, viewer reads). The
     // error code stays ADMIN_ACCESS_REQUIRED — admin-web maps it to its
-    // Russian message, and the door is still the admin panel's.
+    // Russian message, and the door is still the admin panel's. The log names
+    // the account by its id, not its e-mail.
     if (!isPanelRole(user.role)) {
       logger.warn('Login attempt to admin endpoint by a role outside the panel', {
         userId: user.id,
         role: user.role,
-        email: user.email,
       });
       return res.status(403).json({
         success: false,
