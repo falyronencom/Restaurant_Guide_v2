@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:restaurant_guide_admin_web/config/theme.dart';
 
 /// Placeholder screen for routes not yet implemented
 /// Used for all sidebar navigation targets until their segments are built
@@ -13,16 +14,16 @@ class PlaceholderScreen extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.construction, size: 64, color: Colors.grey.shade400),
+          const Icon(Icons.construction, size: 64, color: AppTheme.gray400),
           const SizedBox(height: 16),
           Text(
             title,
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 8),
-          Text(
+          const Text(
             'Раздел в разработке',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            style: TextStyle(color: AppTheme.textSecondary, fontSize: 16),
           ),
         ],
       ),

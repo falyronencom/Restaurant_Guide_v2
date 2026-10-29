@@ -142,7 +142,7 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
       return const Center(
         child: Text(
           'Выберите заведение для просмотра',
-          style: TextStyle(fontSize: 16, color: Colors.grey),
+          style: TextStyle(fontSize: 16, color: AppTheme.textSecondary),
         ),
       );
     }
@@ -670,7 +670,7 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
           children: [
             Text(
               'Заведение «${widget.establishmentName}» будет передано выбранному пользователю.',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -701,7 +701,7 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
                   )
               : null,
           style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFFF06B32),
+            backgroundColor: AppTheme.primaryOrange,
           ),
           child: const Text('Назначить'),
         ),
@@ -743,7 +743,7 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
       return const Center(
         child: Text(
           'Введите минимум 2 символа для поиска',
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: AppTheme.textSecondary),
         ),
       );
     }
@@ -752,7 +752,7 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
       return const Center(
         child: Text(
           'Пользователи не найдены',
-          style: TextStyle(color: Colors.grey),
+          style: TextStyle(color: AppTheme.textSecondary),
         ),
       );
     }
@@ -765,11 +765,11 @@ class _ClaimUserSearchDialogState extends State<_ClaimUserSearchDialog> {
 
         return ListTile(
           selected: isSelected,
-          selectedTileColor: const Color(0xFFF06B32).withValues(alpha: 0.1),
+          selectedTileColor: AppTheme.primaryOrange.withValues(alpha: 0.1),
           leading: CircleAvatar(
             backgroundColor: user.role == 'partner'
-                ? const Color(0xFFF06B32)
-                : Colors.grey.shade400,
+                ? AppTheme.primaryOrange
+                : AppTheme.textTertiary,
             child: Text(
               user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
               style: const TextStyle(color: Colors.white),
@@ -1380,7 +1380,7 @@ class _AboutTab extends StatelessWidget {
                     '${detail.description!.length}/450',
                     style: const TextStyle(
                       fontSize: 13,
-                      color: Color(0xFFABABAB),
+                      color: AppTheme.textGrey,
                     ),
                   ),
                 ),
@@ -1429,7 +1429,7 @@ class _AboutTab extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: Color(0xFFABABAB),
+              color: AppTheme.textGrey,
             ),
           ),
         ),
@@ -1575,7 +1575,7 @@ class _MediaTab extends StatelessWidget {
               ? _PhotoGrid(photos: detail.interiorPhotos, title: 'Фото')
               : const Text(
                   'Фотографии не загружены',
-                  style: TextStyle(color: Color(0xFFABABAB)),
+                  style: TextStyle(color: AppTheme.textGrey),
                 ),
         ),
         ModerationFieldReview(
@@ -1586,7 +1586,7 @@ class _MediaTab extends StatelessWidget {
               ? _PhotoGrid(photos: detail.menuMedia, title: 'Меню')
               : const Text(
                   'Меню не загружено',
-                  style: TextStyle(color: Color(0xFFABABAB)),
+                  style: TextStyle(color: AppTheme.textGrey),
                 ),
         ),
       ],
@@ -1730,9 +1730,9 @@ class _MapPreview extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF5F5F5),
+        color: AppTheme.backgroundWarm,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFD2D2D2)),
+        border: Border.all(color: AppTheme.strokeGrey),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1744,7 +1744,7 @@ class _MapPreview extends StatelessWidget {
               const Icon(
                 Icons.location_on,
                 size: 20,
-                color: Color(0xFFDB4F13),
+                color: AppTheme.primaryOrangeDark,
               ),
               const SizedBox(width: 8),
               Text(
@@ -1752,7 +1752,7 @@ class _MapPreview extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF333333),
+                  color: AppTheme.textDark,
                 ),
               ),
             ],
@@ -1766,8 +1766,8 @@ class _MapPreview extends StatelessWidget {
               icon: const Icon(Icons.open_in_new, size: 16),
               label: const Text('Открыть в Яндекс Картах'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFDB4F13),
-                side: const BorderSide(color: Color(0xFFDB4F13)),
+                foregroundColor: AppTheme.primaryOrangeDark,
+                side: const BorderSide(color: AppTheme.primaryOrangeDark),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -1784,7 +1784,7 @@ class _MapPreview extends StatelessWidget {
                 icon: const Icon(Icons.edit_location_alt, size: 16),
                 label: const Text('Исправить координаты'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFDB4F13),
+                  backgroundColor: AppTheme.primaryOrangeDark,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1941,7 +1941,7 @@ class _CoordinateDialogState extends State<_CoordinateDialog> {
         ElevatedButton(
           onPressed: _save,
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFFDB4F13),
+            backgroundColor: AppTheme.primaryOrangeDark,
             foregroundColor: Colors.white,
           ),
           child: const Text('Сохранить'),
@@ -2420,7 +2420,7 @@ class _WorkingHoursDisplay extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFD2D2D2), width: 1.13),
+        border: Border.all(color: AppTheme.strokeGrey, width: 1.13),
         borderRadius: BorderRadius.circular(11),
       ),
       child: Column(
@@ -2441,8 +2441,8 @@ class _WorkingHoursDisplay extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
                       color: isOpen
-                          ? Colors.black
-                          : const Color(0xFFABABAB),
+                          ? AppTheme.textPrimary
+                          : AppTheme.textGrey,
                     ),
                   ),
                 ),
@@ -2452,8 +2452,8 @@ class _WorkingHoursDisplay extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       color: isOpen
-                          ? Colors.black
-                          : const Color(0xFFABABAB),
+                          ? AppTheme.textPrimary
+                          : AppTheme.textGrey,
                     ),
                   ),
                 ),
@@ -2661,7 +2661,7 @@ class _InfoField extends StatelessWidget {
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              color: Color(0xFFABABAB),
+              color: AppTheme.textGrey,
             ),
           ),
           const SizedBox(height: 8),

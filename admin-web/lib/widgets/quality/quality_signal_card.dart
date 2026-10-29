@@ -125,7 +125,7 @@ class _QualitySignalCardState extends State<QualitySignalCard> {
               style: const TextStyle(
                 fontSize: 12,
                 height: 1.45,
-                color: AppTheme.gray500,
+                color: AppTheme.textTertiary,
               ),
             ),
             if (extra != null) ...[
