@@ -26,6 +26,7 @@ import logger from '../../utils/logger.js';
 import * as ocrJobModel from '../../models/ocrJobModel.js';
 import * as menuItemModel from '../../models/menuItemModel.js';
 import * as MediaModel from '../../models/mediaModel.js';
+import * as AuditLogModel from '../../models/auditLogModel.js';
 import * as NotificationService from '../notificationService.js';
 import * as pdfTextExtractor from './pdfTextExtractor.js';
 import * as visionOcrAdapter from './visionOcrAdapter.js';
@@ -536,6 +537,33 @@ const notifyPartnerOfFailedJob = async (job) => {
 };
 
 /**
+ * Journal the rows of a new read that came out hidden because the moderator
+ * hid the dish before — in another file of the establishment or in its
+ * memory (replaceForMedia's hiddenFromElsewhere; decision of the Coordinator
+ * 29.10.2026, П5а). The moderator sees them in the «Скрытые» tab of the
+ * queue, and the journal says when and why each was hidden: «Система», with
+ * the reason the dish was hidden for. Once per row, when it first appears: a
+ * re-read of the same file carries its own hidden rows over without a word.
+ * createAuditLog never throws, so the job outcome does not depend on it.
+ *
+ * @param {Object[]} rows - menu_items rows, already committed
+ */
+const journalHiddenFromElsewhere = async (rows) => {
+  for (const row of rows ?? []) {
+    await AuditLogModel.createAuditLog({
+      user_id: null,
+      action: 'hide_menu_item',
+      entity_type: 'menu_item',
+      entity_id: row.id,
+      old_data: { is_hidden_by_admin: false },
+      // No author (user_id null) is the mark: the panel reads it as «Система»
+      // and the entry as «Позиция скрыта автоматически…» (auditLogModel).
+      new_data: { is_hidden_by_admin: true, reason: row.hidden_reason },
+    });
+  }
+};
+
+/**
  * Run the full OCR pipeline for a job. Called by the poller after pickNextPending,
  * or directly in tests.
  *
@@ -607,11 +635,12 @@ export const processJob = async (jobId, { signal } = {}) => {
 
     const flaggedItems = sanityChecker.check(rawItems, previousForThisMedia);
 
-    await menuItemModel.replaceForMedia({
+    const { hiddenFromElsewhere } = await menuItemModel.replaceForMedia({
       establishmentId: job.establishment_id,
       mediaId: job.media_id,
       newItems: flaggedItems,
     });
+    await journalHiddenFromElsewhere(hiddenFromElsewhere);
 
     const summary = buildResultSummary(flaggedItems, strategy, {
       visionError, pagesCount, pagesTotal, categoriesCarried,

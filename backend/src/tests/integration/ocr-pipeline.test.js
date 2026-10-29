@@ -16,6 +16,14 @@
 
 import { jest } from '@jest/globals';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
+
+const MIGRATION_038 = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..', '..', '..', 'migrations', '038_menu_item_hidden_names.sql',
+);
 
 jest.unstable_mockModule('pdf-parse/lib/pdf-parse.js', () => ({
   default: jest.fn(),
@@ -187,6 +195,9 @@ describe('OCR pipeline integration', () => {
 
   beforeEach(async () => {
     await pool.query('DELETE FROM menu_items WHERE establishment_id = $1', [establishment.id]);
+    // One establishment for the whole block: a dish hidden in one test is
+    // remembered (migration 038) and would come back hidden in the next.
+    await pool.query('DELETE FROM menu_item_hidden_names WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM ocr_jobs WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM establishment_media WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM notifications WHERE user_id = $1', [establishment.partner_id]);
@@ -201,6 +212,7 @@ describe('OCR pipeline integration', () => {
 
   afterAll(async () => {
     await pool.query('DELETE FROM menu_items WHERE establishment_id = $1', [establishment.id]);
+    await pool.query('DELETE FROM menu_item_hidden_names WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM ocr_jobs WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM establishment_media WHERE establishment_id = $1', [establishment.id]);
     await pool.query('DELETE FROM notifications WHERE user_id = $1', [establishment.partner_id]);
@@ -1024,6 +1036,272 @@ describe('OCR pipeline integration', () => {
         await moderator.query('ROLLBACK').catch(() => {});
         moderator.release();
       }
+    });
+
+    // ── The dish follows into the establishment's other files (п. 3а) ─────
+    // Until 29.10.2026 the decision lived in the rows of one file: a new photo
+    // or PDF of the same menu, or the file deleted and uploaded again, brought
+    // a hidden dish back to guests — and to dish search. Word of the
+    // Coordinator 29.10.2026 (п. 3а, П1а, П2а, П5а, П7а): the dish stays hidden
+    // in every file of the establishment, the ones uploaded later and after
+    // the file it was hidden in is deleted.
+    describe('the moderator\'s «Скрыть» follows the dish into the other files', () => {
+      const shownNames = async () => (await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: false }))
+        .map((it) => it.item_name)
+        .sort();
+      const systemEntries = async (ids) => (await pool.query(
+        `SELECT entity_id, user_id, new_data FROM audit_log
+         WHERE action = 'hide_menu_item' AND user_id IS NULL AND entity_id = ANY($1::uuid[])`,
+        [ids],
+      )).rows;
+      const hideByName = async (name) => {
+        const row = (await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true }))
+          .find((it) => it.item_name === name && it.is_hidden_by_admin !== true);
+        await adminService.hideMenuItem(row.id, { reason: HIDE_REASON, adminUserId });
+        return row;
+      };
+
+      afterAll(async () => {
+        await pool.query(
+          `DELETE FROM audit_log WHERE user_id IS NULL AND action = 'hide_menu_item' AND entity_type = 'menu_item'`,
+        );
+      });
+
+      test('a new file of the same menu comes in with the dish hidden; «Система» writes it once', async () => {
+        const { mediaId: photo } = await insertTestMedia(establishment.id, 'image');
+        await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: photo,
+          items: [
+            { item_name: 'Кальян на чаше', price_byn: 45, category_raw: 'Прочее', confidence: 0.9, position: 0 },
+            { item_name: 'Борщ', price_byn: 12, category_raw: 'Супы', confidence: 0.9, position: 1 },
+          ],
+        });
+        await hideByName('Кальян на чаше');
+
+        // The PDF of the same menu: another section, another price, another case.
+        const { mediaId: pdf } = await insertTestMedia(establishment.id, 'pdf');
+        const items = await reRead(pdf, [
+          { item_name: 'КАЛЬЯН на чаше', price_byn: 50, category_raw: 'Табак', confidence: 0.95 },
+          { item_name: 'Драники', price_byn: 9, category_raw: 'Горячее', confidence: 0.95 },
+        ]);
+        const pdfHookah = items.find((it) => it.media_id === pdf && it.item_name === 'КАЛЬЯН на чаше');
+        expect(pdfHookah).toMatchObject({ is_hidden_by_admin: true, hidden_reason: HIDE_REASON });
+        expect(await shownNames()).toEqual(['Борщ', 'Драники']);
+
+        // The journal: «Система», with the reason the dish was hidden for.
+        expect(await systemEntries([pdfHookah.id])).toEqual([{
+          entity_id: pdfHookah.id,
+          user_id: null,
+          new_data: { is_hidden_by_admin: true, reason: HIDE_REASON },
+        }]);
+
+        // A re-read of the same file carries its own decision over without a word.
+        const reread = await reRead(pdf, [
+          { item_name: 'Кальян на чаше', price_byn: 50, category_raw: 'Табак', confidence: 0.95 },
+        ]);
+        const rereadHookah = reread.find((it) => it.media_id === pdf);
+        expect(rereadHookah.is_hidden_by_admin).toBe(true);
+        expect(await systemEntries([rereadHookah.id])).toEqual([]);
+      });
+
+      test('inside a file the section decides first: a re-read keeps shown what «Скрыть» left shown there', async () => {
+        // Review of 29.10.2026 (both reviewers): «Скрыть» on «Чай» under
+        // «Напитки» of the photo hid «Чай» under «Завтраки» of the PDF and
+        // remembered it; a re-read of the photo must not turn its own shown
+        // «Чай» under «Завтраки» hidden on that strength.
+        const { mediaId: photo } = await insertTestMedia(establishment.id, 'pdf');
+        await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: photo,
+          items: [
+            { item_name: 'Чай', price_byn: 3, category_raw: 'Напитки', confidence: 0.9, position: 0 },
+            { item_name: 'Чай', price_byn: 2, category_raw: 'Завтраки', confidence: 0.9, position: 1 },
+          ],
+        });
+        const { mediaId: pdf } = await insertTestMedia(establishment.id, 'image');
+        await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: pdf,
+          items: [{ item_name: 'Чай', price_byn: 2, category_raw: 'Завтраки', confidence: 0.9, position: 0 }],
+        });
+        const drinks = (await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true }))
+          .find((it) => it.media_id === photo && it.category_raw === 'Напитки');
+        await adminService.hideMenuItem(drinks.id, { reason: HIDE_REASON, adminUserId });
+
+        const items = await reRead(photo, [
+          { item_name: 'Чай', price_byn: 3, category_raw: 'Напитки', confidence: 0.95 },
+          { item_name: 'Чай', price_byn: 2, category_raw: 'Завтраки', confidence: 0.95 },
+        ]);
+        const state = (mediaId, category) => items
+          .find((it) => it.media_id === mediaId && it.category_raw === category).is_hidden_by_admin;
+        expect(state(photo, 'Напитки')).toBe(true);
+        expect(state(photo, 'Завтраки')).toBe(false);
+        expect(state(pdf, 'Завтраки')).toBe(true);
+      });
+
+      test('the file deleted and uploaded again: the dish comes back hidden (the establishment remembers)', async () => {
+        const { mediaId: first } = await insertTestMedia(establishment.id, 'pdf');
+        await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: first,
+          items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+        });
+        await hideByName('Кальян на чаше');
+
+        await pool.query('DELETE FROM establishment_media WHERE id = $1', [first]);
+        expect(await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true })).toEqual([]);
+
+        const { mediaId: again } = await insertTestMedia(establishment.id, 'pdf');
+        const items = await reRead(again, [
+          { item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.95 },
+          { item_name: 'Борщ', price_byn: 12, category_raw: 'Супы', confidence: 0.95 },
+        ]);
+        expect(items.find((it) => it.item_name === 'Кальян на чаше'))
+          .toMatchObject({ is_hidden_by_admin: true, hidden_reason: HIDE_REASON });
+        expect(await shownNames()).toEqual(['Борщ']);
+      });
+
+      test('«Показать снова» forgets the dish: the next file shows it', async () => {
+        const { mediaId: first } = await insertTestMedia(establishment.id, 'pdf');
+        await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: first,
+          items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+        });
+        const row = await hideByName('Кальян на чаше');
+        await adminService.unhideMenuItem(row.id, { adminUserId });
+        await pool.query('DELETE FROM establishment_media WHERE id = $1', [first]);
+
+        const { mediaId: again } = await insertTestMedia(establishment.id, 'pdf');
+        await reRead(again, [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.95 }]);
+        expect(await shownNames()).toEqual(['Кальян на чаше']);
+      });
+
+      test('without migration 038 (before the operator step): no 500; the dish follows into a file that is still there', async () => {
+        // The table is dropped in the test database and put back in `finally`.
+        // A run killed between the two leaves it dropped, and the next run
+        // fails at the global TRUNCATE (testTables.js lists it): put it back by
+        // applying backend/migrations/038_menu_item_hidden_names.sql. The
+        // isolated runner (scripts/test-isolated) rebuilds its database anyway.
+        await pool.query('DROP TABLE menu_item_hidden_names');
+        try {
+          const { mediaId: photo } = await insertTestMedia(establishment.id, 'image');
+          await menuItemModel.createMany({
+            establishmentId: establishment.id,
+            mediaId: photo,
+            items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+          });
+          await hideByName('Кальян на чаше');
+
+          const { mediaId: pdf } = await insertTestMedia(establishment.id, 'pdf');
+          await reRead(pdf, [{ item_name: 'Кальян на чаше', price_byn: 50, category_raw: null, confidence: 0.95 }]);
+          expect(await shownNames()).toEqual([]);
+
+          // Without the memory a deleted file takes the decision with it — the
+          // operator step (038) closes this.
+          await pool.query('DELETE FROM establishment_media WHERE id = ANY($1::uuid[])', [[photo, pdf]]);
+          const { mediaId: again } = await insertTestMedia(establishment.id, 'pdf');
+          await reRead(again, [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.95 }]);
+          expect(await shownNames()).toEqual(['Кальян на чаше']);
+
+          const row = (await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true }))[0];
+          await adminService.hideMenuItem(row.id, { reason: HIDE_REASON, adminUserId });
+          await adminService.unhideMenuItem(row.id, { adminUserId });
+        } finally {
+          await pool.query(readFileSync(MIGRATION_038, 'utf8'));
+        }
+      });
+
+      test('a file written while «Скрыть» on another file holds the establishment waits and comes in hidden', async () => {
+        // Below HTTP on purpose, like the test above it: the moderator's write
+        // holds the establishment's lock; the recognition of another file must
+        // wait for it, and only then read the decisions.
+        const { mediaId: photo } = await insertTestMedia(establishment.id, 'image');
+        const [row] = await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: photo,
+          items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+        });
+        const { mediaId: pdf } = await insertTestMedia(establishment.id, 'pdf');
+
+        const moderator = await pool.connect();
+        try {
+          await moderator.query('BEGIN');
+          await moderator.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`menu_items:${establishment.id}`]);
+          await moderator.query(
+            'UPDATE menu_items SET is_hidden_by_admin = TRUE, hidden_reason = $2 WHERE id = $1',
+            [row.id, HIDE_REASON],
+          );
+
+          const writing = menuItemModel.replaceForMedia({
+            establishmentId: establishment.id,
+            mediaId: pdf,
+            newItems: [{ item_name: 'Кальян на чаше', price_byn: 50, category_raw: null, confidence: 0.95, position: 0 }],
+          });
+
+          let waiting = 0;
+          for (let i = 0; i < 100 && waiting === 0; i += 1) {
+            const activity = await pool.query(
+              `SELECT count(*)::int AS n FROM pg_stat_activity
+               WHERE datname = current_database() AND wait_event = 'advisory'`,
+            );
+            waiting = activity.rows[0].n;
+            if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          expect(waiting).toBe(1);
+
+          await moderator.query('COMMIT');
+          const { newItems } = await writing;
+          expect(newItems[0]).toMatchObject({ is_hidden_by_admin: true, hidden_reason: HIDE_REASON });
+        } finally {
+          await moderator.query('ROLLBACK').catch(() => {});
+          moderator.release();
+        }
+      });
+
+      test('«Скрыть» clicked while another file is being written waits and reaches its new rows', async () => {
+        const { mediaId: photo } = await insertTestMedia(establishment.id, 'image');
+        const [row] = await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: photo,
+          items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+        });
+        const { mediaId: pdf } = await insertTestMedia(establishment.id, 'pdf');
+
+        const writer = await pool.connect();
+        try {
+          // The recognition of the PDF, halfway: lock taken, its row written,
+          // not committed yet.
+          await writer.query('BEGIN');
+          await writer.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`menu_items:${establishment.id}`]);
+          await writer.query(
+            `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, position)
+             VALUES ($1, $2, 'Кальян на чаше', 50, 0)`,
+            [establishment.id, pdf],
+          );
+
+          const hiding = adminService.hideMenuItem(row.id, { reason: HIDE_REASON, adminUserId });
+
+          let waiting = 0;
+          for (let i = 0; i < 100 && waiting === 0; i += 1) {
+            const activity = await pool.query(
+              `SELECT count(*)::int AS n FROM pg_stat_activity
+               WHERE datname = current_database() AND wait_event = 'advisory'`,
+            );
+            waiting = activity.rows[0].n;
+            if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          expect(waiting).toBe(1);
+
+          await writer.query('COMMIT');
+          await hiding;
+          expect(await shownNames()).toEqual([]);
+        } finally {
+          await writer.query('ROLLBACK').catch(() => {});
+          writer.release();
+        }
+      });
     });
   });
 

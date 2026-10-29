@@ -383,6 +383,47 @@ class _FlagPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final flag = item.sanityFlag;
 
+    // Скрытая позиция без флага — законный житель вкладки «Скрытые» (находка
+    // К-1, 29.10.2026): очередь показывает все скрытые, с флагом и без. Флаг
+    // теряется у копии, скрытой вместе со строкой, у строки после повторного
+    // распознавания, у строки со снятым флагом, у блюда, скрытого в новом
+    // файле, потому что его скрыли раньше. Текст — слово Координатора
+    // 29.10.2026, дословно.
+    if ((flag == null || flag.isEmpty) && item.isHiddenByAdmin) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: AppTheme.canonCardDecoration(),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Icon(Icons.visibility_off_outlined,
+                size: 18, color: AppTheme.textSecondary),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text: 'Флага проверки нет',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.textPrimary,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' — позиция скрыта и остаётся во вкладке «Скрытые».',
+                      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (flag == null || flag.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -607,8 +648,8 @@ class _Actions extends StatelessWidget {
       context: context,
       builder: (_) => _ConfirmDialog(
         title: 'Показать снова?',
-        message: 'Позиция «${item.itemName}» вернётся в результаты поиска — '
-            '$kCopiesClause, скрытыми с той же причиной.',
+        message: 'Позиция «${item.itemName}» снова будет видна гостям — '
+            '$kCopiesClause, где она скрыта с той же причиной.',
         confirmLabel: 'Показать',
         confirmColor: AppTheme.statusGreen,
       ),
@@ -623,10 +664,15 @@ class _Actions extends StatelessWidget {
       context: context,
       builder: (_) => _ConfirmDialog(
         title: 'Снять флаг?',
-        message: 'Флаг снимется с позиции «${item.itemName}» и с её повторов в других файлах '
-            'меню того же заведения — гость видит их одной строкой. Позиции '
-            'уйдут из очереди. Скрытие и его причина, если они есть, '
-            'останутся без изменений.',
+        // У скрытой позиции — слово Координатора 29.10.2026, дословно: с
+        // вкладки «Скрытые» она не уходит (находка К-1).
+        message: item.isHiddenByAdmin
+            ? 'Флаг снимется. Скрытая позиция останется во вкладке «Скрытые» '
+                'со своей причиной.'
+            : 'Флаг снимется с позиции «${item.itemName}» и с её повторов в других файлах '
+                'меню того же заведения — гость видит их одной строкой. Позиции '
+                'уйдут из очереди. Скрытие и его причина, если они есть, '
+                'останутся без изменений.',
         confirmLabel: 'Снять флаг',
         confirmColor: AppTheme.primaryOrangeDark,
       ),
@@ -661,12 +707,12 @@ class _Actions extends StatelessWidget {
   }
 }
 
-/// Действия над позицией доходят до её повторов: одно меню, загруженное
-/// фото и PDF, гость видит одной строкой (PR #107, правило копий). До
-/// 21.10.2026 диалоги об этом молчали, и в очереди пропадало сразу
-/// несколько строк (пункт A1-07).
-const String kCopiesClause =
-    'вместе с повторами этой строки в других файлах меню';
+/// «Скрыть» и «Показать снова» действуют на блюдо во всех файлах меню
+/// заведения, и «Скрыть» — на файлы, которые партнёр загрузит позже (слово
+/// Координатора 29.10.2026, п. 3а и П1–П7; тексты диалогов — дословно).
+/// До 21.10.2026 диалоги молчали и о повторах строки, и в очереди пропадало
+/// сразу несколько строк (пункт A1-07).
+const String kCopiesClause = 'во всех файлах меню этого заведения';
 
 /// Подтверждение без ввода.
 class _ConfirmDialog extends StatelessWidget {
@@ -749,8 +795,9 @@ class _HideDialogState extends State<_HideDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              'Позиция «${widget.itemName}» перестанет показываться в поиске — '
-              '$kCopiesClause. Флаг проверки при этом останется.',
+              'Позиция «${widget.itemName}» перестанет показываться гостям — '
+              '$kCopiesClause, и в тех, что партнёр загрузит позже. '
+              'Флаг проверки при этом останется.',
               style: const TextStyle(fontSize: 14, color: AppTheme.textDark),
             ),
             const SizedBox(height: 12),
