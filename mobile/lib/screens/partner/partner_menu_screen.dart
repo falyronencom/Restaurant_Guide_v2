@@ -106,7 +106,7 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
         case MenuRecognitionStatus.notStarted:
           return _buildNotStartedState();
         case MenuRecognitionStatus.done:
-          return provider.hasHiddenItems
+          return _showsHiddenState(provider)
               ? _buildHiddenState()
               : _buildNothingFoundState();
         case MenuRecognitionStatus.none:
@@ -299,20 +299,32 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
   }
 
   /// Файл прочитан, а список пуст потому, что позиции скрыты модератором
-  /// (`hasHiddenItems`, находка КО-1). Скрытие держится за название блюда и
-  /// переживает повторное распознавание, поэтому совет «более чёткое фото»
-  /// здесь только тратил суточные попытки. Текст — решение Координатора
-  /// 29.10.2026 (вариант Б): модератор не назван, адрес поддержки — тот же,
+  /// (`hasHiddenItems`, находка КО-1): совет «более чёткое фото» здесь только
+  /// тратил суточные попытки. Текст — решения Координатора 29.10.2026
+  /// (вариант Б; «По рекомендации», 21:18Z): модератор не назван, о новом
+  /// фото и перезапуске — ни слова (скрытие держится за название блюда в том
+  /// же файле, и обещание тут было бы неверным); адрес поддержки — тот же,
   /// что в отказах сервера.
   Widget _buildHiddenState() {
     return _buildMessageState(
       icon: Icons.visibility_off_outlined,
       title: 'Позиции не показываются',
       hint: 'Файл прочитан, но позиции из него сейчас не показываются гостям. '
-          'Новое фото того же меню этого не изменит — напишите в поддержку: '
+          'Если это ошибка — напишите в поддержку: '
           '${DeleteAccountScreen.supportEmail}',
     );
   }
+
+  /// На экране — «Позиции не показываются» (те же условия, что выбирает
+  /// [_buildContent]). По нему же прячется кнопка перезапуска: перечитанный
+  /// файл даст те же скрытые позиции, а нажатие тратит суточную попытку
+  /// (решение Координатора 29.10.2026).
+  bool _showsHiddenState(PartnerMenuProvider provider) =>
+      provider.items.isEmpty &&
+      !provider.isLoading &&
+      provider.error == null &&
+      provider.recognition?.status == MenuRecognitionStatus.done &&
+      provider.hasHiddenItems;
 
   static const String _notStartedTitle = 'Распознавание не запущено';
   static const String _notStartedHint = 'Файл загружен, но распознавание не '
@@ -585,6 +597,7 @@ class _PartnerMenuScreenState extends State<PartnerMenuScreen> {
   Widget _buildRetryBar() {
     return Consumer<PartnerMenuProvider>(
       builder: (context, provider, _) {
+        if (_showsHiddenState(provider)) return const SizedBox.shrink();
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),

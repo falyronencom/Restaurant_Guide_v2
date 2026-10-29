@@ -42,11 +42,11 @@ const _nothingFoundHint = 'Файл прочитан, но блюд и цен в
     'Загрузите более чёткое фото или другой файл в разделе «Медиа».';
 const _retryButton = 'Перезапустить распознавание';
 
-/// Решения Координатора 29.10.2026 («1 — Б; 2 — да»), дословно.
+/// Решения Координатора 29.10.2026 («1 — Б; 2 — да»; пояснение — «По
+/// рекомендации», 21:18Z), дословно.
 const _hiddenTitle = 'Позиции не показываются';
 const _hiddenHint = 'Файл прочитан, но позиции из него сейчас не показываются '
-    'гостям. Новое фото того же меню этого не изменит — напишите в поддержку: '
-    'support@nirivio.by';
+    'гостям. Если это ошибка — напишите в поддержку: support@nirivio.by';
 const _noFilesTitle = 'Меню ещё не загружено';
 const _noFilesHint = 'Добавьте фото страниц меню или PDF в разделе «Медиа» — '
     'позиции появятся здесь сами через несколько минут.';
@@ -288,7 +288,11 @@ void main() {
     expect(find.text(_hiddenHint), findsOneWidget);
     expect(find.text(_nothingFoundTitle), findsNothing);
     expect(find.textContaining('чёткое фото'), findsNothing);
+    expect(find.textContaining('Новое фото'), findsNothing);
     expect(find.textContaining('модератор'), findsNothing);
+    // Перечитанный файл даст те же скрытые позиции, а нажатие тратит суточную
+    // попытку: кнопки перезапуска здесь нет (решение Координатора 29.10.2026).
+    expect(find.text(_retryButton), findsNothing);
   });
 
   testWidgets(
@@ -305,6 +309,8 @@ void main() {
     expect(find.text(_nothingFoundTitle), findsOneWidget);
     expect(find.text(_nothingFoundHint), findsOneWidget);
     expect(find.text(_hiddenTitle), findsNothing);
+    expect(find.text(_retryButton), findsOneWidget,
+        reason: 'кнопка прячется только при скрытых');
   });
 
   testWidgets(
@@ -326,6 +332,7 @@ void main() {
     });
     expect(find.text(_processingTitle), findsOneWidget);
     expect(find.text(_hiddenTitle), findsNothing);
+    expect(find.text(_retryButton), findsOneWidget);
 
     await show({
       'success': true,
@@ -346,6 +353,7 @@ void main() {
     expect(find.text('Борщ'), findsOneWidget);
     expect(find.text(_hiddenTitle), findsNothing);
     expect(find.text(_bannerTitle), findsNothing);
+    expect(find.text(_retryButton), findsOneWidget);
   });
 
   // Ревью 25.10.2026 (линза), то же для признака скрытых: сервер не смог его
@@ -372,6 +380,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text(_hiddenTitle), findsOneWidget);
     expect(find.text(_nothingFoundTitle), findsNothing);
+    expect(find.text(_retryButton), findsNothing);
   });
 
   testWidgets('сервер без поля (до правки) и статус, которого сборка не знает, '
