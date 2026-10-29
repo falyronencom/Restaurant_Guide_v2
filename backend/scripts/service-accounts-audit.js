@@ -92,7 +92,9 @@ const buildClient = () => {
  * expiry columns are naive timestamps in the server's clock, and a count
  * that does not depend on the reader's time zone is the stricter one. Live
  * refresh tokens are counted a second time against the database's clock
- * (unspent and not expired) — the sessions someone may actually hold.
+ * (unspent and not expired) — the sessions someone may actually hold. A
+ * panel account's token past a day without renewal is not live either: it
+ * can no longer be renewed (config/panelRoles.js, PANEL_SESSION_IDLE_MS).
  */
 const ACCOUNTS_SQL = `
   WITH cards AS (
@@ -114,7 +116,8 @@ const ACCOUNTS_SQL = `
          (SELECT COUNT(*)::int FROM refresh_tokens rt
            WHERE rt.user_id = u.id AND rt.used_at IS NULL) AS unspent_refresh,
          (SELECT COUNT(*)::int FROM refresh_tokens rt
-           WHERE rt.user_id = u.id AND rt.used_at IS NULL AND rt.expires_at > LOCALTIMESTAMP) AS live_refresh,
+           WHERE rt.user_id = u.id AND rt.used_at IS NULL AND rt.expires_at > LOCALTIMESTAMP
+             AND (u.role NOT IN ('admin', 'viewer') OR rt.created_at > LOCALTIMESTAMP - INTERVAL '24 hours')) AS live_refresh,
          (SELECT COUNT(*)::int FROM password_reset_tokens pr
            WHERE pr.user_id = u.id AND pr.used_at IS NULL) AS unspent_reset_links,
          (SELECT COUNT(*)::int FROM password_reset_tokens pr WHERE pr.user_id = u.id) AS reset_links_ever,

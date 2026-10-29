@@ -60,10 +60,14 @@ const addCard = (partnerId, status = 'active') => query(
   [partnerId, status],
 );
 
-const addRefreshToken = (userId, { used = false } = {}) => query(
+// ageHours: created that long ago, expiring 30 days after that — as the
+// server writes a row, only older.
+const addRefreshToken = (userId, { used = false, ageHours = 0 } = {}) => query(
   `INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at, used_at)
-   VALUES (gen_random_uuid(), $1, $2, NOW() + INTERVAL '30 days', NOW(), ${used ? 'NOW()' : 'NULL'})`,
-  [userId, `audit-${randomUUID()}`],
+   VALUES (gen_random_uuid(), $1, $2,
+           NOW() - make_interval(hours => $3) + INTERVAL '30 days',
+           NOW() - make_interval(hours => $3), ${used ? 'NOW()' : 'NULL'})`,
+  [userId, `audit-${randomUUID()}`, ageHours],
 );
 
 const addResetLink = (userId) => query(
@@ -121,6 +125,10 @@ describe('scripts/service-accounts-audit.js', () => {
     await addRefreshToken(ids.adminForeign);
     await addRefreshToken(ids.adminForeign);
     await addRefreshToken(ids.adminForeign, { used: true });
+    // A day without renewal: dead for a panel account, alive for a partner
+    // (config/panelRoles.js, PANEL_SESSION_IDLE_MS).
+    await addRefreshToken(ids.adminForeign, { ageHours: 25 });
+    await addRefreshToken(ids.partnerPerson, { ageHours: 25 });
     await addResetLink(ids.adminForeign);
     await addDevice(ids.adminForeign);
     await addEmailCode(ids.seedReviewer);
@@ -213,11 +221,12 @@ describe('scripts/service-accounts-audit.js', () => {
     const { parsed } = report();
     const accounts = byId(parsed);
     expect(accounts[ids.adminForeign]).toMatchObject({
-      unspentRefreshTokens: 2, liveRefreshTokens: 2, unspentResetLinks: 1, resetLinksEver: 1, activeDevices: 1, hasPassword: true, hasPhone: false,
+      unspentRefreshTokens: 3, liveRefreshTokens: 2, unspentResetLinks: 1, resetLinksEver: 1, activeDevices: 1, hasPassword: true, hasPhone: false,
     });
     expect(accounts[ids.seedHouse]).toMatchObject({
       cards: 3, activeCards: 2, hasPassword: false, providerLinked: true, authMethod: 'google',
     });
+    expect(accounts[ids.partnerPerson]).toMatchObject({ unspentRefreshTokens: 1, liveRefreshTokens: 1 });
     expect(accounts[ids.seedReviewer].unspentEmailCodes).toBe(1);
     expect(parsed.summary.oursUnspentRefreshTokens).toBe(1);
     expect(parsed.migration035).toBe(true);
