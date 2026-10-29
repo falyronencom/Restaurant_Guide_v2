@@ -44,10 +44,10 @@ export const isViewer = (role) => role === VIEWER_ROLE;
  * decision 2026-10-29, S1 option «а»). Every other role keeps the 30 days of
  * the refresh token's expires_at.
  *
- * The panel renews only when its access token runs out (JWT_ACCESS_EXPIRY,
- * 4 h by default), so a moderator at work renews several times a day and is
- * never logged out; one who has not opened the panel for a day has to log in
- * again. Measured from the refresh token's created_at — each renewal mints a
+ * The panel renews only when its access token runs out (one hour for the
+ * panel's accounts, config/accessToken.js), so a moderator at work renews many
+ * times a day and is never logged out; one who has not opened the panel for a
+ * day has to log in again. Measured from the refresh token's created_at — each renewal mints a
  * new row — and not written into expires_at: that column stays at 30 days so
  * that a chain's expires_at keeps growing along the chain, which the pruner's
  * oldest-first order relies on (services/refreshTokenPruner.js) — a 30-day

@@ -2,6 +2,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import logger from './logger.js';
+import { accessTokenLifetime } from '../config/accessToken.js';
+import { isPanelRole } from '../config/panelRoles.js';
 
 // Load environment variables
 // In test environment, .env.test is loaded by Jest setup
@@ -11,7 +13,6 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_ACCESS_EXPIRY = process.env.JWT_ACCESS_EXPIRY || '4h';
 
 /**
  * The JWT_SECRET values the repository itself publishes — the root
@@ -120,6 +121,8 @@ if (secretProblem) {
  * the account behind the token in the database (middleware/auth.js).
  *
  * Architecture decision: 4 hour expiry balances security and mobile UX.
+ * The panel's accounts get one hour (config/accessToken.js): admin-web renews
+ * on the 401 by itself, and its tokens are the ones worth stealing.
  * Short expiry limits the damage window if a token is compromised, while refresh
  * tokens allow seamless session continuation. 15m was too aggressive for mobile
  * apps where users leave the app for hours between sessions.
@@ -151,7 +154,11 @@ export const generateAccessToken = (payload) => {
   };
 
   return jwt.sign(tokenPayload, JWT_SECRET, {
-    expiresIn: JWT_ACCESS_EXPIRY,
+    // A number is seconds to jsonwebtoken; the other roles keep the
+    // variable's own string, signed exactly as before.
+    expiresIn: isPanelRole(payload.role)
+      ? accessTokenLifetime().panelSeconds
+      : accessTokenLifetime().expiresIn,
     issuer: 'restaurant-guide-belarus',
     audience: 'restaurant-guide-api',
   });
