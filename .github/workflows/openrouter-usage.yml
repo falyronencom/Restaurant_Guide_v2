@@ -1,0 +1,85 @@
+name: Расход OpenRouter
+
+# Сторож расхода OpenRouter (нитка «Нагрузка и расходы», директива D8,
+# 28.10.2026; логика и причины — backend/scripts/openrouter-usage/watch.js).
+#
+# Зачем. Умный поиск и распознавание меню ходят к моделям одним ключом, а у
+# ключа потолок трат. Кончится он — умный поиск тихо станет обычным, меню
+# перестанут распознаваться. Раз в неделю workflow читает остаток ключа и
+# краснеет, если осталось меньше порога (по умолчанию 30 % — решение
+# Координатора 28.10.2026) или сторож ослеп (сервер не ответил, не прочитал
+# ключ, в ответе нет полей, данные устарели). Итог — одной строкой на
+# странице прогона. Красный прогон по расписанию — уведомление GitHub тому,
+# кто последним менял строку cron.
+#
+# Откуда остаток. Сервер сам спрашивает OpenRouter о своём ключе и отдаёт
+# в публичном GET /api/v1/search/health блок model_key — только проценты,
+# без денег (backend/src/services/openRouterKeyStatus.js). Секретов у
+# workflow нет: ключ не выходит из Railway (решение Trunk 28.10.2026).
+# Баланс аккаунта сторож не читает — для этого нужен ключ управления, а
+# его утечка стоила бы всего баланса и ключа сервера.
+#
+# Почему только schedule и workflow_dispatch — как у соседних сторожей:
+# «Wait for CI» у Railway смотрит на ВСЕ проверки коммита, и красный сторож
+# на push сорвал бы выкатку. Тест
+# backend/src/tests/unit/openRouterUsageWatch.test.js валится, если сюда
+# добавят другое событие.
+#
+# Почему пятница 02:17 UTC (05:17 Минска). Ночью push в main не бывает. Не
+# понедельник и не среда: там в 02:17 идут сторож сроков моделей и сторож
+# Cloudinary, а защита выкатки каждого приняла бы прогон соседа за CI
+# свежего push и отложила бы свой провал. Время — не гарантия: сам скрипт
+# откладывает провал, если на коммите ещё идёт или только что закончился
+# другой прогон (поэтому actions: read).
+#
+# Порог по умолчанию меняет переменная репозитория OPENROUTER_ALARM_PERCENT
+# (Settings → Secrets and variables → Actions → Variables). Ручной запуск
+# (Actions → «Расход OpenRouter» → Run workflow) принимает порог; порог 100
+# даёт нарочно красный прогон, пока с ключа потрачен хоть цент, — так
+# проверяется, что уведомление доходит. Уведомление о ручном запуске
+# получает запустивший.
+#
+# В публичном репозитории GitHub выключает расписание после 60 дней без
+# активности — после долгой паузы включить его в Actions вручную.
+
+on:
+  schedule:
+    - cron: '17 2 * * 5'
+  workflow_dispatch:
+    inputs:
+      alarm_percent:
+        description: 'Порог тревоги, % остатка ключа (пусто — 30 или переменная OPENROUTER_ALARM_PERCENT; 100 — нарочно красный прогон)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  usage:
+    name: Расход OpenRouter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Токен не нужен после checkout: git дальше не используется.
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Сверить остаток ключа с порогом
+        # Зависимости не нужны: скрипт читает проверку здоровья встроенным
+        # fetch. Ввод формы передаётся переменной окружения, не подстановкой
+        # в команду; форма github.event.inputs, а не inputs — по расписанию
+        # полей формы нет, и строка пустая (как в model-expiry.yml).
+        working-directory: backend
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ALARM_PERCENT: ${{ github.event.inputs.alarm_percent || vars.OPENROUTER_ALARM_PERCENT }}
+        run: node scripts/openrouter-usage/check.js

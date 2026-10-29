@@ -17,8 +17,14 @@ jest.unstable_mockModule('../../services/smartSearchBudget.js', () => ({
   getBudgetHealth: jest.fn(),
 }));
 
+// The server's OpenRouter key block (D8, 28.10.2026) — its own module too.
+jest.unstable_mockModule('../../services/openRouterKeyStatus.js', () => ({
+  getKeyHealth: jest.fn(),
+}));
+
 const searchService = await import('../../services/searchService.js');
 const smartSearchBudget = await import('../../services/smartSearchBudget.js');
+const openRouterKeyStatus = await import('../../services/openRouterKeyStatus.js');
 const {
   searchEstablishments,
   searchMap,
@@ -180,11 +186,13 @@ describe('searchController', () => {
         postgis: 'unhealthy'
       });
       smartSearchBudget.getBudgetHealth.mockResolvedValue({ degraded: true });
+      openRouterKeyStatus.getKeyHealth.mockResolvedValue({ status: 'ok', remaining_percent: 99 });
 
       await searchHealth(req, res, next);
 
       // Changed on purpose (D5, 25.10.2026): the answer carries `smart` beside
       // PostGIS's fields, and its `degraded` does not decide the status code.
+      // And (D8, 28.10.2026) `model_key` beside them — the key's remaining share.
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
@@ -201,8 +209,21 @@ describe('searchController', () => {
               rejected_secret: expect.any(Number),
             },
           },
+          model_key: { status: 'ok', remaining_percent: 99 },
         }
       });
+    });
+
+    test('a key that could not be read leaves a healthy PostGIS at 200', async () => {
+      const res = createRes();
+      searchService.checkSearchHealth.mockResolvedValue({ healthy: true, postgis: 'healthy' });
+      smartSearchBudget.getBudgetHealth.mockResolvedValue({ degraded: false });
+      openRouterKeyStatus.getKeyHealth.mockResolvedValue({ status: 'unknown', unknown_reason: 'http_401' });
+
+      await searchHealth({}, res, jest.fn());
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json.mock.calls[0][0].data.model_key.unknown_reason).toBe('http_401');
     });
 
     test('a degraded smart search leaves a healthy PostGIS at 200', async () => {

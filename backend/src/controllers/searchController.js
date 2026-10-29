@@ -6,6 +6,7 @@
 
 import * as searchService from '../services/searchService.js';
 import * as smartSearchBudget from '../services/smartSearchBudget.js';
+import { getKeyHealth } from '../services/openRouterKeyStatus.js';
 import { isAvailable } from '../config/openrouter.js';
 import { siteRequestTallies } from '../middleware/siteVisitor.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -251,20 +252,27 @@ export async function getEstablishmentById(req, res, next) {
  * recognised (middleware/siteVisitor.js). Aggregates only. Its `degraded`
  * does not change the status code: 200/503 stays PostGIS's
  * (searchService.checkSearchHealth, whose shape is pinned by tests).
+ *
+ * `model_key` (D8, 28.10.2026): how much of the server's OpenRouter key is
+ * left, in whole percent, and whether its limit resets
+ * (services/openRouterKeyStatus.js) — read by the weekly watchdog
+ * (.github/workflows/openrouter-usage.yml). No money, no key; `unknown` with
+ * a code when it could not be read. It does not change the status code either.
  */
 export async function searchHealth(req, res, next) {
   try {
-    const health = await searchService.checkSearchHealth();
-    const smart = {
-      ...await smartSearchBudget.getBudgetHealth({ modelAvailable: isAvailable() }),
-      site_requests: siteRequestTallies(),
-    };
+    const [health, smartBudget, modelKey] = await Promise.all([
+      searchService.checkSearchHealth(),
+      smartSearchBudget.getBudgetHealth({ modelAvailable: isAvailable() }),
+      getKeyHealth(),
+    ]);
+    const smart = { ...smartBudget, site_requests: siteRequestTallies() };
 
     const statusCode = health.healthy ? 200 : 503;
 
     res.status(statusCode).json({
       success: health.healthy,
-      data: { ...health, smart },
+      data: { ...health, smart, model_key: modelKey },
     });
   } catch (error) {
     next(error);
