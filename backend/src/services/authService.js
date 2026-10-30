@@ -488,7 +488,9 @@ export async function refreshAccessToken(refreshToken) {
     const result = await pool.query(REFRESH_TOKEN_ROW_SQL, [lookup]);
 
     if (result.rows.length === 0) {
-      logger.warn('Refresh token not found', { token: `${refreshToken.substring(0, 10)  }...` });
+      // Not one character of the presented token: it is a credential, and a
+      // piece of it identifies nothing a reader could use (30.10.2026).
+      logger.warn('Refresh token not found');
       throw new Error('INVALID_REFRESH_TOKEN');
     }
 
@@ -812,9 +814,8 @@ export async function invalidateRefreshToken(refreshToken) {
     const wasInvalidated = result.rowCount > 0;
     
     if (wasInvalidated) {
-      logger.info('Refresh token invalidated', { 
-        token: `${refreshToken.substring(0, 10)  }...`, 
-      });
+      // No piece of the token, as in refreshAccessToken (30.10.2026).
+      logger.info('Refresh token invalidated');
     }
     
     return wasInvalidated;
@@ -1307,8 +1308,9 @@ export async function authenticateWithOAuth(providerData) {
         // 2b. Unverified email cannot claim existing account. Refused before
         // the switched-off answer below: an address the provider has not
         // confirmed gets the same answer whatever the record behind it is.
+        // The account by its id, never the address (30.10.2026).
         logger.warn('OAuth login: unverified email tried to claim existing account', {
-          email,
+          userId: existingUser.id,
           provider,
         });
         throw new Error('OAUTH_EMAIL_NOT_VERIFIED');
@@ -1417,7 +1419,6 @@ export async function authenticateWithOAuth(providerData) {
     logger.info('OAuth login: new user created', {
       userId: newUser.id,
       provider,
-      email,
     });
 
     const tokens = await generateTokenPair(newUser);
@@ -1435,7 +1436,13 @@ export async function authenticateWithOAuth(providerData) {
     }
     // Handle unique constraint violations (race condition: concurrent OAuth signup)
     if (error.code === '23505') {
-      logger.warn('OAuth signup race condition detected', { email, provider });
+      // No account exists to name: the constraint tells which race it was
+      // (the address or the provider's account). Not the address, and not
+      // pg's `detail` — that one quotes it (30.10.2026).
+      logger.warn('OAuth signup race condition detected', {
+        provider,
+        constraint: error.constraint,
+      });
       throw new Error('OAUTH_ACCOUNT_CONFLICT');
     }
     logger.error('OAuth authentication failed', { error: error.message, provider });

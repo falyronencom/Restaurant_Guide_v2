@@ -69,9 +69,13 @@ function handleValidationErrors(req, res, next) {
       return acc;
     }, {});
     
-    logger.warn('Validation failed', { 
-      errors: formattedErrors,
-      path: req.path, 
+    // The log gets the field by its name as a value, the way errorHandler's
+    // validate writes it: keyed by the field, `email` and `phone` would be
+    // blanked whole by the logger's personal-data rule, and the reason with
+    // them (30.10.2026). The answer keeps its grouped shape.
+    logger.warn('Validation failed', {
+      errors: errors.array().map((error) => ({ field: error.path, message: error.msg })),
+      path: req.path,
     });
     
     // A refusal written for a person (the name's, utils/userName.js) is also

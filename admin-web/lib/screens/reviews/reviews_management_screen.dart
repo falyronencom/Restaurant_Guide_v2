@@ -735,13 +735,9 @@ class _ReviewCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : BoxDecoration(
-                  color: AppTheme.backgroundWarm,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  // Прозрачная рамка той же ширины: без неё выбор карточки
-                  // сдвигает список под ней.
-                  border: Border.all(color: Colors.transparent, width: 1.5),
-                ),
+              // Рамка той же ширины, что у выбранной: без неё выбор
+              // карточки сдвигает список под ней.
+              : AppTheme.listCardDecoration(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -999,10 +995,7 @@ class _ListSkeleton extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, __) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppTheme.backgroundWarm,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        ),
+        decoration: AppTheme.listCardDecoration(),
         child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,

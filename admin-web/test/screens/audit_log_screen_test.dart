@@ -479,7 +479,7 @@ void main() {
 
       // Регистр в e-mail не должен превращать своё действие в чужое.
       expect(avatarColor('В'), AppTheme.primaryOrangeDark);
-      expect(avatarColor('М'), AppTheme.gray500);
+      expect(avatarColor('М'), AppTheme.textTertiary);
     });
   });
 

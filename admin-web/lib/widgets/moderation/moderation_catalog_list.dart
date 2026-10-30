@@ -288,16 +288,9 @@ class ModerationCatalogCard extends StatelessWidget {
           padding: const EdgeInsets.all(padding),
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : BoxDecoration(
-                  color: AppTheme.backgroundWarm,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  // Прозрачная рамка той же ширины: без неё выбор карточки
-                  // сдвигает список под ней.
-                  border: Border.all(
-                    color: Colors.transparent,
-                    width: borderWidth,
-                  ),
-                ),
+              // Рамка той же ширины, что у выбранной: без неё выбор
+              // карточки сдвигает список под ней.
+              : AppTheme.listCardDecoration(borderWidth: borderWidth),
           child: SizedBox(
             height: contentHeight,
             child: Row(
@@ -444,7 +437,9 @@ class _CatalogSkeleton extends StatelessWidget {
       itemBuilder: (_, __) => Container(
         height: ModerationCatalogCard.height,
         padding: const EdgeInsets.all(ModerationCatalogCard.padding),
-        decoration: AppTheme.canonPanelDecoration(radius: AppTheme.radiusMedium),
+        decoration: AppTheme.listCardDecoration(
+          borderWidth: ModerationCatalogCard.borderWidth,
+        ),
         child: const Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

@@ -167,11 +167,15 @@ export const installShutdownHandlers = ({ processRef, gracefulShutdown, logger }
     gracefulShutdown('UNCAUGHT_EXCEPTION');
   });
 
-  processRef.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled promise rejection', {
-      reason,
-      promise,
-    });
+  // An Error is handed over as its text, the way the line above writes one:
+  // the object itself printed as {} — its message and stack are not
+  // enumerable — and a database error printed its `detail`, which quotes the
+  // row's values, an e-mail or a phone among them (30.10.2026). The promise
+  // printed as {} as well.
+  processRef.on('unhandledRejection', (reason) => {
+    logger.error('Unhandled promise rejection', reason instanceof Error
+      ? { error: reason.message, code: reason.code, stack: reason.stack }
+      : { reason });
     gracefulShutdown('UNHANDLED_REJECTION');
   });
 };

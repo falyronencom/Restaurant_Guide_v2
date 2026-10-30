@@ -7,9 +7,10 @@ import 'package:flutter/material.dart';
 /// с редизайном админки (проект Claude Design «Admin-web UI анализ Всеволода»,
 /// файл `Admin-web редизайн.dc.html`, 18 кадров) и его HANDOFF.md от 10.08.2026.
 ///
-/// Правило из разбора редизайна: **новых оттенков не изобретать**. Под бежевыми
-/// плитами (`backgroundWarm`, `beigeDivider`) берётся ближайший канонический
-/// серый — `textSecondary`, `textTertiary`, `textGrey`, `strokeGrey`.
+/// Цвета панели заменены 29.10.2026 решением Координатора (палитра «холодная
+/// контрастная», вариант 3 показа): тёмное меню, холодные серые, все тексты
+/// не ниже 4,5 : 1. Правило редизайна «новых оттенков не изобретать» с этого
+/// дня относится к шрифтам, радиусам и теням; цвета — ниже, с причинами.
 ///
 /// Значения, помеченные `admin-local`, в mobile-каноне отсутствуют и введены
 /// редизайном админки: радиус 10, `beigeDivider`, `borderLight`, витринный
@@ -43,8 +44,19 @@ class AppTheme {
   // ============================================================================
 
   static const Color primaryOrange = Color(0xFFF06B32);
-  static const Color primaryOrangeDark = Color(0xFFDB4F13);
+
+  /// Тёмный оранжевый — оранжевый в МЕЛКОМ тексте: активная вкладка, ссылка,
+  /// подпись поля в фокусе. Прежний #DB4F13 давал на белом 4,1 : 1 (F-12),
+  /// этот — 5,85 : 1. Крупный оранжевый — основные кнопки, графики, вордмарк
+  /// в меню — остаётся брендовым [primaryOrange].
+  static const Color primaryOrangeDark = Color(0xFFB23E0C);
   static const Color primaryOrangeLight = Color(0xFFEC723D);
+
+  /// Вордмарк NIRIVIO на светлых экранах — вход, заставка, «не найдено».
+  /// Знак бренда, а не мелкий текст: прежний тёмно-оранжевый остаётся (на
+  /// светлой поверхности 3,75 : 1 — норма для крупного текста 3 : 1). На
+  /// тёмном меню вордмарк рисуется брендовым [primaryOrange].
+  static const Color wordmarkOrange = Color(0xFFDB4F13);
 
   /// Тёплая тень. В каноне все тени строятся на нём, холодных чёрных теней нет.
   static const Color primaryOrangeShadow = Color(0xFFD35620);
@@ -52,20 +64,71 @@ class AppTheme {
   // ============================================================================
   // Цвета — поверхности
   // ============================================================================
+  // Палитра панели — «холодная контрастная» (вариант 3, выбор Координатора
+  // 29.10.2026): тёмное меню слева, белые карточки с холодной рамкой,
+  // холодный тёмный текст. Прежняя бежевая палитра сливала меню с карточками
+  // очереди (F-10) и держала мелкий серый текст ниже 4,5 : 1 (F-11). Каждый
+  // текстовый цвет на своём фоне стережёт test/config/theme_contrast_test.dart.
 
   static const Color backgroundPrimary = Colors.white;
 
-  /// Бежевая витринная поверхность.
-  static const Color backgroundWarm = Color(0xFFF4F1EC);
+  /// Светлая витринная поверхность: панель «Требует внимания», пустые
+  /// состояния, сегмент-контрол периода. Имя историческое — до 29.10 она была
+  /// бежевой.
+  static const Color backgroundWarm = Color(0xFFF4F5F7);
 
-  /// admin-local: разделитель внутри бежевого (рейл, строки пустых состояний).
-  static const Color beigeDivider = Color(0xFFE4DFD6);
+  /// admin-local: разделитель внутри светлой поверхности, подложка значка в
+  /// карточке списка, рамка карточки списка.
+  static const Color beigeDivider = Color(0xFFDDE1E6);
 
   /// admin-local: тонкая граница — низ хедера экрана, разделители строк и вкладок.
-  static const Color borderLight = Color(0xFFECE8E1);
+  static const Color borderLight = Color(0xFFE6E9ED);
 
   /// Рамка: инструментальные карточки, поля ввода, outline-кнопки.
-  static const Color strokeGrey = Color(0xFFD2D2D2);
+  static const Color strokeGrey = Color(0xFFCDD3DA);
+
+  // --- Меню слева (тёмное) ----------------------------------------------------
+  // Своя группа цветов: на тёмном фоне общие тексты панели не читаются, а
+  // меню должно быть видно отдельной зоной.
+
+  static const Color railBackground = Color(0xFF20242A);
+
+  /// Граница меню и черта между группами свёрнутого меню, верхом подвала.
+  static const Color railDivider = Color(0xFF343A42);
+
+  /// Подпись пункта и имя вошедшего.
+  static const Color railText = Color(0xFFE6E8EB);
+
+  /// Значки пунктов, заголовки групп, подпись под вордмарком, роль, кнопки
+  /// «свернуть» и «выйти».
+  static const Color railMuted = Color(0xFFA7AEB8);
+
+  /// Раздел-заглушка («скоро»): приглушён, но читается.
+  static const Color railSoon = Color(0xFF8D95A0);
+
+  /// Активный пункт: подложка, подпись и значок.
+  static const Color railActiveBackground = Color(0xFF353B44);
+  static const Color railActiveText = Color(0xFFFF8A57);
+
+  /// Цифра бейджа очереди и её подложка — бренд @18% поверх [railBackground].
+  static const Color railBadgeText = Color(0xFFFF8A57);
+  static Color get railBadgeBackground => brandTint(0.18);
+
+  /// Отклик пункта меню на наведение, нажатие и фокус с клавиатуры. Отклик
+  /// темы по умолчанию — чёрный полупрозрачный — на тёмном меню не виден.
+  static const Color railHover = Color(0x14FFFFFF);
+  static const Color railPressed = Color(0x24FFFFFF);
+
+  // --- Карточки списков (очередь, каталог) ------------------------------------
+
+  /// Белые с рамкой — отличаются от меню и от выбранной карточки (та с
+  /// оранжевой рамкой).
+  static const Color listCardBackground = Colors.white;
+  static const Color listCardBorder = beigeDivider;
+
+  /// Чип на невыбранной карточке списка: срок ожидания, причина флага или
+  /// приостановки. Светлый на белой карточке; у выбранной — disclaimer-пара.
+  static const Color listChipBackground = backgroundWarm;
 
   // --- Оттенки скелетона (admin-local) --------------------------------------
   // Три ступени «веса» блока-заглушки. Эталон — кадр 17 макета: оттенок
@@ -76,8 +139,8 @@ class AppTheme {
   /// Сильный блок скелетона. Совпадает с [beigeDivider] — это одно значение
   /// канона в двух ролях, не два похожих.
   static const Color skeletonStrong = beigeDivider;
-  static const Color skeletonMid = Color(0xFFE9E4DC);
-  static const Color skeletonWeak = Color(0xFFEEEAE3);
+  static const Color skeletonMid = Color(0xFFE5E8EC);
+  static const Color skeletonWeak = Color(0xFFECEEF1);
 
   // ============================================================================
   // Цвета — статусы
@@ -88,18 +151,27 @@ class AppTheme {
   static const Color errorRed = Color(0xFFF44336);
 
   /// Disclaimer-пара: «скрыт», «приостановлено», причина приостановки.
-  static const Color disclaimerText = Color(0xFFA07A52);
+  static const Color disclaimerText = Color(0xFF80592F);
   static const Color disclaimerBg = Color(0xFFF7EFE6);
 
   // ============================================================================
   // Цвета — текст
   // ============================================================================
+  // Три ступени серого различаются и оттенком, и тем, где стоят; все три — не
+  // ниже 4,5 : 1 на белом и на светлой поверхности. Иерархию мелкого текста
+  // держат кегль и вес, а не бледность.
 
-  static const Color textPrimary = Color(0xFF000000);
-  static const Color textDark = Color(0xFF3E3E3E);
-  static const Color textSecondary = gray600;
-  static const Color textTertiary = gray500;
-  static const Color textGrey = Color(0xFFABABAB);
+  static const Color textPrimary = Color(0xFF0F1216);
+  static const Color textDark = Color(0xFF2C323A);
+
+  /// Подписи полей, подзаголовки экранов, вторичные строки карточек.
+  static const Color textSecondary = Color(0xFF4A5361);
+
+  /// Даты, счётчики, пояснения под строкой.
+  static const Color textTertiary = Color(0xFF56606D);
+
+  /// Самое тихое: «не указана», подсказки в полях, «Закрыто».
+  static const Color textGrey = Color(0xFF5F6976);
   static const Color textOnPrimary = Colors.white;
 
   // ============================================================================
@@ -355,7 +427,8 @@ class AppTheme {
     color: textSecondary,
   );
 
-  /// Вордмарк NIRIVIO в рейле: Josefin Sans 24, тёмно-оранжевый.
+  /// Вордмарк NIRIVIO: Josefin Sans 24, [wordmarkOrange]. В тёмном меню
+  /// перекрашивается в брендовый [primaryOrange].
   ///
   /// Спека редизайна называет w700, но вшито w600 (JosefinSans-SemiBold) —
   /// решение владельца от 11.08.2026: не тащить новый файл ради одного
@@ -366,7 +439,7 @@ class AppTheme {
     fontWeight: FontWeight.w600,
     letterSpacing: 0.5,
     height: 1,
-    color: primaryOrangeDark,
+    color: wordmarkOrange,
   );
 
   /// Подпись под вордмарком: 10/w600 uppercase, ls .14em → 1.4.
@@ -374,7 +447,7 @@ class AppTheme {
     fontSize: 10,
     fontWeight: FontWeight.w600,
     letterSpacing: 1.4,
-    color: textSecondary,
+    color: railMuted,
   );
 
   /// Заголовок секции рейла: 10/w600 uppercase, ls .12em → 1.2.
@@ -382,7 +455,7 @@ class AppTheme {
     fontSize: 10,
     fontWeight: FontWeight.w600,
     letterSpacing: 1.2,
-    color: textSecondary,
+    color: railMuted,
   );
 
   /// Пометка «скоро» у тупикового пункта рейла: 10/w600 uppercase, ls .06em → 0.6.
@@ -392,12 +465,12 @@ class AppTheme {
   /// видел только первые 11 кадров (обрезка `get_file` на 256 KiB) и потому
   /// счёл её отсутствующей.
   ///
-  /// У помеченного пункта приглушается всё: иконка и подпись тоже `textGrey`.
+  /// У помеченного пункта приглушается всё: иконка и подпись тоже `railSoon`.
   static const TextStyle canonRailSoonLabel = TextStyle(
     fontSize: 10,
     fontWeight: FontWeight.w600,
     letterSpacing: 0.6,
-    color: textGrey,
+    color: railSoon,
   );
 
   /// Подпись колонки таблицы: 11/w600 uppercase, ls .08em → 0.88.
@@ -451,6 +524,17 @@ class AppTheme {
       BoxDecoration(
         color: backgroundWarm,
         borderRadius: BorderRadius.circular(radius),
+      );
+
+  /// Невыбранная карточка списка — очередь, каталог, отзывы, пользователи,
+  /// позиции меню — и её скелетон: белая, тонкая холодная рамка. Рамка той же
+  /// ширины, что у выбранной (1.5): иначе выбор раздвигает карточку, и весь
+  /// список под ней прыгает.
+  static BoxDecoration listCardDecoration({double borderWidth = 1.5}) =>
+      BoxDecoration(
+        color: listCardBackground,
+        borderRadius: BorderRadius.circular(radiusMedium),
+        border: Border.all(color: listCardBorder, width: borderWidth),
       );
 
   /// Выбранная карточка списка: белая, рамка 1.5px светлым брендовым, тень @8%.
