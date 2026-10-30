@@ -70,7 +70,8 @@
     {
       "action": "hide_menu_item",
       "entity_type": "menu_item",
-      "summary": "Скрыта позиция меню"
+      "summary": "Скрыта позиция меню",
+      "summary_without_actor": "Позиция скрыта автоматически — это блюдо модератор скрыл раньше"
     },
     {
       "action": "unhide_menu_item",

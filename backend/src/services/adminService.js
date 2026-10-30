@@ -1409,15 +1409,16 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 // ============================================================================
 
 /**
- * «Скрыть», «Вернуть» and «Снять флаг» on one row reach its copies. The guest sees one line
- * for a dish the menu's files share (collapseMenuRepeats): hiding the photo's
- * copy would leave the dish on the card from the PDF. Each copy gets its own
- * audit entry, marked with the row the moderator acted on.
+ * «Снять флаг» on one row reaches its copies. The guest sees one line
+ * for a dish the menu's files share (collapseMenuRepeats): a flag left on a
+ * copy kept the same dish in the queue. Each copy gets its own audit entry,
+ * marked with the row the moderator acted on. («Скрыть» and «Показать снова»
+ * reach further — the dish in every file of the establishment — and do it in
+ * one transaction of their own: MenuItemModel.hideDish / unhideDish.)
  *
  * The copies are found among the rows as the guest saw them before the action
- * — `before`: the visible rows for «Скрыть»; for «Вернуть» also the rows hidden
- * with the same reason — so the line is the one the guest had (the guest's
- * grouping sees no hidden rows). The row acted on is always among them.
+ * — `before` — so the line is the one the guest had (the guest's grouping sees
+ * no hidden rows). The row acted on is always among them.
  *
  * A re-read of a copy's file (replaceForMedia) may delete the copy while it
  * is being changed — the new rows of that file then come back without the
@@ -1465,7 +1466,35 @@ const applyToMenuItemCopies = async (existing, rule, change, params) => {
 };
 
 /**
- * Hide a parsed menu item from user-facing search.
+ * Audit entries of a moderator's action on a dish: one for the row acted on,
+ * one for each other row the action reached, marked with copy_of.
+ *
+ * @param {Object} row - The row acted on
+ * @param {Object[]} others - The other rows changed
+ * @param {Object} entry - { action, oldData, newData }
+ * @param {Object} params - { adminUserId, ipAddress, userAgent }
+ */
+const auditDishAction = async (row, others, { action, oldData, newData }, params) => {
+  for (const target of [row, ...others]) {
+    await AuditLogModel.createAuditLog({
+      user_id: params.adminUserId,
+      action,
+      entity_type: 'menu_item',
+      entity_id: target.id,
+      old_data: oldData,
+      new_data: target.id === row.id ? newData : { ...newData, copy_of: row.id },
+      ip_address: params.ipAddress,
+      user_agent: params.userAgent,
+    });
+  }
+};
+
+/**
+ * Hide a parsed menu item from user-facing search — the dish, in every file
+ * of the establishment (MenuItemModel.hideDish): the row, the repeats of its
+ * line, the shown rows of the same dish in the other files; and the dish is
+ * remembered, so a file uploaded later comes back with it hidden (decision of
+ * the Coordinator 29.10.2026, п. 3а, П2а).
  * Parallel to suspendEstablishment: validate reason, guard state, update,
  * write audit log (awaited; it swallows its own errors). Phase 1: no partner
  * notification.
@@ -1479,7 +1508,7 @@ const applyToMenuItemCopies = async (existing, rule, change, params) => {
  * @returns {Promise<Object>} Updated menu_items row
  */
 export const hideMenuItem = async (menuItemId, params) => {
-  const { reason, adminUserId, ipAddress, userAgent } = params;
+  const { reason, adminUserId } = params;
 
   if (!reason || !reason.trim()) {
     throw new AppError('Укажите причину скрытия', 400, 'REASON_REQUIRED');
@@ -1498,12 +1527,16 @@ export const hideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  const updated = await MenuItemModel.updateById(menuItemId, {
-    is_hidden_by_admin: true,
-    hidden_reason: reason,
-  });
+  const result = await MenuItemModel.hideDish({ menuItemId, reason });
 
-  if (!updated) {
+  if (result.status === 'already') {
+    throw new AppError(
+      'Позиция уже скрыта',
+      400,
+      'MENU_ITEM_ALREADY_HIDDEN',
+    );
+  }
+  if (result.status !== 'done') {
     throw new AppError(
       'Позицию только что изменили или удалили — обновите список',
       409,
@@ -1511,31 +1544,13 @@ export const hideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  await AuditLogModel.createAuditLog({
-    user_id: adminUserId,
+  const { row: updated, others } = result;
+  await auditDishAction(updated, others, {
     action: 'hide_menu_item',
-    entity_type: 'menu_item',
-    entity_id: menuItemId,
-    old_data: { is_hidden_by_admin: false },
-    new_data: { is_hidden_by_admin: true, reason },
-    ip_address: ipAddress,
-    user_agent: userAgent,
-  });
-
-  const copies = await applyToMenuItemCopies(
-    existing,
-    {
-      before: row => row.is_hidden_by_admin !== true,
-      applies: copy => copy.is_hidden_by_admin !== true,
-    },
-    {
-      updates: { is_hidden_by_admin: true, hidden_reason: reason },
-      action: 'hide_menu_item',
-      oldData: { is_hidden_by_admin: false },
-      newData: { is_hidden_by_admin: true, reason },
-    },
-    params,
-  );
+    oldData: { is_hidden_by_admin: false },
+    newData: { is_hidden_by_admin: true, reason },
+  }, params);
+  const copies = others.map(other => other.id);
 
   // Phase 1 decision (Segment C): no partner notification on hide.
   // Partners do not see hidden items in their cabinet, so a push pointing to
@@ -1565,7 +1580,11 @@ export const hideMenuItem = async (menuItemId, params) => {
 };
 
 /**
- * Unhide a previously hidden menu item — restores it to search results.
+ * Unhide a previously hidden menu item — restores it to search results: the
+ * dish, in every file of the establishment, and forgets it
+ * (MenuItemModel.unhideDish; decision of the Coordinator 29.10.2026, П3а).
+ * Back come the rows of the same dish hidden for the same reason; a row hidden
+ * for another reason was a decision of its own and stays hidden.
  *
  * Per directive: no partner notification on unhide (opposite direction of hide,
  * partner can see state change in cabinet without extra push).
@@ -1578,7 +1597,7 @@ export const hideMenuItem = async (menuItemId, params) => {
  * @returns {Promise<Object>} Updated menu_items row
  */
 export const unhideMenuItem = async (menuItemId, params) => {
-  const { adminUserId, ipAddress, userAgent } = params;
+  const { adminUserId } = params;
 
   const existing = await MenuItemModel.findById(menuItemId);
   if (!existing) {
@@ -1593,12 +1612,16 @@ export const unhideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  const updated = await MenuItemModel.updateById(menuItemId, {
-    is_hidden_by_admin: false,
-    hidden_reason: null,
-  });
+  const result = await MenuItemModel.unhideDish({ menuItemId });
 
-  if (!updated) {
+  if (result.status === 'not_hidden') {
+    throw new AppError(
+      'Позиция уже показана',
+      400,
+      'MENU_ITEM_NOT_HIDDEN',
+    );
+  }
+  if (result.status !== 'done') {
     throw new AppError(
       'Позицию только что изменили или удалили — обновите список',
       409,
@@ -1606,34 +1629,13 @@ export const unhideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  await AuditLogModel.createAuditLog({
-    user_id: adminUserId,
+  const { row: updated, others, forgotten } = result;
+  await auditDishAction(updated, others, {
     action: 'unhide_menu_item',
-    entity_type: 'menu_item',
-    entity_id: menuItemId,
-    old_data: { is_hidden_by_admin: true },
-    new_data: { is_hidden_by_admin: false },
-    ip_address: ipAddress,
-    user_agent: userAgent,
-  });
-
-  // Back come the copies hidden with this row — the same reason; a copy hidden
-  // for another reason was a decision of its own and stays hidden: it is not
-  // among the rows the copies are looked for in.
-  const copies = await applyToMenuItemCopies(
-    existing,
-    {
-      before: row => row.is_hidden_by_admin !== true || row.hidden_reason === existing.hidden_reason,
-      applies: copy => copy.is_hidden_by_admin === true,
-    },
-    {
-      updates: { is_hidden_by_admin: false, hidden_reason: null },
-      action: 'unhide_menu_item',
-      oldData: { is_hidden_by_admin: true },
-      newData: { is_hidden_by_admin: false },
-    },
-    params,
-  );
+    oldData: { is_hidden_by_admin: true },
+    newData: { is_hidden_by_admin: false },
+  }, params);
+  const copies = others.map(other => other.id);
 
   // Размер очереди изменился — счётчики рейла обязаны это увидеть
   // сразу, иначе бейдж до полминуты показывал бы число, которое
@@ -1650,6 +1652,7 @@ export const unhideMenuItem = async (menuItemId, params) => {
     menuItemId,
     adminUserId,
     copies,
+    forgotten,
   });
 
   return updated;

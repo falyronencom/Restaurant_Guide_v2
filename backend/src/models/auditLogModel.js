@@ -472,6 +472,7 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'operator_reset_admin' AND al.entity_type = 'user' THEN 'Администратору задан пароль'
         WHEN al.action = 'operator_promote_admin' AND al.entity_type = 'user' THEN 'Учётная запись повышена до администратора'
         WHEN al.action = 'admin_update_slug' AND al.entity_type = 'establishment' THEN 'Адрес страницы изменён'
+        WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' AND al.user_id IS NULL THEN 'Позиция скрыта автоматически — это блюдо модератор скрыл раньше'
         WHEN al.action = 'hide_menu_item' AND al.entity_type = 'menu_item' THEN 'Скрыта позиция меню'
         WHEN al.action = 'unhide_menu_item' AND al.entity_type = 'menu_item' THEN 'Показана позиция меню'
         WHEN al.action = 'dismiss_sanity_flag' AND al.entity_type = 'menu_item' THEN 'Снят флаг с позиции меню'

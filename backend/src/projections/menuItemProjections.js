@@ -29,22 +29,13 @@
  * (per MenuItemModel.getByEstablishmentId({ includeHidden: false })).
  */
 
-import { normalizeMenuItemName } from '../utils/menuItemName.js';
+import { dishKey } from '../utils/menuItemName.js';
 
 /**
- * Text as two recognitions of one menu may differ in it: the name as
- * normalizeMenuItemName reads it (case, spaces), plus ё/е, the kind of dash and
- * quotes. Quotes go before the spaces are collapsed: «Салат « Цезарь »» and
- * «Салат "Цезарь"» must meet on one spacing.
- *
- * @param {string|null|undefined} text
- * @returns {string}
+ * Text as two recognitions of one menu may differ in it (utils/menuItemName.js
+ * — the same rule a moderator's «Скрыть» follows the dish by).
  */
-const readAsGuest = (text) => normalizeMenuItemName(
-  (text ?? '')
-    .replace(/["«»„“”'‘’‚‛]/g, '')
-    .replace(/[‐-―−]/g, '-'),
-).replace(/ё/g, 'е');
+const readAsGuest = dishKey;
 
 /**
  * What the guest takes for "the same line" of a menu: the same name
