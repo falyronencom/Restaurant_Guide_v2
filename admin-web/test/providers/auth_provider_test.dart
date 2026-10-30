@@ -333,13 +333,13 @@ void main() {
       return auth.errorMessage;
     }
 
-    test('401 неверный пароль → «Неверный email или пароль»', () async {
+    test('401 неверный пароль → «Неверный email или пароль.»', () async {
       expect(
         await refusal((_) => jsonBody(
               rejectedBody('INVALID_CREDENTIALS', 'Invalid email/phone or password'),
               status: 401,
             )),
-        'Неверный email или пароль',
+        'Неверный email или пароль.',
       );
     });
 

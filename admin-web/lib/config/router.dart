@@ -56,6 +56,20 @@ Widget approvedScreenFor(Uri uri) {
   );
 }
 
+/// Страница панели — без перехода: новый экран встаёт на место прежнего за
+/// один кадр.
+///
+/// Обычная страница Material (`builder:` у маршрута) живёт 300 мс перехода,
+/// и всё это время прежний экран остаётся под новым. Тема ещё 20.10 убрала с
+/// перехода анимацию (`InstantPageTransitionsBuilder`, F-30), но не сам
+/// переход: экраны разделов прозрачны, и заголовки двух разделов на миг
+/// видны разом — так это увидел Координатор после выкатки новой палитры
+/// 30.10. Страница без перехода заменяет экран сразу. Диалоги — свои
+/// маршруты поверх страниц, их это не касается; «Назад» браузера приходит
+/// сюда же новым адресом. Сторож — test/config/router_section_transition_test.dart.
+Page<void> panelPage(GoRouterState state, Widget child) =>
+    NoTransitionPage<void>(key: state.pageKey, child: child);
+
 /// Create GoRouter with auth redirect guard
 ///
 /// Created once and uses [refreshListenable] to re-evaluate redirects
@@ -66,7 +80,8 @@ GoRouter createRouter(AuthProvider authProvider) {
     refreshListenable: authProvider,
     // Неизвестный адрес — устаревшая закладка, опечатка. Стандартная страница
     // пакета английская, с текстом исключения (пункт A3-25).
-    errorBuilder: (context, state) => const NotFoundScreen(),
+    errorPageBuilder: (context, state) =>
+        panelPage(state, const NotFoundScreen()),
     redirect: (BuildContext context, GoRouterState state) {
       final isAuthenticated = authProvider.isAuthenticated;
       final isLoading = authProvider.isLoading;
@@ -116,23 +131,27 @@ GoRouter createRouter(AuthProvider authProvider) {
     routes: [
       GoRoute(
         path: splashPath,
-        builder: (context, state) => const SplashScreen(),
+        pageBuilder: (context, state) =>
+            panelPage(state, const SplashScreen()),
       ),
       GoRoute(
         path: '/login',
-        builder: (context, state) => const LoginScreen(),
+        pageBuilder: (context, state) =>
+            panelPage(state, const LoginScreen()),
       ),
       ShellRoute(
-        builder: (context, state, child) => AdminShell(child: child),
+        pageBuilder: (context, state, child) =>
+            panelPage(state, AdminShell(child: child)),
         routes: [
           GoRoute(
             path: '/',
-            builder: (context, state) => const DashboardScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const DashboardScreen()),
           ),
           GoRoute(
             path: '/moderation/pending',
-            builder: (context, state) =>
-                const PendingModerationScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const PendingModerationScreen()),
           ),
           // `?q=<название>` открывает экран сразу с поиском по всем статусам —
           // так на карточку ведут примеры сигналов «Здоровья данных» (К-6,
@@ -140,60 +159,65 @@ GoRouter createRouter(AuthProvider authProvider) {
           // а не прежний экран со старым текстом в поле.
           GoRoute(
             path: '/moderation/approved',
-            builder: (context, state) => approvedScreenFor(state.uri),
+            pageBuilder: (context, state) =>
+                panelPage(state, approvedScreenFor(state.uri)),
           ),
           GoRoute(
             path: '/moderation/rejected',
-            builder: (context, state) =>
-                const RejectedScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const RejectedScreen()),
           ),
           GoRoute(
             path: '/moderation/suspended',
-            builder: (context, state) =>
-                const SuspendedScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const SuspendedScreen()),
           ),
           GoRoute(
             path: '/moderation/menu-items',
-            builder: (context, state) =>
-                const MenuItemsModerationScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const MenuItemsModerationScreen()),
           ),
           GoRoute(
             path: '/settings/analytics',
-            builder: (context, state) =>
-                const AnalyticsContainerScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const AnalyticsContainerScreen()),
           ),
           GoRoute(
             path: kReviewsPath,
-            builder: (context, state) => ReviewsManagementScreen(
-              initialAuthorId: state.uri.queryParameters['author'],
-              initialRating: state.uri.queryParameters['rating'],
+            pageBuilder: (context, state) => panelPage(
+              state,
+              ReviewsManagementScreen(
+                initialAuthorId: state.uri.queryParameters['author'],
+                initialRating: state.uri.queryParameters['rating'],
+              ),
             ),
           ),
           GoRoute(
             path: kUsersPath,
-            builder: (context, state) => UsersScreen(
-              initialUserId: state.uri.queryParameters['user'],
+            pageBuilder: (context, state) => panelPage(
+              state,
+              UsersScreen(initialUserId: state.uri.queryParameters['user']),
             ),
           ),
           GoRoute(
             path: '/settings/payments',
-            builder: (context, state) =>
-                const PaymentsScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const PaymentsScreen()),
           ),
           GoRoute(
             path: '/settings/notifications',
-            builder: (context, state) =>
-                const NotificationsScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const NotificationsScreen()),
           ),
           GoRoute(
             path: '/audit-log',
-            builder: (context, state) =>
-                const AuditLogScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const AuditLogScreen()),
           ),
           GoRoute(
             path: '/quality/health',
-            builder: (context, state) =>
-                const QualityHealthScreen(),
+            pageBuilder: (context, state) =>
+                panelPage(state, const QualityHealthScreen()),
           ),
         ],
       ),

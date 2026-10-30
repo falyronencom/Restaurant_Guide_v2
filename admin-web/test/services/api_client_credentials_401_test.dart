@@ -131,9 +131,9 @@ void main() {
     expect((refusal.response?.data as Map)['error']['code'],
         'INVALID_CREDENTIALS',
         reason: 'ответ сервера доходит как есть: по его коду разбор говорит '
-            '«Неверный email или пароль»; подмена отказом «сессия истекла» '
+            '«Неверный email или пароль.»; подмена отказом «сессия истекла» '
             'потеряла бы и ответ, и причину');
-    expect(refusal.error, 'Неверный email или пароль');
+    expect(refusal.error, 'Неверный email или пароль.');
     expect(
       adapter.requests.map((r) => r.uri.path).toList(),
       ['/api/v1/admin/auth/login'],

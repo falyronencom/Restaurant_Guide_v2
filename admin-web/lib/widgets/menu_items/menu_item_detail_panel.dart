@@ -494,7 +494,7 @@ class _FlagPanel extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.errorRed,
+                        color: AppTheme.errorStrong,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -587,14 +587,14 @@ class _Actions extends StatelessWidget {
         if (!item.isHiddenByAdmin)
           FilledButton.icon(
             onPressed: busy ? null : () => _hide(context),
-            style: AppTheme.canonCtaL(backgroundColor: AppTheme.errorRed),
+            style: AppTheme.canonCtaL(backgroundColor: AppTheme.errorStrong),
             icon: const Icon(Icons.visibility_off_outlined, size: 19),
             label: const Text('Скрыть позицию'),
           )
         else
           FilledButton.icon(
             onPressed: busy ? null : () => _unhide(context),
-            style: AppTheme.canonCtaL(backgroundColor: AppTheme.statusGreen),
+            style: AppTheme.canonCtaL(backgroundColor: AppTheme.successStrong),
             icon: const Icon(Icons.visibility_outlined, size: 19),
             label: const Text('Показать снова'),
           ),
@@ -651,7 +651,7 @@ class _Actions extends StatelessWidget {
         message: 'Позиция «${item.itemName}» снова будет видна гостям — '
             '$kCopiesClause, где она скрыта с той же причиной.',
         confirmLabel: 'Показать',
-        confirmColor: AppTheme.statusGreen,
+        confirmColor: AppTheme.successStrong,
       ),
     );
     if (confirmed != true || !context.mounted) return;
@@ -844,7 +844,7 @@ class _HideDialogState extends State<_HideDialog> {
                   onPressed:
                       missing > 0 ? null : () => Navigator.of(context).pop(reason),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.errorRed,
+                    backgroundColor: AppTheme.errorStrong,
                     disabledBackgroundColor: AppTheme.strokeGrey,
                     disabledForegroundColor: AppTheme.textSecondary,
                   ),

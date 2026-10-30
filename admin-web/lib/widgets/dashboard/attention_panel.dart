@@ -84,8 +84,8 @@ class _Row extends StatelessWidget {
 
   Color get _countColor => switch (item.effectiveTone) {
         AttentionTone.normal => AppTheme.primaryOrangeDark,
-        AttentionTone.critical => AppTheme.errorRed,
-        AttentionTone.clear => AppTheme.statusGreen,
+        AttentionTone.critical => AppTheme.errorStrong,
+        AttentionTone.clear => AppTheme.successStrong,
       };
 
   @override

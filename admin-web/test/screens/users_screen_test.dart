@@ -607,7 +607,11 @@ void main() {
       pageKey: const ValueKey<String>('users'),
     );
 
-    final screen = route!.builder!(tester.element(find.byType(SizedBox)), state);
+    // Маршруты панели строят страницу без перехода (`panelPage`), экран —
+    // её содержимое.
+    final page =
+        route!.pageBuilder!(tester.element(find.byType(SizedBox)), state);
+    final screen = (page as NoTransitionPage<void>).child;
 
     expect(
         screen,
