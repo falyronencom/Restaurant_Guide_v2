@@ -383,3 +383,60 @@ describe.each([
     );
   });
 });
+
+// Until 30.10.2026 every line about a letter — sent, refused, timed out, not
+// configured — carried the recipient's address (toEmail). The account names
+// the person; the address stays out of the log, whichever way the send ends.
+describe.each([
+  ['sendVerificationCodeEmail', (ctx) => emailService.sendVerificationCodeEmail('Anna.Petrova@test.by', '123456', 'Анна', ctx)],
+  ['sendPasswordResetEmail', (ctx) => emailService.sendPasswordResetEmail('Anna.Petrova@test.by', 'a1b2c3', 'Анна', ctx)],
+])('emailService.%s — the recipient address is not logged', (_name, send) => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    emailService._resetForTests();
+    mockResendCtor.mockImplementation(() => ({
+      emails: { send: mockSend },
+    }));
+    process.env.RESEND_API_KEY = 're_test_key';
+    process.env.EMAIL_SEND_TIMEOUT_MS = '20';
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  const logged = () => ['info', 'warn', 'error'].flatMap((level) => logger[level].mock.calls);
+
+  test.each([
+    ['sent', () => mockSend.mockResolvedValue({ data: { id: 'msg-1' }, error: null })],
+    ['the provider answers with an error', () => mockSend.mockResolvedValue({ data: null, error: { name: 'application_error' } })],
+    ['the send throws', () => mockSend.mockRejectedValue(new Error('Network failure'))],
+    ['the provider does not answer in time', () => mockSend.mockReturnValue(new Promise(() => {}))],
+    ['no mail provider (tests, dev)', () => { process.env.RESEND_API_KEY = ''; }],
+    ['no mail provider in production', () => { process.env.RESEND_API_KEY = ''; process.env.NODE_ENV = 'production'; }],
+  ])('%s: the account is there, the address is not', async (_case, arrange) => {
+    arrange();
+
+    try {
+      await send({ userId: 'user-7' });
+    } finally {
+      process.env.NODE_ENV = originalEnv.NODE_ENV;
+    }
+
+    expect(logged().length).toBeGreaterThan(0);
+    const text = JSON.stringify(logged()).toLowerCase();
+    expect(text).not.toContain('anna.petrova');
+    expect(text).not.toContain('test.by');
+    expect(logged().some(([, context]) => context?.userId === 'user-7')).toBe(true);
+  });
+
+  test('without an account named by the caller: no address either', async () => {
+    mockSend.mockResolvedValue({ data: null, error: { name: 'application_error' } });
+
+    await send(undefined);
+
+    expect(JSON.stringify(logged()).toLowerCase()).not.toContain('anna.petrova');
+  });
+});

@@ -20,8 +20,9 @@
 
 import { jest } from '@jest/globals';
 import { body } from 'express-validator';
-import logger from '../../utils/logger.js';
+import logger, { redactSensitiveData } from '../../utils/logger.js';
 import { errorHandler, validate, validatePersonText } from '../../middleware/errorHandler.js';
+import { validateLogin } from '../../validators/authValidation.js';
 
 // Значение, которое не должно уйти никуда, и то, что должно остаться.
 const ENTERED = 'Текст-отзыва-введённый-человеком-7';
@@ -103,5 +104,39 @@ describe('тело не JSON (body-parser)', () => {
     // `stack` ответ несёт только вне продакшена — это отладка, не текст клиенту.
     const { stack: _devStack, ...visible } = payload;
     expect(JSON.stringify(visible)).not.toContain('Secr3t');
+  });
+});
+
+// Свой обработчик authValidation.js (вход, регистрация) писал отказы картой по
+// имени поля: { email: [...], phone: [...] }. С 30.10.2026 журнал вычищает поле
+// с именем на email/phone целиком (utils/logger.js) — вместе с ним пропадала бы
+// причина отказа (ревью Phase 3.5, оба ревьюера). Теперь — как у validate:
+// имя поля значением. Проверяется то, что журнал НАПЕЧАТАЕТ: вызов прогоняется
+// через его страховку.
+describe('authValidation (вход): причина отказа по почте и телефону видна в журнале', () => {
+  test('поле и текст отказа доходят до вывода журнала, введённое — нет', async () => {
+    const req = {
+      body: { email: 'не-почта', phone: '80291234567', password: 'x' },
+      path: '/login',
+      method: 'POST',
+    };
+    const handler = validateLogin[validateLogin.length - 1];
+    for (const chain of validateLogin.slice(0, -1)) {
+      await chain.run(req);
+    }
+    const res = { status: jest.fn(), json: jest.fn() };
+    res.status.mockReturnValue(res);
+    handler(req, res, jest.fn());
+
+    const logged = warn.mock.calls.filter(([message]) => message === 'Validation failed');
+    expect(logged).toHaveLength(1);
+    const printed = redactSensitiveData().transform({ level: 'warn', message: logged[0][0], ...logged[0][1] });
+
+    expect(printed.errors).toEqual(expect.arrayContaining([
+      { field: 'email', message: 'Invalid email format' },
+      { field: 'phone', message: 'Invalid phone number. Use format: +375XXXXXXXXX' },
+    ]));
+    expect(JSON.stringify(printed)).not.toContain('не-почта');
+    expect(JSON.stringify(printed)).not.toContain('80291234567');
   });
 });

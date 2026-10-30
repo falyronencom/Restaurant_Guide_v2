@@ -31,9 +31,10 @@
  *
  * It costs one thing in the logs, which is worth knowing because the retention
  * tail below was partly bought for them: such a presentation now takes the
- * "Refresh token not found" branch, whose metadata is a prefix of the token
- * string, instead of "Expired refresh token used", whose metadata is the
- * userId. Past the tail there is no longer a row to name the user from
+ * "Refresh token not found" branch, which carries no metadata (until
+ * 30.10.2026 a prefix of the token string), instead of "Expired refresh
+ * token used", whose metadata is the userId. Past the tail there is no
+ * longer a row to name the user from
  * (authService.refreshAccessToken).
  *
  * Pure: reads the env object it is given, never process.env, and returns the
