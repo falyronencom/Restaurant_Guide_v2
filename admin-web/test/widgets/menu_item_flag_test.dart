@@ -283,15 +283,21 @@ void main() {
     expect(find.textContaining('PDF · стр. 1'), findsOneWidget);
   });
 
-  // A1-07: действия доходят до повторов строки в других файлах меню — и
-  // диалоги говорят об этом (правило копий, PR #107).
-  testWidgets('«Скрыть» и «Снять флаг» говорят о повторах строки',
+  // «Скрыть» действует на блюдо во всех файлах меню заведения, и в будущих
+  // (п. 3а, П2а); «Снять флаг» у видимой — на повторы строки (A1-07, PR #107).
+  // Тексты — слово Координатора 29.10.2026, дословно.
+  testWidgets('«Скрыть» говорит о всех файлах заведения, «Снять флаг» — о повторах строки',
       (tester) async {
     await _pump(tester, _known);
 
     await tester.tap(find.text('Скрыть позицию'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('вместе с повторами этой строки'), findsOneWidget);
+    expect(
+      find.text('Позиция «Драники» перестанет показываться гостям — во всех файлах '
+          'меню этого заведения, и в тех, что партнёр загрузит позже. Флаг '
+          'проверки при этом останется.'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Отмена'));
     await tester.pumpAndSettle();
 
@@ -300,6 +306,49 @@ void main() {
     expect(find.textContaining('с её повторов в других файлах меню'),
         findsOneWidget);
     expect(find.textContaining('«Драники»'), findsOneWidget);
+  });
+
+  testWidgets('у скрытой позиции: «Показать снова» и «Снять флаг» — тексты слова Координатора',
+      (tester) async {
+    await _pump(tester, _item(id: 'hidden', flag: _known.sanityFlag!, hidden: true));
+
+    await tester.tap(find.text('Показать снова'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Позиция «Драники» снова будет видна гостям — во всех файлах меню '
+          'этого заведения, где она скрыта с той же причиной.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Отмена'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Снять флаг'));
+    await tester.pumpAndSettle();
+    // С вкладки «Скрытые» она не уходит (К-1) — прежний текст «уйдут из
+    // очереди» был бы неправдой.
+    expect(
+      find.text('Флаг снимется. Скрытая позиция останется во вкладке «Скрытые» '
+          'со своей причиной.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('уйдут из очереди'), findsNothing);
+  });
+
+  testWidgets('скрытая позиция без флага: карточка говорит, что она скрыта и остаётся',
+      (tester) async {
+    await _pump(tester, _item(id: 'hidden-clean', flag: const <String, dynamic>{}, hidden: true));
+
+    expect(
+      find.text('Флага проверки нет — позиция скрыта и остаётся во вкладке «Скрытые».',
+          findRichText: true),
+      findsOneWidget,
+    );
+    // Прежняя карточка «Флаг снят» обещала, что позиция уйдёт из очереди.
+    expect(find.text('Флаг снят'), findsNothing);
+    expect(find.textContaining('уйдёт из очереди'), findsNothing);
+    // Снимать нечего — кнопки нет; вернуть можно.
+    expect(find.text('Снять флаг'), findsNothing);
+    expect(find.text('Показать снова'), findsOneWidget);
   });
 
   testWidgets('без файла кнопки нет', (tester) async {

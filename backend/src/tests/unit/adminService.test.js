@@ -47,6 +47,8 @@ jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   updateById: jest.fn(),
   getByEstablishmentId: jest.fn(),
   getFlaggedItems: jest.fn(),
+  hideDish: jest.fn(),
+  unhideDish: jest.fn(),
   // Не функция, но экспорт: `getFlaggedMenuItems` сверяет по нему режим видимости.
   // Мок без него молча отдал бы undefined, и валидация упала бы на `.includes`
   // вместо того, чтобы отвергнуть неизвестный режим.
@@ -1380,28 +1382,38 @@ describe('hideMenuItem', () => {
 
     await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_ALREADY_HIDDEN', statusCode: 400 });
-    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+    expect(MenuItemModel.hideDish).not.toHaveBeenCalled();
   });
 
-  test('throws MENU_ITEM_HIDE_CONFLICT when updateById returns null', async () => {
+  test('throws MENU_ITEM_HIDE_CONFLICT when the row is gone by the time the dish is hidden', async () => {
     MenuItemModel.findById.mockResolvedValue(baseMenuItem());
-    MenuItemModel.updateById.mockResolvedValue(null);
+    MenuItemModel.hideDish.mockResolvedValue({ status: 'gone' });
 
     await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_HIDE_CONFLICT', statusCode: 409 });
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  test('throws MENU_ITEM_ALREADY_HIDDEN when another moderator hid it meanwhile', async () => {
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem());
+    MenuItemModel.hideDish.mockResolvedValue({ status: 'already' });
+
+    await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_ALREADY_HIDDEN', statusCode: 400 });
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 
   test('hides item with reason, writes audit log, and does NOT trigger notification (Phase 1 policy)', async () => {
     MenuItemModel.findById.mockResolvedValue(baseMenuItem());
     const updated = baseMenuItem({ is_hidden_by_admin: true, hidden_reason: baseParams.reason });
-    MenuItemModel.updateById.mockResolvedValue(updated);
+    MenuItemModel.hideDish.mockResolvedValue({ status: 'done', row: updated, others: [] });
 
     const result = await hideMenuItem(MENU_ITEM_ID, baseParams);
 
     expect(result).toEqual(updated);
-    expect(MenuItemModel.updateById).toHaveBeenCalledWith(MENU_ITEM_ID, {
-      is_hidden_by_admin: true,
-      hidden_reason: baseParams.reason,
+    expect(MenuItemModel.hideDish).toHaveBeenCalledWith({
+      menuItemId: MENU_ITEM_ID,
+      reason: baseParams.reason,
     });
     expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1419,57 +1431,39 @@ describe('hideMenuItem', () => {
   });
 });
 
-describe('hideMenuItem — copies in the other files of one menu', () => {
+describe('hideMenuItem — the dish in the other files of the establishment', () => {
   const baseParams = {
     reason: 'нет в продаже',
     adminUserId: ADMIN_ID,
     ipAddress: '127.0.0.1',
     userAgent: 'TestAgent/1.0',
   };
-  const PHOTO = uuidv4();
-  const PDF = uuidv4();
-  const copyRow = (id, mediaId, overrides = {}) => baseMenuItem({ id, media_id: mediaId, ...overrides });
 
-  test('a copy a re-read replaced meanwhile is hidden in its new row', async () => {
-    const primary = copyRow(MENU_ITEM_ID, PHOTO);
-    const oldCopy = copyRow(uuidv4(), PDF);
-    const newCopy = copyRow(uuidv4(), PDF);
+  // Which rows the dish reaches is the model's (integration: admin-menu-items,
+  // ocr-pipeline); here — that each of them gets its own audit entry.
+  test('every other row hidden gets an audit entry marked with the row acted on', async () => {
+    const primary = baseMenuItem();
+    const pdfCopy = baseMenuItem({ id: uuidv4(), media_id: uuidv4() });
+    const lunchRow = baseMenuItem({ id: uuidv4(), media_id: uuidv4(), price_byn: 9 });
     MenuItemModel.findById.mockResolvedValue(primary);
-    // First look: the PDF's old row. It is gone when updated (null), and the
-    // second look finds the re-read's row of the same line.
-    MenuItemModel.getByEstablishmentId
-      .mockResolvedValueOnce([{ ...primary, is_hidden_by_admin: true }, oldCopy])
-      .mockResolvedValueOnce([{ ...primary, is_hidden_by_admin: true }, newCopy]);
-    MenuItemModel.updateById.mockImplementation(async (id, updates) => (
-      id === oldCopy.id ? null : { id, ...updates }
-    ));
-
-    await hideMenuItem(MENU_ITEM_ID, baseParams);
-
-    expect(MenuItemModel.updateById).toHaveBeenCalledWith(newCopy.id, {
-      is_hidden_by_admin: true,
-      hidden_reason: baseParams.reason,
+    MenuItemModel.hideDish.mockResolvedValue({
+      status: 'done',
+      row: { ...primary, is_hidden_by_admin: true, hidden_reason: baseParams.reason },
+      others: [pdfCopy, lunchRow],
     });
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
-      entity_id: newCopy.id,
-      new_data: { is_hidden_by_admin: true, reason: baseParams.reason, copy_of: MENU_ITEM_ID },
-    }));
-    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalledWith(
-      expect.objectContaining({ entity_id: oldCopy.id }),
-    );
-  });
-
-  test('no copy vanished — the rows are read once', async () => {
-    const primary = copyRow(MENU_ITEM_ID, PHOTO);
-    const copy = copyRow(uuidv4(), PDF);
-    MenuItemModel.findById.mockResolvedValue(primary);
-    MenuItemModel.getByEstablishmentId.mockResolvedValue([{ ...primary, is_hidden_by_admin: true }, copy]);
-    MenuItemModel.updateById.mockImplementation(async (id, updates) => ({ id, ...updates }));
 
     await hideMenuItem(MENU_ITEM_ID, baseParams);
 
-    expect(MenuItemModel.getByEstablishmentId).toHaveBeenCalledTimes(1);
-    expect(MenuItemModel.updateById).toHaveBeenCalledWith(copy.id, expect.anything());
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledTimes(3);
+    for (const other of [pdfCopy, lunchRow]) {
+      expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+        user_id: ADMIN_ID,
+        action: 'hide_menu_item',
+        entity_id: other.id,
+        new_data: { is_hidden_by_admin: true, reason: baseParams.reason, copy_of: MENU_ITEM_ID },
+      }));
+    }
+    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
   });
 });
 
@@ -1498,17 +1492,27 @@ describe('unhideMenuItem', () => {
 
     await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_HIDDEN', statusCode: 400 });
-    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+    expect(MenuItemModel.unhideDish).not.toHaveBeenCalled();
   });
 
-  test('throws MENU_ITEM_UNHIDE_CONFLICT when updateById returns null', async () => {
+  test('throws MENU_ITEM_UNHIDE_CONFLICT when the row is gone by the time the dish is shown', async () => {
     MenuItemModel.findById.mockResolvedValue(
       baseMenuItem({ is_hidden_by_admin: true }),
     );
-    MenuItemModel.updateById.mockResolvedValue(null);
+    MenuItemModel.unhideDish.mockResolvedValue({ status: 'gone' });
 
     await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_UNHIDE_CONFLICT', statusCode: 409 });
+  });
+
+  test('throws MENU_ITEM_NOT_HIDDEN when another moderator showed it meanwhile', async () => {
+    MenuItemModel.findById.mockResolvedValue(
+      baseMenuItem({ is_hidden_by_admin: true }),
+    );
+    MenuItemModel.unhideDish.mockResolvedValue({ status: 'not_hidden' });
+
+    await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
+      .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_HIDDEN', statusCode: 400 });
   });
 
   test('unhides item, clears hidden_reason, and writes audit log', async () => {
@@ -1516,15 +1520,18 @@ describe('unhideMenuItem', () => {
       baseMenuItem({ is_hidden_by_admin: true, hidden_reason: 'old reason' }),
     );
     const updated = baseMenuItem({ is_hidden_by_admin: false, hidden_reason: null });
-    MenuItemModel.updateById.mockResolvedValue(updated);
+    const other = baseMenuItem({ id: uuidv4(), is_hidden_by_admin: true, hidden_reason: 'old reason' });
+    MenuItemModel.unhideDish.mockResolvedValue({ status: 'done', row: updated, others: [other], forgotten: 1 });
 
     const result = await unhideMenuItem(MENU_ITEM_ID, baseParams);
 
     expect(result).toEqual(updated);
-    expect(MenuItemModel.updateById).toHaveBeenCalledWith(MENU_ITEM_ID, {
-      is_hidden_by_admin: false,
-      hidden_reason: null,
-    });
+    expect(MenuItemModel.unhideDish).toHaveBeenCalledWith({ menuItemId: MENU_ITEM_ID });
+    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'unhide_menu_item',
+      entity_id: other.id,
+      new_data: { is_hidden_by_admin: false, copy_of: MENU_ITEM_ID },
+    }));
     expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'unhide_menu_item',

@@ -320,7 +320,27 @@ describe('hide / unhide — one menu uploaded as several files', () => {
     expect((await rowOf(mainOysters)).is_hidden_by_admin).toBe(true);
   });
 
-  test('a dish of another menu (breakfast vs lunch) stays as it was', async () => {
+  // The three tests below held the rule of 2026-10-19 (word of the
+  // Coordinator): «Скрыть» on the breakfast «Морс» left the lunch «Морс» as it
+  // was. That rule is replaced by the word of the Coordinator of 2026-10-29
+  // 21:52:02Z (П1а, П2а, with Trunk's refinement «other files»): the dish is
+  // hidden in every OTHER file of the establishment, in any section and at any
+  // price, and remembered. The guest's grouping of lines (collapseMenuRepeats)
+  // is untouched: two menus are still two menus to the guest.
+  const hide = (id, reason = 'нет в продаже') => request(app)
+    .post(`/api/v1/admin/menu-items/${id}/hide`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send({ reason });
+  const unhide = (id) => request(app)
+    .post(`/api/v1/admin/menu-items/${id}/unhide`)
+    .set('Authorization', `Bearer ${adminToken}`);
+  const remembered = async (estId) => (await query(
+    `SELECT item_name, category_raw, hidden_reason FROM menu_item_hidden_names
+     WHERE establishment_id = $1 ORDER BY item_name, category_raw NULLS FIRST`,
+    [estId],
+  )).rows;
+
+  test('a dish of another menu file (breakfast vs lunch) is hidden too, and remembered', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const breakfastId = await insertMedia(establishment.id);
     const lunchId = await insertMedia(establishment.id);
@@ -333,18 +353,25 @@ describe('hide / unhide — one menu uploaded as several files', () => {
       await insertItem(establishment.id, lunchId, name, price);
     }
 
-    await request(app)
-      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ reason: 'нет в продаже' })
-      .expect(200);
+    await hide(breakfastMors).expect(200);
 
-    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+    expect(await rowOf(lunchMors)).toMatchObject({ is_hidden_by_admin: true, hidden_reason: 'нет в продаже' });
+    expect(await remembered(establishment.id)).toEqual([
+      { item_name: 'Морс', category_raw: null, hidden_reason: 'нет в продаже' },
+    ]);
+    const audit = await query(
+      `SELECT new_data FROM audit_log WHERE action = 'hide_menu_item' AND entity_id = $1`,
+      [lunchMors],
+    );
+    expect(audit.rows.map(r => r.new_data)).toEqual([
+      { is_hidden_by_admin: true, reason: 'нет в продаже', copy_of: breakfastMors },
+    ]);
   });
 
-  test('copies are the guest\'s: hidden rows do not make two menus copies of one', async () => {
-    // Without the hidden rows the files share one line of four — the guest sees
-    // two menus and «Морс» in both; hiding one leaves the other.
+  test('the dish only: hidden rows of one menu do not carry the other dishes of the other menu with them', async () => {
+    // The breakfast file holds lunch dishes hidden by hand («не завтрак»); the
+    // lunch file holds the same dishes shown. «Скрыть» on «Морс» reaches the
+    // lunch «Морс» — the same dish in another file — and nothing else.
     const { establishment } = await createPartnerWithEstablishment('active');
     const breakfastId = await insertMedia(establishment.id);
     const lunchId = await insertMedia(establishment.id);
@@ -356,20 +383,20 @@ describe('hide / unhide — one menu uploaded as several files', () => {
       await insertItem(establishment.id, breakfastId, name, price, { hiddenReason: 'не завтрак' });
     }
     const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
+    const lunchOthers = [];
     for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
-      await insertItem(establishment.id, lunchId, name, price);
+      lunchOthers.push(await insertItem(establishment.id, lunchId, name, price));
     }
 
-    await request(app)
-      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ reason: 'нет в продаже' })
-      .expect(200);
+    await hide(breakfastMors).expect(200);
 
-    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(true);
+    for (const id of lunchOthers) {
+      expect((await rowOf(id)).is_hidden_by_admin).toBe(false);
+    }
   });
 
-  test('a small board sharing the dish with both menus does not join them', async () => {
+  test('a small board holding the dish: the lunch menu and the board hide it too, the rest stays', async () => {
     const { establishment } = await createPartnerWithEstablishment('active');
     const breakfastId = await insertMedia(establishment.id);
     const lunchId = await insertMedia(establishment.id);
@@ -379,19 +406,96 @@ describe('hide / unhide — one menu uploaded as several files', () => {
       await insertItem(establishment.id, breakfastId, name, price);
     }
     const lunchMors = await insertItem(establishment.id, lunchId, 'Морс', 4);
-    for (const [name, price] of [['Борщ', 9], ['Котлета', 12], ['Салат', 6], ['Суп', 7]]) {
-      await insertItem(establishment.id, lunchId, name, price);
-    }
-    await insertItem(establishment.id, boardId, 'Морс', 4);
-    await insertItem(establishment.id, boardId, 'Лимонад', 5);
+    const lunchBorsch = await insertItem(establishment.id, lunchId, 'Борщ', 9);
+    const boardMors = await insertItem(establishment.id, boardId, 'Морс', 4);
+    const boardLemonade = await insertItem(establishment.id, boardId, 'Лимонад', 5);
 
-    await request(app)
-      .post(`/api/v1/admin/menu-items/${breakfastMors}/hide`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({ reason: 'нет в продаже' })
+    await hide(breakfastMors).expect(200);
+
+    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(true);
+    expect((await rowOf(boardMors)).is_hidden_by_admin).toBe(true);
+    expect((await rowOf(lunchBorsch)).is_hidden_by_admin).toBe(false);
+    expect((await rowOf(boardLemonade)).is_hidden_by_admin).toBe(false);
+  });
+
+  test('the same dish at another price, in another section, spelled with quotes and «ё» — hidden in another file', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const photoId = await insertMedia(establishment.id);
+    const pdfId = await insertMedia(establishment.id);
+    const photoTea = await insertItem(establishment.id, photoId, 'Чай «Ёжик»', 3, { category: 'Напитки' });
+    const pdfTea = await insertItem(establishment.id, pdfId, 'чай "ежик"', 5, { category: 'ЗАВТРАКИ' });
+    const pdfCoffee = await insertItem(establishment.id, pdfId, 'Кофе', 4, { category: 'Напитки' });
+
+    await hide(photoTea).expect(200);
+
+    expect((await rowOf(pdfTea)).is_hidden_by_admin).toBe(true);
+    expect((await rowOf(pdfCoffee)).is_hidden_by_admin).toBe(false);
+    const { slug } = (await query('SELECT slug FROM establishments WHERE id = $1', [establishment.id])).rows[0];
+    const guest = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${slug}/menu-items`)
       .expect(200);
+    expect(guest.body.data.menu_items.map(i => i.item_name)).toEqual(['Кофе']);
+  });
 
-    expect((await rowOf(lunchMors)).is_hidden_by_admin).toBe(false);
+  test('inside the row\'s own file another section stays as it was (the section decides first)', async () => {
+    // Trunk's refinement of П2а, 29.10.2026: the same name under another
+    // section of the same file is the moderator's own; a re-read keeps it shown
+    // too (ocr-pipeline.test.js, «a name in two sections»).
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const fileId = await insertMedia(establishment.id);
+    const otherFileId = await insertMedia(establishment.id);
+    const drinksTea = await insertItem(establishment.id, fileId, 'Чай', 3, { category: 'Напитки' });
+    const breakfastTea = await insertItem(establishment.id, fileId, 'Чай', 2, { category: 'Завтраки' });
+    const otherFileTea = await insertItem(establishment.id, otherFileId, 'Чай', 2, { category: 'Завтраки' });
+
+    await hide(drinksTea).expect(200);
+
+    expect((await rowOf(breakfastTea)).is_hidden_by_admin).toBe(false);
+    expect((await rowOf(otherFileTea)).is_hidden_by_admin).toBe(true);
+  });
+
+  test('inside the row\'s own file the same section goes too, at another price (review of 29.10.2026)', async () => {
+    // A re-read of the file would hide it on the same rule (the section decides
+    // first, a hidden row wins in its section); until then the guest saw it.
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const fileId = await insertMedia(establishment.id);
+    const teaFour = await insertItem(establishment.id, fileId, 'Чай', 4, { category: 'Напитки' });
+    const teaThree = await insertItem(establishment.id, fileId, 'Чай', 3, { category: 'НАПИТКИ' });
+    const breakfastTea = await insertItem(establishment.id, fileId, 'Чай', 2, { category: 'Завтраки' });
+
+    await hide(teaFour).expect(200);
+
+    expect((await rowOf(teaThree)).is_hidden_by_admin).toBe(true);
+    expect((await rowOf(breakfastTea)).is_hidden_by_admin).toBe(false);
+  });
+
+  test('«Показать снова» brings the dish back in every file hidden for the same reason and forgets it', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const photoId = await insertMedia(establishment.id);
+    const pdfId = await insertMedia(establishment.id);
+    const boardId = await insertMedia(establishment.id);
+    const photoLatte = await insertItem(establishment.id, photoId, 'Латте', 7, { category: 'Кофе' });
+    const pdfLatte = await insertItem(establishment.id, pdfId, 'Латте', 8);
+    const boardLatte = await insertItem(establishment.id, boardId, 'Латте', 7, { hiddenReason: 'другая причина' });
+    await query(
+      `INSERT INTO menu_item_hidden_names (establishment_id, item_name, category_raw, hidden_reason)
+       VALUES ($1, 'Латте', NULL, 'другая причина')`,
+      [establishment.id],
+    );
+
+    await hide(photoLatte).expect(200);
+    expect((await rowOf(pdfLatte)).is_hidden_by_admin).toBe(true);
+
+    // Acted on the copy, not on the row the moderator hid: the dish comes back.
+    await unhide(pdfLatte).expect(200);
+
+    expect(await rowOf(photoLatte)).toMatchObject({ is_hidden_by_admin: false, hidden_reason: null });
+    expect(await rowOf(pdfLatte)).toMatchObject({ is_hidden_by_admin: false, hidden_reason: null });
+    // Hidden for another reason — a decision of its own, and still remembered.
+    expect(await rowOf(boardLatte)).toMatchObject({ is_hidden_by_admin: true, hidden_reason: 'другая причина' });
+    expect(await remembered(establishment.id)).toEqual([
+      { item_name: 'Латте', category_raw: null, hidden_reason: 'другая причина' },
+    ]);
   });
 });
 
@@ -705,6 +809,41 @@ describe('GET /api/v1/admin/menu-items/flagged', () => {
     expect(res.body.data).toHaveLength(1);
     expect(res.body.data[0].item_name).toBe('Скрытая позиция');
     expect(res.body.data[0].is_hidden_by_admin).toBe(true);
+  });
+
+  test('«Скрытые» показывают и скрытую позицию без флага; «Активные» и бейдж её не считают (К-1)', async () => {
+    // Скрытая позиция теряет флаг часто: копия, скрытая вместе со строкой;
+    // строка после повторного распознавания; строка со снятым флагом; блюдо,
+    // скрытое в новом файле. До правки такая позиция пропадала из панели
+    // навсегда, и «Показать снова» было не нажать.
+    await seedFlagged('active');
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const { menuItemId } = await seedMenuItem(establishment.id, {
+      itemName: 'Скрытая без флага',
+      isHiddenByAdmin: true,
+      hiddenReason: 'не блюдо',
+    });
+    // Видимая позиция без флага в очередь по-прежнему не попадает.
+    await seedMenuItem(establishment.id, { itemName: 'Видимая без флага' });
+
+    const hidden = await flagged('?visibility=hidden').expect(200);
+    expect(hidden.body.data.map(i => i.id)).toEqual([menuItemId]);
+    expect(hidden.body.data[0]).toMatchObject({ sanity_flag: null, hidden_reason: 'не блюдо' });
+    expect(hidden.body.meta.counts).toEqual({ visible: 1, hidden: 1 });
+
+    const all = await flagged('?visibility=all').expect(200);
+    expect(all.body.data.map(i => i.item_name).sort()).toEqual(['Капучино', 'Скрытая без флага']);
+
+    const visible = await flagged('?visibility=visible').expect(200);
+    expect(visible.body.data.map(i => i.item_name)).toEqual(['Капучино']);
+    expect((await qualityHealthModel.getHangingFlags()).hanging_count).toBe(1);
+
+    // И вернуть её можно.
+    await request(app)
+      .post(`/api/v1/admin/menu-items/${menuItemId}/unhide`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect((await flagged('?visibility=hidden').expect(200)).body.data).toEqual([]);
   });
 
   test('без параметра область прежняя — со скрытыми', async () => {

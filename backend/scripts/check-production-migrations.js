@@ -100,6 +100,12 @@ const MARKERS = [
               AND indexname = 'idx_establishments_slug'`,
     invert: true,
   },
+  {
+    id: '038',
+    label: 'menu_item_hidden_names table (hidden dishes outlive their file)',
+    query: `SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'menu_item_hidden_names'`,
+  },
 ];
 
 function maskUrl(url) {

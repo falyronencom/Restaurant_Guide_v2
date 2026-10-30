@@ -457,14 +457,17 @@ describe('страж принципа: флаг живёт только на н�
    */
   const ROW_WRITERS = [
     ['src/models/menuItemModel.js · UPDATE menu_items', 'updateById — общий UPDATE; кто им пишет — строки ниже'],
+    ['src/models/menuItemModel.js · UPDATE menu_items',
+      'hideDish («Скрыть» на блюдо во всех файлах заведения, 29.10, п. 3а): только is_hidden_by_admin '
+        + 'и hidden_reason — содержимое не меняется; журнал на каждую строку пишет adminService'],
+    ['src/models/menuItemModel.js · UPDATE menu_items', 'unhideDish («Показать снова» на блюдо): то же'],
     ['scripts/dismiss-menu-flags/dismiss.js · UPDATE menu_items', 'снимает флаг, журнал — тем же запросом'],
-    ['src/services/adminService.js · вызов updateById',
-      'hideMenuItem: только is_hidden_by_admin и hidden_reason — содержимое не меняется'],
-    ['src/services/adminService.js · вызов updateById', 'unhideMenuItem: то же'],
+    ['scripts/hidden-dish-copies/plan.js · UPDATE menu_items',
+      'скрывает видимые копии скрытых блюд (П4а, слово Координатора): только is_hidden_by_admin '
+        + 'и hidden_reason, журнал — тем же запросом'],
     ['src/services/adminService.js · вызов updateById', 'dismissMenuItemFlag: sanity_flag = null'],
     ['src/services/adminService.js · вызов updateById',
-      'applyToMenuItemCopies: «Скрыть»/«Вернуть» на копиях — только is_hidden_by_admin и hidden_reason; '
-        + '«Снять флаг» на копиях — sanity_flag = null'],
+      'applyToMenuItemCopies: «Снять флаг» на копиях — sanity_flag = null'],
     ['src/services/partnerMenuItemService.js · вызов updateById',
       'updateMenuItem: правка партнёра обнуляет флаг всегда (последний тест)'],
     ['src/services/partnerMenuItemService.js · вызов updateById',

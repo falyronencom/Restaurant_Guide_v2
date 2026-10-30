@@ -6,7 +6,10 @@
  *
  * What the worker does to each media (ocrService.processJob): replaceForMedia
  * DELETEs every menu_item of the media and INSERTs the new output — partner
- * edits and admin hides on that media are gone, and sanityChecker compares new
+ * edits on that media are gone; a moderator's «Скрыть» is carried over by the
+ * dish name (since 2026-10-07), and from the card's other files and memory too
+ * (since the Coordinator's п. 3а, 29.10.2026) — a dish read under another
+ * name comes back shown; and sanityChecker compares new
  * prices with the old ones (a >3× change is flagged price_delta_anomaly and
  * lands in the moderation queue). The partner of each card gets one
  * «menu parsed» push per settled batch. Hence:
