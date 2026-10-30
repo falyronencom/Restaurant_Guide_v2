@@ -288,10 +288,52 @@ describe('installShutdownHandlers — from the process event to the exit code', 
     processRef.emit('unhandledRejection', new Error('lost promise'), Promise.resolve());
     await flush();
 
-    expect(deps.logger.error).toHaveBeenCalledWith('Unhandled promise rejection', expect.objectContaining({ reason: expect.any(Error) }));
+    // The text of the error, as the uncaught-exception line writes it: the
+    // Error object printed as {} (30.10.2026).
+    expect(deps.logger.error).toHaveBeenCalledWith('Unhandled promise rejection', {
+      error: 'lost promise',
+      code: undefined,
+      stack: expect.stringContaining('lost promise'),
+    });
 
     await finishDrain();
 
     expect(deps.exit).toHaveBeenCalledWith(1);
+  });
+
+  // A database error's `detail` quotes the row's values — the e-mail of a
+  // unique violation, say. The line hands over the message and the code,
+  // never the error object (lens review, Phase 3.5, 30.10.2026).
+  test('unhandledRejection with a database error: its message and code, not its detail', async () => {
+    const { processRef, deps, finishDrain } = wire();
+    const pgError = Object.assign(new Error('duplicate key value violates unique constraint "users_email_key"'), {
+      code: '23505',
+      constraint: 'users_email_key',
+      detail: 'Key (email)=(anna.petrova@example.by) already exists.',
+    });
+
+    processRef.emit('unhandledRejection', pgError, Promise.resolve());
+    await flush();
+
+    const [, context] = deps.logger.error.mock.calls.find(([message]) => message === 'Unhandled promise rejection');
+    expect(context).toEqual({
+      error: 'duplicate key value violates unique constraint "users_email_key"',
+      code: '23505',
+      stack: expect.any(String),
+    });
+    expect(JSON.stringify(deps.logger.error.mock.calls)).not.toContain('anna.petrova');
+
+    await finishDrain();
+  });
+
+  test('unhandledRejection with something that is not an Error: logged as it is', async () => {
+    const { processRef, deps, finishDrain } = wire();
+
+    processRef.emit('unhandledRejection', 'plain text reason', Promise.resolve());
+    await flush();
+
+    expect(deps.logger.error).toHaveBeenCalledWith('Unhandled promise rejection', { reason: 'plain text reason' });
+
+    await finishDrain();
   });
 });
