@@ -33,7 +33,7 @@ const _days = <String>[
 ];
 
 /// Серый, которым панель гасит закрытый день.
-const _closedGrey = Color(0xFFABABAB);
+const _closedGrey = AppTheme.textGrey;
 
 /// Деталь для режима модерации: панель берёт её у провайдера, а провайдер —
 /// у сервиса.
@@ -166,7 +166,7 @@ void main() {
       }
       // Закрытым день делает и цвет: рабочий день, оставшийся серым,
       // читался бы выходным и при верном тексте.
-      expect(_valueOf(tester, 'Вторник').style?.color, Colors.black);
+      expect(_valueOf(tester, 'Вторник').style?.color, AppTheme.textPrimary);
       expect(_valueOf(tester, 'Понедельник').style?.color, _closedGrey);
     });
 
@@ -209,7 +209,7 @@ void main() {
         'Суббота': 'Закрыто',
         'Воскресенье': 'Закрыто',
       });
-      expect(_valueOf(tester, 'Пятница').style?.color, Colors.black);
+      expect(_valueOf(tester, 'Пятница').style?.color, AppTheme.textPrimary);
       expect(_valueOf(tester, 'Суббота').style?.color, _closedGrey);
     });
 
@@ -255,7 +255,7 @@ void main() {
       });
 
       expect(_valueOf(tester, 'Понедельник').data, '10:00 – 20:00');
-      expect(_valueOf(tester, 'Понедельник').style?.color, Colors.black);
+      expect(_valueOf(tester, 'Понедельник').style?.color, AppTheme.textPrimary);
     });
 
     testWidgets('нечитаемая запись — «Закрыто», а не обрывок времени',
