@@ -1,5 +1,5 @@
 /**
- * «Удалить учётку» in the profile (brief В1, 18.10.2026): the backend is asked
+ * «Удалить учётную запись» in the profile (brief В1, 18.10.2026): the backend is asked
  * first — a holder of cards reads its text and the support address, without
  * a field for the word; otherwise the warning and a button that works only
  * with УДАЛИТЬ; the word goes on as typed. How it ended goes to the hub
@@ -37,7 +37,7 @@ const mockCheck = checkAccountDeletionAction as jest.Mock;
 const mockDelete = deleteAccountAction as jest.Mock;
 const mockOnEnded = jest.fn();
 
-const OWNS_CARDS_TEXT = 'У вас есть карточки заведений. Удалить учётку можно, когда их передадут '
+const OWNS_CARDS_TEXT = 'У вас есть карточки заведений. Удалить учётную запись можно, когда их передадут '
   + 'другому владельцу, — напишите в поддержку: support@nirivio.by';
 const WORD_LABEL = 'Чтобы подтвердить, введите слово УДАЛИТЬ';
 const DRAFTS_LINE = 'Черновики карточек заведений, которые не публиковались';
@@ -61,7 +61,7 @@ async function open() {
 
 async function confirmWith(user: ReturnType<typeof userEvent.setup>, typed: string) {
   await user.type(await screen.findByLabelText(WORD_LABEL), typed);
-  await user.click(screen.getByRole('button', { name: 'Удалить учётку' }));
+  await user.click(screen.getByRole('button', { name: 'Удалить учётную запись' }));
 }
 
 it('allowed — the warning, and the button works only with the word', async () => {
@@ -70,7 +70,7 @@ it('allowed — the warning, and the button works only with the word', async () 
 
   expect(await screen.findByText('Что удалится')).toBeInTheDocument();
   expect(screen.getByText('Ваши отзывы и оценки — автором будет «Гость», без фото')).toBeInTheDocument();
-  const button = screen.getByRole('button', { name: 'Удалить учётку' });
+  const button = screen.getByRole('button', { name: 'Удалить учётную запись' });
   expect(button).toBeDisabled();
 
   await user.type(screen.getByLabelText(WORD_LABEL), 'удали');
@@ -145,8 +145,8 @@ it('refused at the deletion itself — asks the check again and shows its text',
 });
 
 it.each([
-  ['ACCOUNT_OPERATOR_MANAGED', 'Эту учётку удаляет оператор платформы. Напишите в поддержку: support@nirivio.by'],
-  ['ACCOUNT_INACTIVE', 'Учётка отключена. Напишите в поддержку: support@nirivio.by'],
+  ['ACCOUNT_OPERATOR_MANAGED', 'Эту учётную запись удаляет оператор платформы. Напишите в поддержку: support@nirivio.by'],
+  ['ACCOUNT_INACTIVE', 'Учётная запись отключена. Напишите в поддержку: support@nirivio.by'],
 ])('refused at the deletion with %s — asks the check again and shows its text', async (code, text) => {
   mockCheck
     .mockResolvedValueOnce({ ok: true, allowed: true, refusal: null })
@@ -170,9 +170,9 @@ it('the deletion failed on the network — a message, the form stays', async () 
   await confirmWith(user, 'УДАЛИТЬ');
 
   expect(
-    await screen.findByText('Не удалось удалить учётку. Проверьте соединение и попробуйте ещё раз.'),
+    await screen.findByText('Не удалось удалить учётную запись. Проверьте соединение и попробуйте ещё раз.'),
   ).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Удалить учётку' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Удалить учётную запись' })).toBeEnabled();
   expect(mockMarkAnonymous).not.toHaveBeenCalled();
   expect(mockOnEnded).not.toHaveBeenCalled();
 });
@@ -183,7 +183,7 @@ it('the check failed — «Повторить» asks the backend again', async (
     .mockResolvedValueOnce({ ok: true, allowed: true, refusal: null });
   const user = await open();
 
-  expect(await screen.findByText('Не удалось проверить учётку. Проверьте соединение.')).toBeInTheDocument();
+  expect(await screen.findByText('Не удалось проверить учётную запись. Проверьте соединение.')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Повторить' }));
 
   expect(await screen.findByText('Что удалится')).toBeInTheDocument();
@@ -211,10 +211,10 @@ it.each([
 });
 
 describe('DeletionEndedPanel', () => {
-  it('deleted — «Учётка удалена.» and the way home', () => {
+  it('deleted — «Учётная запись удалена.» and the way home', () => {
     render(<DeletionEndedPanel outcome="deleted" />);
 
-    expect(screen.getByText('Учётка удалена.')).toBeInTheDocument();
+    expect(screen.getByText('Учётная запись удалена.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'На главную' })).toHaveAttribute('href', '/');
     expect(screen.queryByRole('link', { name: 'Войти' })).not.toBeInTheDocument();
   });
@@ -224,10 +224,10 @@ describe('DeletionEndedPanel', () => {
 
     expect(screen.getByText('Сеанс завершён.')).toBeInTheDocument();
     expect(screen.getByText(
-      'Если удаление успело пройти, учётки больше нет и войти в неё не получится. Если нет — войдите и удалите её снова.',
+      'Если удаление успело пройти, учётной записи больше нет и войти в неё не получится. Если нет — войдите и удалите её снова.',
     )).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Войти' })).toHaveAttribute('href', '/login?returnTo=/profile');
     expect(screen.getByRole('link', { name: 'На главную' })).toHaveAttribute('href', '/');
-    expect(screen.queryByText('Учётка удалена.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Учётная запись удалена.')).not.toBeInTheDocument();
   });
 });

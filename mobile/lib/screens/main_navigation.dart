@@ -23,6 +23,10 @@ import 'package:restaurant_guide_mobile/widgets/selected_tab_scope.dart';
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
 
+  /// Окно «сервер закончил сеанс и сказал почему».
+  static const Key sessionEndedDialogKey =
+      ValueKey<String>('session-ended-dialog');
+
   @override
   State<MainNavigationScreen> createState() => MainNavigationScreenState();
 }
@@ -106,6 +110,7 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
   void _onAuthChanged() {
     final auth = _auth;
     if (auth == null || !mounted) return;
+    _showSessionEndedNotice(auth);
     // Пустая строка — вошёл, но профиль ещё не получен (ответ 429 при
     // восстановлении сессии). Когда профиль придёт, ключ сменится на id, и
     // регистрация повторится — сервер принимает повторную без последствий.
@@ -127,6 +132,33 @@ class MainNavigationScreenState extends State<MainNavigationScreen>
     // дошедший после ответа 429, меняет ключ аккаунта с '' на id, но
     // аккаунт тот же.
     unawaited(context.read<EstablishmentsProvider>().ensureFavoritesLoaded());
+  }
+
+  /// Сервер закончил сеанс и сказал почему — учётную запись отключили или
+  /// удалили: человек читает слова сервера с адресом поддержки, а не
+  /// узнаёт о выходе по пустому профилю (решение Координатора 29.10.2026).
+  /// До этого он видел только «Сеанс истёк» — и то, если упавший запрос
+  /// показывал свою ошибку. Один раз: причина снимается сразу.
+  void _showSessionEndedNotice(AuthProvider auth) {
+    final notice = auth.sessionEndedNotice;
+    if (notice == null) return;
+    auth.clearSessionEndedNotice();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          key: MainNavigationScreen.sessionEndedDialogKey,
+          content: Text(notice),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Понятно'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   /// Обработчики push: пришёл при открытом приложении и нажатие на push.

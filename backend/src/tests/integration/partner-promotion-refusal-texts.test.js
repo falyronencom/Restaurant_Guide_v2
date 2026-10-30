@@ -34,7 +34,7 @@ import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 
 const NOT_FOUND = 'Акция не найдена — возможно, её уже удалили. Обновите список акций.';
-const NOT_OWNED = 'Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.';
+const NOT_OWNED = 'Заведение не найдено или принадлежит другой учётной записи. Обновите список заведений.';
 const TITLE_REQUIRED = 'Укажите название акции.';
 const IMAGE_TYPE = 'Этот формат не подходит: картинка акции — JPG, PNG, WebP или HEIC.';
 const TITLE_TOO_LONG = 'Название акции — не длиннее 255 знаков';

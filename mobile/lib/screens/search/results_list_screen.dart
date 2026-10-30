@@ -141,7 +141,7 @@ class _ResultsListScreenState extends State<ResultsListScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Требуется авторизация'),
         content: const Text(
-          'Для добавления в избранное необходимо войти в аккаунт.',
+          'Для добавления в избранное необходимо войти в учётную запись.',
         ),
         actions: [
           TextButton(

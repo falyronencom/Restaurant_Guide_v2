@@ -96,6 +96,6 @@ void main() {
 
     expect(_navBar(tester).currentIndex, 4);
     // Гостевая карточка профиля (пользователь в тестах не авторизован).
-    expect(find.text('Войти в аккаунт'), findsOneWidget);
+    expect(find.text('Войти в учётную запись'), findsOneWidget);
   });
 }

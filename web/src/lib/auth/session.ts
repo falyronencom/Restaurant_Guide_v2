@@ -40,10 +40,21 @@ export const COOKIE_REFRESH = 'rg_rt';
 export const COOKIE_USER = 'rg_user';
 export const COOKIE_NONCE = 'g_nonce';
 export const COOKIE_YSTATE = 'y_state';
+/**
+ * Why the server ended the session, when it said so: the account was switched
+ * off or deleted (refresh refused with 401 ACCOUNT_INACTIVE). /login reads it
+ * and says so in the backend's words with the support address instead of
+ * leaving the person to guess why they were signed out (Coordinator,
+ * 29.10.2026). A code, never a text; it lives a few minutes and goes with the
+ * next sign-in (writeTokens).
+ */
+export const COOKIE_AUTH_NOTICE = 'rg_auth_notice';
+const AUTH_NOTICE_CODES: ReadonlySet<string> = new Set(['ACCOUNT_INACTIVE']);
 
 const REFRESH_MAX_AGE_S = 60 * 60 * 24 * 30; // 30 days — matches backend refresh TTL
 const NONCE_MAX_AGE_S = 60 * 5; // 5 minutes — login round-trip window
 const YSTATE_MAX_AGE_S = 60 * 10; // 10 minutes — Yandex authorize round-trip window
+const AUTH_NOTICE_MAX_AGE_S = 60 * 10; // 10 minutes — enough to reach /login
 
 /**
  * Secure is env-gated: an unconditional `Secure` cookie is dropped by browsers
@@ -84,6 +95,15 @@ export async function getRefreshToken(): Promise<string | null> {
 }
 
 /** Display-safe user from the httpOnly rg_user cookie. Never returns tokens. */
+/**
+ * The code of COOKIE_AUTH_NOTICE — why the server ended the last session —
+ * or null. Only a known code passes: the cookie is client-held.
+ */
+export async function getAuthNotice(): Promise<string | null> {
+  const value = (await cookies()).get(COOKIE_AUTH_NOTICE)?.value;
+  return value && AUTH_NOTICE_CODES.has(value) ? value : null;
+}
+
 export async function getSessionUser(): Promise<SessionUser | null> {
   const raw = (await cookies()).get(COOKIE_USER)?.value;
   if (!raw) return null;
@@ -106,6 +126,8 @@ export async function writeTokens(
   const store = await cookies();
   store.set(COOKIE_ACCESS, accessToken, cookieOptions(expiresInSeconds));
   store.set(COOKIE_REFRESH, refreshToken, cookieOptions(REFRESH_MAX_AGE_S));
+  // A live session again — why the last one ended is no longer news.
+  store.delete(COOKIE_AUTH_NOTICE);
 }
 
 export async function writeUser(user: SessionUser): Promise<void> {
@@ -257,7 +279,7 @@ async function refreshCycle(): Promise<RefreshAttempt | { kind: 'absent' }> {
  */
 type RefreshAttempt =
   | { kind: 'ok'; accessToken: string }
-  | { kind: 'rejected' }
+  | { kind: 'rejected'; code?: string }
   | { kind: 'transient' };
 
 /**
@@ -297,6 +319,13 @@ async function doRefresh(refreshToken: string): Promise<RefreshAttempt> {
 
   if (attempt.kind === 'rejected') {
     await clearSession();
+    if (attempt.code && AUTH_NOTICE_CODES.has(attempt.code)) {
+      (await cookies()).set(
+        COOKIE_AUTH_NOTICE,
+        attempt.code,
+        cookieOptions(AUTH_NOTICE_MAX_AGE_S),
+      );
+    }
   }
   return attempt;
 }
@@ -339,7 +368,7 @@ async function attemptRefresh(refreshToken: string): Promise<RefreshAttempt> {
     // failure without clearing, so a later attempt can still recover.
     const status = err instanceof ApiError ? err.statusCode : 0;
     return status === 401 || status === 403
-      ? { kind: 'rejected' }
+      ? { kind: 'rejected', code: (err as ApiError).errorCode }
       : { kind: 'transient' };
   }
 }

@@ -4,7 +4,7 @@ import 'package:restaurant_guide_mobile/services/account_service.dart';
 
 import '../support/wire_stand.dart';
 
-/// Провод удаления учётки (бриф В1, 18.10.2026): что приложение шлёт и как
+/// Провод удаления учётной записи (бриф В1, 18.10.2026): что приложение шлёт и как
 /// читает ответ.
 ///
 /// Ответы — литеральные снимки того, что отдаёт сервер
@@ -13,7 +13,7 @@ import '../support/wire_stand.dart';
 /// `backend/src/tests/integration/delete-own-account.test.js`). Тело запроса
 /// удаления — ровно то, что сервер читает: `{ confirmation: 'УДАЛИТЬ' }`.
 void main() {
-  const ownsCardsText = 'У вас есть карточки заведений. Удалить учётку можно, '
+  const ownsCardsText = 'У вас есть карточки заведений. Удалить учётную запись можно, '
       'когда их передадут другому владельцу, — напишите в поддержку: '
       'support@nirivio.by';
 

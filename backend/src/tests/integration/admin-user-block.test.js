@@ -434,13 +434,13 @@ describe('POST /admin/users/:id/block и /unblock', () => {
 describe('кого кнопка не блокирует', () => {
   test.each([
     ['себя', async () => admin.user.id, 'Нельзя заблокировать или переименовать самого себя'],
-    ['администратора', async () => (await person({ role: 'admin' })).id, /^Это учётка панели/],
-    ['просмотрщика', async () => viewer.user.id, /^Это учётка панели/],
+    ['администратора', async () => (await person({ role: 'admin' })).id, /^Это учётная запись панели/],
+    ['просмотрщика', async () => viewer.user.id, /^Это учётная запись панели/],
     ['служебную учётку', async () => {
       const seedHouse = await person({ role: 'partner' });
       await query('UPDATE users SET is_service_account = TRUE WHERE id = $1', [seedHouse.id]);
       return seedHouse.id;
-    }, /^Это служебная учётка платформы/],
+    }, /^Это служебная учётная запись платформы/],
     ['партнёра с карточкой в каталоге', async () => (await createPartnerWithEstablishment('active')).partner.user.id,
       /^У этого партнёра есть карточки заведений в каталоге или на модерации/],
     ['партнёра с карточкой на модерации', async () => (await createPartnerWithEstablishment('pending')).partner.user.id,
@@ -523,7 +523,7 @@ describe('POST /admin/users/:id/reset-name', () => {
   test('учётку панели не переименовать', async () => {
     const { body } = await asAdmin('post', `/users/${viewer.user.id}/reset-name`, { reason: 'проверка' })
       .expect(409);
-    expect(body.message).toMatch(/^Это учётка панели/);
+    expect(body.message).toMatch(/^Это учётная запись панели/);
   });
 });
 

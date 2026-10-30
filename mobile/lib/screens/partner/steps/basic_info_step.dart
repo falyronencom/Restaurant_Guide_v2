@@ -4,12 +4,17 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/partner_registration_provider.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/screens/partner/working_hours_screen.dart';
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 
 /// Step 3: Basic Information
 /// Collects establishment name, description, contacts, price range and attributes
 /// Based on Figma design: Description frame
 class BasicInfoStep extends StatefulWidget {
   const BasicInfoStep({super.key});
+
+  /// Кнопка цены — по значению сервера: `price-option-$$`.
+  static Key priceOptionKey(String value) =>
+      ValueKey<String>('price-option-$value');
 
   @override
   State<BasicInfoStep> createState() => _BasicInfoStepState();
@@ -464,17 +469,28 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
   }
 
   /// Build individual price option button
+  ///
+  /// Под значком — слова, как в карточке и фильтре: «до 50 руб»
+  /// ([priceRangeDescriptions]). До 30.10.2026 партнёр видел только «$$» и
+  /// угадывал, что это значит (слово Координатора 29.10.2026). На сервер
+  /// уходит по-прежнему «$$». Высота — не меньше прежних 48 и растёт со
+  /// шрифтом: при крупном шрифте на узком экране слова переносятся, а не
+  /// обрезаются.
   Widget _buildPriceOption(
     String label,
     bool isSelected,
     VoidCallback onTap,
   ) {
+    final color = isSelected ? AppTheme.textOnPrimary : AppTheme.textPrimary;
+    final words = priceDescription(label);
     return Expanded(
       child: GestureDetector(
+        key: BasicInfoStep.priceOptionKey(label),
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          height: 48,
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected ? _primaryOrange : AppTheme.backgroundPrimary,
             borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
@@ -483,13 +499,24 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
             ),
           ),
           alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w500,
-              color: isSelected ? AppTheme.textOnPrimary : AppTheme.textPrimary,
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                ),
+              ),
+              if (words != null)
+                Text(
+                  words,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: color),
+                ),
+            ],
           ),
         ),
       ),

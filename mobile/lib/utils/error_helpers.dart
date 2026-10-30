@@ -19,7 +19,7 @@ String getHumanErrorMessage(dynamic error) {
 ///
 /// `ApiClient` пересобирает каждый отказ и кладёт в `DioException.error`
 /// готовую фразу для человека: текст сервера как есть («Одно из фото или
-/// файлов меню загружено не с этого аккаунта…»; по-русски пока не все —
+/// файлов меню загружено не с этой учётной записи…»; по-русски пока не все —
 /// общие тексты бэкенда английские) или свою, русскую («Нет связи…»). Её и
 /// показывать: сервер знает про случай больше клиента. `toString()`
 /// исключения на экран не годится никогда — это текст для программиста:
@@ -33,9 +33,10 @@ String getHumanErrorMessage(dynamic error) {
 /// параметр обязательный, чтобы ни у одного вызова не было пути к
 /// `toString()`.
 ///
-/// Не путать с [getHumanErrorMessage]: та переводит отказ по коду статуса
-/// фразами экрана входа (409 — «Аккаунт с таким email уже существует»), а
-/// текст сервера пропускает только для 400 и 422.
+/// Не путать с [getHumanErrorMessage]: та берёт русский текст сервера, а без
+/// него переводит отказ по коду статуса фразами экрана входа (401 —
+/// «Неверный email или пароль.»); английский текст сервера пропускает только
+/// для 400 и 422.
 String userMessageOf(Object error, {required String fallback}) {
   if (error is DioException && error.error is String) {
     return error.error as String;
@@ -77,14 +78,23 @@ String _mapDioError(DioException e) {
     return _fallbackMessage;
   }
 
+  // Русский текст сервера — первым: отказы входа и регистрации сервер пишет
+  // по-русски (backend/src/constants/authRefusals.js), и он знает про случай
+  // больше, чем код статуса.
+  final fromServer = russianServerText(e.response?.data);
+  if (fromServer != null) return fromServer;
+
   // Auth errors
   if (statusCode == 401) {
     return 'Неверный email или пароль.';
   }
 
-  // Conflict (duplicate account, etc.)
+  // 409 без русского текста — общая фраза. Прежде здесь стояло «Аккаунт с
+  // таким email уже существует.» на любой 409 — неверно для всякого
+  // конфликта, кроме занятой почты, и словом, которое в приложении больше
+  // не пишут (слово Координатора 29.10.2026: «учётная запись»).
   if (statusCode == 409) {
-    return 'Аккаунт с таким email уже существует.';
+    return _fallbackMessage;
   }
 
   // Validation errors — try to extract message from response

@@ -22,7 +22,7 @@
  * both on purpose: a stranger must not learn whether the card exists.
  */
 const ESTABLISHMENT_NOT_OWNED =
-  'Заведение не найдено или принадлежит другому аккаунту. Обновите список заведений.';
+  'Заведение не найдено или принадлежит другой учётной записи. Обновите список заведений.';
 
 /**
  * The account's daily upload allowance is spent (services/uploadAllowance.js);
