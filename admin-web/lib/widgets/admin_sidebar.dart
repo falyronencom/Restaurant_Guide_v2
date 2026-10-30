@@ -64,8 +64,8 @@ class AdminSidebar extends StatelessWidget {
       curve: Curves.easeOut,
       width: collapsed ? collapsedWidth : width,
       decoration: const BoxDecoration(
-        color: AppTheme.backgroundWarm,
-        border: Border(right: BorderSide(color: AppTheme.beigeDivider)),
+        color: AppTheme.railBackground,
+        border: Border(right: BorderSide(color: AppTheme.railBackground)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -205,7 +205,7 @@ class _RailHeader extends StatelessWidget {
                   ? Icons.keyboard_double_arrow_right
                   : Icons.keyboard_double_arrow_left,
               size: 18,
-              color: AppTheme.textSecondary,
+              color: AppTheme.railMuted,
             ),
           );
 
@@ -220,13 +220,15 @@ class _RailHeader extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('NIRIVIO', style: AppTheme.canonWordmark),
-                SizedBox(height: 4),
-                Text('АДМИН-ПАНЕЛЬ', style: AppTheme.canonWordmarkCaption),
+                Text('NIRIVIO',
+                    style: AppTheme.canonWordmark
+                        .copyWith(color: AppTheme.primaryOrange)),
+                const SizedBox(height: 4),
+                const Text('АДМИН-ПАНЕЛЬ', style: AppTheme.canonWordmarkCaption),
               ],
             ),
           ),
@@ -312,7 +314,7 @@ class _RailSectionDivider extends StatelessWidget {
         height: 1,
         indent: 8,
         endIndent: 8,
-        color: AppTheme.beigeDivider,
+        color: AppTheme.railDivider,
       ),
     );
   }
@@ -343,25 +345,25 @@ class _RailItem extends StatelessWidget {
     final Color iconColor;
     final TextStyle labelStyle;
     if (isActive) {
-      iconColor = AppTheme.primaryOrange;
+      iconColor = AppTheme.railActiveText;
       labelStyle = const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: AppTheme.primaryOrangeDark,
+        color: AppTheme.railActiveText,
       );
     } else if (entry.soon) {
-      iconColor = AppTheme.textGrey;
+      iconColor = AppTheme.railSoon;
       labelStyle = const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
-        color: AppTheme.textGrey,
+        color: AppTheme.railSoon,
       );
     } else {
-      iconColor = AppTheme.textSecondary;
+      iconColor = AppTheme.railMuted;
       labelStyle = const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
-        color: AppTheme.textDark,
+        color: AppTheme.railText,
       );
     }
 
@@ -413,7 +415,7 @@ class _RailItem extends StatelessWidget {
     final item = DecoratedBox(
       decoration: isActive
           ? BoxDecoration(
-              color: AppTheme.backgroundPrimary,
+              color: AppTheme.railActiveBackground,
               borderRadius: radius,
               boxShadow: AppTheme.railActiveShadow,
             )
@@ -422,6 +424,10 @@ class _RailItem extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: radius,
+          hoverColor: AppTheme.railHover,
+          focusColor: AppTheme.railPressed,
+          highlightColor: AppTheme.railPressed,
+          splashColor: AppTheme.railPressed,
           onTap: () => context.go(entry.path),
           child: SizedBox(height: 34, child: content),
         ),
@@ -440,7 +446,8 @@ class _RailItem extends StatelessWidget {
   }
 }
 
-/// Бейдж очереди: пилюля 18×18 (шире при двузначном), брендовая @14%.
+/// Бейдж очереди: пилюля 18×18 (шире при двузначном), брендовая @18% на
+/// тёмном меню.
 ///
 /// Нулевую очередь не показывает вовсе — молчание означает норму. Бейдж на
 /// каждом пункте превратился бы в шум, из которого не видно, где работа.
@@ -457,7 +464,7 @@ class _QueueBadge extends StatelessWidget {
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(horizontal: 5),
       decoration: BoxDecoration(
-        color: AppTheme.brandTint(0.14),
+        color: AppTheme.railBadgeBackground,
         borderRadius: BorderRadius.circular(9),
       ),
       child: Text(
@@ -465,7 +472,7 @@ class _QueueBadge extends StatelessWidget {
         style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: AppTheme.primaryOrangeDark,
+          color: AppTheme.railBadgeText,
         ),
       ),
     );
@@ -513,13 +520,17 @@ class _RailFooter extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+          hoverColor: AppTheme.railHover,
+          focusColor: AppTheme.railPressed,
+          highlightColor: AppTheme.railPressed,
+          splashColor: AppTheme.railPressed,
           onTap: () => confirmLogout(context),
           child: const Padding(
             padding: EdgeInsets.all(4),
             child: Icon(
               Icons.logout,
               size: 18,
-              color: AppTheme.textSecondary,
+              color: AppTheme.railMuted,
             ),
           ),
         ),
@@ -527,7 +538,7 @@ class _RailFooter extends StatelessWidget {
     );
 
     const border = BoxDecoration(
-      border: Border(top: BorderSide(color: AppTheme.beigeDivider)),
+      border: Border(top: BorderSide(color: AppTheme.railDivider)),
     );
 
     if (compact) {
@@ -565,7 +576,7 @@ class _RailFooter extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.textDark,
+                    color: AppTheme.railText,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -574,7 +585,7 @@ class _RailFooter extends StatelessWidget {
                   role,
                   style: const TextStyle(
                     fontSize: 11,
-                    color: AppTheme.textSecondary,
+                    color: AppTheme.railMuted,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

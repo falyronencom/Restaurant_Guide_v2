@@ -719,7 +719,7 @@ class _AdminCell extends StatelessWidget {
           height: 22,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: isSelf ? AppTheme.primaryOrangeDark : AppTheme.gray500,
+            color: isSelf ? AppTheme.primaryOrangeDark : AppTheme.textTertiary,
             shape: BoxShape.circle,
           ),
           child: Text(

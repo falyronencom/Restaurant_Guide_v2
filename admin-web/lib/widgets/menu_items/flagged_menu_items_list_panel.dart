@@ -171,13 +171,9 @@ class _FlaggedItemCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : BoxDecoration(
-                  color: AppTheme.backgroundWarm,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  // Прозрачная рамка той же ширины, что у выбранной: без неё
-                  // выбор раздвигает карточку и весь список под ней прыгает.
-                  border: Border.all(color: Colors.transparent, width: 1.5),
-                ),
+              // Рамка той же ширины, что у выбранной: без неё выбор
+              // раздвигает карточку и весь список под ней прыгает.
+              : AppTheme.listCardDecoration(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -216,7 +212,7 @@ class _FlaggedItemCard extends StatelessWidget {
           padding: const EdgeInsets.only(top: 2),
           child: Text(
             formatDayMonthShort(item.createdAt),
-            style: const TextStyle(fontSize: 11, color: AppTheme.gray500),
+            style: const TextStyle(fontSize: 11, color: AppTheme.textTertiary),
           ),
         ),
       ],
@@ -293,10 +289,9 @@ class _FlagChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        // На выбранной карточке фон белый, поэтому чип берёт бежевую пару
-        // disclaimer'а; на невыбранной наоборот — белый на бежевом. Ровно так
-        // нарисовано в кадре.
-        color: isSelected ? AppTheme.disclaimerBg : AppTheme.backgroundPrimary,
+        // На выбранной карточке чип берёт пару disclaimer'а, на невыбранной —
+        // светлый на белой карточке: выделение достаётся только выбранной.
+        color: isSelected ? AppTheme.disclaimerBg : AppTheme.listChipBackground,
         borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: Row(
@@ -363,14 +358,10 @@ class _QueueSkeleton extends StatelessWidget {
       itemBuilder: (_, __) => Container(
         height: cardHeight,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        decoration: BoxDecoration(
-          color: AppTheme.backgroundWarm,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-          // Та же прозрачная рамка 1.5, что у настоящей карточки: без неё
-          // геометрия расходится на три пикселя, и список дёргается в момент
-          // подмены скелетона данными.
-          border: Border.all(color: Colors.transparent, width: 1.5),
-        ),
+        // Та же рамка 1.5, что у настоящей карточки: без неё геометрия
+        // расходится на три пикселя, и список дёргается в момент подмены
+        // скелетона данными.
+        decoration: AppTheme.listCardDecoration(),
         child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[

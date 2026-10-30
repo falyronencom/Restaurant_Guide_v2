@@ -39,7 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
+      backgroundColor: AppTheme.backgroundWarm,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -66,12 +66,12 @@ class _LoginScreenState extends State<LoginScreen> {
                             .copyWith(fontSize: 30, height: 1.1),
                       ),
                       const SizedBox(height: 4),
-                      Text(
+                      const Text(
                         'Панель администратора',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 14,
-                          color: Colors.grey.shade600,
+                          color: AppTheme.textSecondary,
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -163,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: ElevatedButton(
                               onPressed: isLoading ? null : _handleSubmit,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFDB4F13),
+                                backgroundColor: AppTheme.primaryOrangeDark,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),

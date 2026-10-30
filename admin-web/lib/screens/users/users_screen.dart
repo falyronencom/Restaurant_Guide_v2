@@ -412,11 +412,7 @@ class _UserRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : BoxDecoration(
-                  color: AppTheme.backgroundWarm,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  border: Border.all(color: Colors.transparent, width: 1.5),
-                ),
+              : AppTheme.listCardDecoration(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
