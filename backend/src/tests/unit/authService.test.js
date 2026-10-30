@@ -564,10 +564,21 @@ describe('authService', () => {
         'INVALID_REFRESH_TOKEN'
       );
 
-      expect(logger.warn).toHaveBeenCalledWith(
-        'Refresh token not found',
-        expect.any(Object)
-      );
+      expect(logger.warn).toHaveBeenCalledWith('Refresh token not found');
+    });
+
+    // Until 30.10.2026 the line carried the token's first 10 characters. The
+    // logger blanked the field by its name (`token`), but the piece was still
+    // handed over — not one character of it is now.
+    test('the not-found line carries no piece of the presented token', async () => {
+      pool.query.mockResolvedValue({ rows: [], rowCount: 0 });
+      const presented = `f3a9c2e17b4d58a6${'0'.repeat(48)}`; // the 64-hex shape of a real one
+
+      await expect(refreshAccessToken(presented)).rejects.toThrow('INVALID_REFRESH_TOKEN');
+
+      const line = logger.warn.mock.calls.find(([message]) => message === 'Refresh token not found');
+      expect(line).toEqual(['Refresh token not found']);
+      expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('f3a9');
     });
 
     test('should throw REFRESH_TOKEN_EXPIRED if token expired', async () => {
@@ -1198,10 +1209,9 @@ describe('authService', () => {
         [expect.any(Date), storedRefreshToken('token_to_invalidate')]
       );
 
-      expect(logger.info).toHaveBeenCalledWith(
-        'Refresh token invalidated',
-        expect.any(Object)
-      );
+      // No piece of the token (30.10.2026): the line has no context at all.
+      expect(logger.info).toHaveBeenCalledWith('Refresh token invalidated');
+      expect(JSON.stringify(logger.info.mock.calls)).not.toContain('token_to_i');
     });
 
     test('should return false if token already invalidated', async () => {

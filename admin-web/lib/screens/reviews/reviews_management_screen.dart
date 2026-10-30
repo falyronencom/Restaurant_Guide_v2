@@ -550,7 +550,7 @@ class _AuthorBar extends StatelessWidget {
             Text(
               provider.batchError!,
               key: const ValueKey<String>('reviews-batch-error'),
-              style: const TextStyle(fontSize: 12, color: AppTheme.errorRed),
+              style: const TextStyle(fontSize: 12, color: AppTheme.errorStrong),
             )
           else if (canModerate && provider.batchResult != null)
             Text(
@@ -698,6 +698,15 @@ extension _ReviewStateLook on ReviewState {
         ReviewState.hidden => AppTheme.disclaimerBg,
         ReviewState.deleted => AppTheme.errorTint(0.10),
       };
+
+  /// Подпись чипа. Точка состояния остаётся статусного цвета ([color]), а
+  /// надпись берёт тёмный вариант: статусные зелёный и красный в мелком
+  /// тексте ниже 4,5 : 1.
+  Color get labelColor => switch (this) {
+        ReviewState.visible => AppTheme.successStrong,
+        ReviewState.hidden => AppTheme.disclaimerText,
+        ReviewState.deleted => AppTheme.errorStrong,
+      };
 }
 
 // =============================================================================
@@ -735,13 +744,9 @@ class _ReviewCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : BoxDecoration(
-                  color: AppTheme.backgroundWarm,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  // Прозрачная рамка той же ширины: без неё выбор карточки
-                  // сдвигает список под ней.
-                  border: Border.all(color: Colors.transparent, width: 1.5),
-                ),
+              // Рамка той же ширины, что у выбранной: без неё выбор
+              // карточки сдвигает список под ней.
+              : AppTheme.listCardDecoration(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -902,7 +907,7 @@ class _AuthorBlockedChip extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: AppTheme.errorRed,
+          color: AppTheme.errorStrong,
         ),
       ),
     );
@@ -927,7 +932,7 @@ class _StateChip extends StatelessWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: state.color,
+          color: state.labelColor,
         ),
       ),
     );
@@ -999,10 +1004,7 @@ class _ListSkeleton extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (_, __) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppTheme.backgroundWarm,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-        ),
+        decoration: AppTheme.listCardDecoration(),
         child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -1694,7 +1696,7 @@ class _Actions extends StatelessWidget {
           Text(
             error,
             key: const ValueKey<String>('review-action-error'),
-            style: const TextStyle(fontSize: 13, color: AppTheme.errorRed),
+            style: const TextStyle(fontSize: 13, color: AppTheme.errorStrong),
           ),
       ],
     );
@@ -1735,7 +1737,7 @@ class _Actions extends StatelessWidget {
               : () => _confirmDelete(context, reviews),
           // Заливка ошибки, а не контур: удаление необратимо и должно
           // выглядеть тяжелее скрытия, а не так же.
-          style: AppTheme.canonCtaL(backgroundColor: AppTheme.errorRed),
+          style: AppTheme.canonCtaL(backgroundColor: AppTheme.errorStrong),
           icon: const Icon(Icons.delete_outline, size: 19),
           label: const Text('Удалить'),
         ),
@@ -1940,7 +1942,7 @@ class _ReasonDialogState extends State<_ReasonDialog> {
         FilledButton(
           key: const ValueKey<String>('review-reason-confirm'),
           style: widget.destructive
-              ? FilledButton.styleFrom(backgroundColor: AppTheme.errorRed)
+              ? FilledButton.styleFrom(backgroundColor: AppTheme.errorStrong)
               : null,
           onPressed: widget.required && empty
               ? null

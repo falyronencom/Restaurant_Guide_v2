@@ -212,11 +212,11 @@ void main() {
 
     final active = tester.widget<Text>(find.text('Здоровье данных'));
     expect(active.style?.fontWeight, FontWeight.w600);
-    expect(active.style?.color, AppTheme.primaryOrangeDark);
+    expect(active.style?.color, AppTheme.railActiveText);
 
     final idle = tester.widget<Text>(find.text('Одобренные'));
     expect(idle.style?.fontWeight, FontWeight.w500);
-    expect(idle.style?.color, AppTheme.textDark);
+    expect(idle.style?.color, AppTheme.railText);
   });
 
   testWidgets('бейджи очередей: показываются только непустые', (tester) async {

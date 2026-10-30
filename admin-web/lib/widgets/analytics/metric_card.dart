@@ -122,8 +122,8 @@ class MetricCard extends StatelessWidget {
             color: delta == 0
                 ? AppTheme.textGrey
                 : delta > 0
-                    ? AppTheme.statusGreen
-                    : AppTheme.errorRed,
+                    ? AppTheme.successStrong
+                    : AppTheme.errorStrong,
           ),
         ),
       );

@@ -173,7 +173,7 @@ const Map<String, String> kRefusalCodePhrases = <String, String>{
   'VIEWER_PERSON_FILTER_FORBIDDEN':
       'В режиме просмотра отзывы одного человека недоступны.',
   // Вход.
-  'INVALID_CREDENTIALS': 'Неверный email или пароль',
+  'INVALID_CREDENTIALS': 'Неверный email или пароль.',
   'ADMIN_ACCESS_REQUIRED': 'Доступ только для администраторов',
 };
 

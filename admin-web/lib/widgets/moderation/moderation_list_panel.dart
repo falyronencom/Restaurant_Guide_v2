@@ -133,15 +133,11 @@ class _EstablishmentCard extends StatelessWidget {
         child: Container(
           decoration: isSelected
               ? AppTheme.canonSelectedCardDecoration()
-              : BoxDecoration(
-                  color: AppTheme.backgroundWarm,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
-                  // Рамка прозрачная, но ширины той же, что у выбранной.
-                  // Без неё выбор карточки раздвигает её на 1.5px с каждой
-                  // стороны, и весь список под ней прыгает — при обходе
-                  // очереди это заметно на каждом шаге.
-                  border: Border.all(color: Colors.transparent, width: 1.5),
-                ),
+              // Рамка той же ширины, что у выбранной: без неё выбор
+              // карточки раздвигает её на 1.5px с каждой стороны, и весь
+              // список под ней прыгает — при обходе очереди это заметно на
+              // каждом шаге.
+              : AppTheme.listCardDecoration(),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
             child: IntrinsicHeight(
@@ -196,8 +192,9 @@ class _MediaStrip extends StatelessWidget {
   }
 
   Widget _fallback() {
-    // Под выбранной карточкой фон белый, под обычной — бежевый; полоса берёт
-    // соседний по каноническому ряду оттенок, чтобы читаться на обоих.
+    // Выбранная карточка отличается и полосой: у неё полоса светлее, у
+    // прочих — в тон рамки. Знак берёт соседний оттенок, чтобы читаться на
+    // обеих.
     final background =
         isSelected ? AppTheme.backgroundWarm : AppTheme.beigeDivider;
     final glyph = isSelected ? AppTheme.strokeGrey : AppTheme.textGrey;
@@ -318,7 +315,7 @@ class _CardBody extends StatelessWidget {
 }
 
 /// Бейдж срока ожидания. У выбранной карточки — disclaimer-пара канона,
-/// у прочих белый на бежевом: выделение достаётся только выбранной.
+/// у прочих светлый на белой карточке: выделение достаётся только выбранной.
 class _WaitingBadge extends StatelessWidget {
   final int? days;
   final bool isSelected;
@@ -338,7 +335,7 @@ class _WaitingBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
-        color: isSelected ? AppTheme.disclaimerBg : AppTheme.backgroundPrimary,
+        color: isSelected ? AppTheme.disclaimerBg : AppTheme.listChipBackground,
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -379,7 +376,7 @@ class _QueueSkeleton extends StatelessWidget {
         // Высота настоящей карточки при однострочных полях — скелетон не
         // должен смещать список в момент подмены.
         height: 94,
-        decoration: AppTheme.canonPanelDecoration(radius: AppTheme.radiusMedium),
+        decoration: AppTheme.listCardDecoration(),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

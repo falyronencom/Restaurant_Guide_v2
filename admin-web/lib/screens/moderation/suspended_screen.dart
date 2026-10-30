@@ -164,8 +164,8 @@ class _SuspendedScreenState extends State<SuspendedScreen> {
 /// Чип причины приостановки — по кадру 13.
 ///
 /// Фон различается выбором ровно так же, как у бейджа срока ожидания в
-/// кадре 05: у выбранной карточки disclaimer-бежевый, у прочих белый на
-/// бежевом. Подпись остаётся коричневой в обоих случаях — цвет здесь несёт
+/// кадре 05: у выбранной карточки disclaimer-бежевый, у прочих светлый на
+/// белой карточке. Подпись остаётся коричневой в обоих случаях — цвет несёт
 /// смысл «приостановлено», а не выделение.
 class _SuspendReason extends StatelessWidget {
   final String? reason;
@@ -182,7 +182,7 @@ class _SuspendReason extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: isSelected ? AppTheme.disclaimerBg : AppTheme.backgroundPrimary,
+        color: isSelected ? AppTheme.disclaimerBg : AppTheme.listChipBackground,
         borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
       ),
       child: Row(

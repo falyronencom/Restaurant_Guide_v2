@@ -44,9 +44,10 @@ export async function verifyGoogleToken(idToken) {
       throw new Error('OAUTH_NO_EMAIL');
     }
 
+    // The provider's account number, never the address: the log holds no
+    // e-mail of a person (30.10.2026). authService names our account next.
     logger.info('Google token verified', {
       sub: payload.sub,
-      email: payload.email,
     });
 
     return {
@@ -61,7 +62,15 @@ export async function verifyGoogleToken(idToken) {
     if (error.message === 'OAUTH_NO_EMAIL') {
       throw error;
     }
-    logger.error('Google token verification failed', { error: error.message });
+    // google-auth-library quotes the token after its reason — the payload
+    // (the person's e-mail, name, picture) or the whole token: «Token used too
+    // late, <now> > <latest>: {…}», «Invalid token signature: <token>». The
+    // log keeps the reason only, and the code a network failure carries
+    // (30.10.2026).
+    logger.error('Google token verification failed', {
+      error: String(error.message).split(': ')[0],
+      code: error.code,
+    });
     throw new Error('OAUTH_INVALID_TOKEN');
   }
 }
@@ -122,9 +131,9 @@ export async function verifyYandexToken(oauthToken) {
       avatarUrl = `${YANDEX_AVATAR_BASE}/${data.default_avatar_id}/${YANDEX_AVATAR_SIZE}`;
     }
 
+    // As for Google: the provider's account number, never the address.
     logger.info('Yandex token verified', {
       id: data.id,
-      email: data.default_email,
     });
 
     return {

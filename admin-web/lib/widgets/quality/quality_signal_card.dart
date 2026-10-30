@@ -67,7 +67,7 @@ class _QualitySignalCardState extends State<QualitySignalCard> {
     final samples = widget.samples;
     final carriesSamples = widget.carriesSamples;
     final isProblem = count > 0;
-    final accent = isProblem ? AppTheme.errorRed : AppTheme.statusGreen;
+    final accent = isProblem ? AppTheme.errorStrong : AppTheme.successStrong;
     final scope = signal.scopeNote;
     final extra = extraNote;
     // Раскрытие только у красных: у чистой раскрывать нечего по определению.
@@ -125,7 +125,7 @@ class _QualitySignalCardState extends State<QualitySignalCard> {
               style: const TextStyle(
                 fontSize: 12,
                 height: 1.45,
-                color: AppTheme.gray500,
+                color: AppTheme.textTertiary,
               ),
             ),
             if (extra != null) ...[
