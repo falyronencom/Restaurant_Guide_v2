@@ -34,7 +34,7 @@ afterAll(() => {
   if (originalGoogleClientId === undefined) delete process.env.GOOGLE_CLIENT_ID;
   else process.env.GOOGLE_CLIENT_ID = originalGoogleClientId;
 });
-const { DEFAULT_YANDEX_CLIENT_IDS } = await import('../../config/oauth.js');
+const { DEFAULT_YANDEX_CLIENT_IDS, resolveYandexClientIds } = await import('../../config/oauth.js');
 const logger = (await import('../../utils/logger.js')).default;
 
 /** The application our mobile app and website sign in through. */
@@ -263,6 +263,85 @@ describe('oauthService', () => {
           yandexResponse({ id: 1, default_email: 'a@yandex.ru' })
         );
         await expect(verifyYandexToken('t')).resolves.toMatchObject({ email: 'a@yandex.ru' });
+      });
+    });
+  });
+
+  // Until 30.10.2026 every sign-in through either provider wrote the person's
+  // address to the log. The provider's account number stays: it is what ties
+  // the line to the account authService names next.
+  describe('a verified token: the provider account number in the log, never the address', () => {
+    const loggedText = () => JSON.stringify(
+      ['info', 'warn', 'error', 'debug'].map((level) => logger[level].mock.calls)
+    ).toLowerCase();
+
+    test('Google', async () => {
+      mockVerifyIdToken.mockResolvedValue({
+        getPayload: () => ({ sub: 'google-sub-7', email: 'Anna.Petrova@Gmail.com', email_verified: true }),
+      });
+
+      await expect(verifyGoogleToken('id-token')).resolves.toMatchObject({ email: 'anna.petrova@gmail.com' });
+
+      expect(loggedText()).not.toContain('anna.petrova');
+      expect(logger.info).toHaveBeenCalledWith('Google token verified', { sub: 'google-sub-7' });
+    });
+
+    test('Yandex', async () => {
+      // Whatever the environment accepts — this test is not about the check.
+      const [acceptedApp] = resolveYandexClientIds(process.env);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ client_id: acceptedApp, id: 4242, default_email: 'Anna.Petrova@yandex.by' }),
+      });
+
+      await expect(verifyYandexToken('t')).resolves.toMatchObject({ email: 'anna.petrova@yandex.by' });
+
+      expect(loggedText()).not.toContain('anna.petrova');
+      expect(logger.info).toHaveBeenCalledWith('Yandex token verified', { id: 4242 });
+    });
+  });
+
+  // google-auth-library quotes the token after its reason: the payload — the
+  // person's e-mail, name and picture — or the token itself
+  // (node_modules/google-auth-library/build/src/auth/oauth2client.js,
+  // verifySignedJwtWithCertsAsync). The log keeps the reason (lens review,
+  // Phase 3.5, 30.10.2026).
+  describe('a refused Google token: the reason in the log, not what the library quotes', () => {
+    const PAYLOAD = JSON.stringify({
+      iss: 'https://accounts.google.com',
+      email: 'anna.petrova@gmail.com',
+      name: 'Анна Петрова',
+      picture: 'https://lh3.googleusercontent.com/a/anna-pic',
+    });
+    const failureLine = () => logger.error.mock.calls
+      .find(([message]) => message === 'Google token verification failed')[1];
+
+    test.each([
+      ['an expired token', `Token used too late, 1730000000.5 > 1729999000: ${PAYLOAD}`, 'Token used too late, 1730000000.5 > 1729999000'],
+      ['a forged signature', 'Invalid token signature: eyJhbGciOiJSUzI1NiJ9.eyJlbWFpbCI6ImFubmEifQ.c2ln', 'Invalid token signature'],
+      ['a token with no expiry', `No expiration time in token: ${PAYLOAD}`, 'No expiration time in token'],
+    ])('%s', async (_case, libraryMessage, reason) => {
+      mockVerifyIdToken.mockRejectedValue(new Error(libraryMessage));
+
+      await expect(verifyGoogleToken('id-token')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+
+      expect(failureLine()).toEqual({ error: reason, code: undefined });
+      const text = JSON.stringify(logger.error.mock.calls);
+      ['anna', 'Анна', 'googleusercontent', 'eyJ'].forEach((piece) => expect(text).not.toContain(piece));
+    });
+
+    test('a network failure keeps its code, so the reason is not lost', async () => {
+      mockVerifyIdToken.mockRejectedValue(Object.assign(
+        new Error('request to https://www.googleapis.com/oauth2/v1/certs failed, reason: getaddrinfo ENOTFOUND www.googleapis.com'),
+        { code: 'ENOTFOUND' },
+      ));
+
+      await expect(verifyGoogleToken('id-token')).rejects.toThrow('OAUTH_INVALID_TOKEN');
+
+      expect(failureLine()).toEqual({
+        error: 'request to https://www.googleapis.com/oauth2/v1/certs failed, reason',
+        code: 'ENOTFOUND',
       });
     });
   });

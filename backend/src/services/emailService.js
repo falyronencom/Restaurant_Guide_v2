@@ -62,6 +62,8 @@ const TIMED_OUT = Symbol('timed out');
  * Every failure is logged here, as one error line that carries the account
  * (when the caller names it) next to the reason (Н33): during the mail
  * incident of 22–23.10 the reason and the account sat in different lines.
+ * No line carries the recipient's address: the account names the person, and
+ * the log holds no e-mail (30.10.2026).
  *
  * @param {Object} msg - Resend payload
  * @param {Object} log
@@ -79,7 +81,7 @@ const deliver = async (msg, { userId, failureMessage, sentMessage }) => {
     signal.addEventListener('abort', onAbort, { once: true });
   });
   const failed = (message, reason, detail) => {
-    logger.error(message, { userId, reason, ...detail, toEmail: msg.to });
+    logger.error(message, { userId, reason, ...detail });
     return { sent: false, reason };
   };
 
@@ -91,7 +93,7 @@ const deliver = async (msg, { userId, failureMessage, sentMessage }) => {
     if (result?.error) {
       return failed('Resend returned error in response', 'RESEND_ERROR', { error: result.error });
     }
-    logger.info(sentMessage, { userId, toEmail: msg.to, id: result?.data?.id });
+    logger.info(sentMessage, { userId, id: result?.data?.id });
     return { sent: true };
   } catch (error) {
     return failed(failureMessage, 'RESEND_ERROR', { error: error.message });
@@ -103,14 +105,13 @@ const deliver = async (msg, { userId, failureMessage, sentMessage }) => {
 /**
  * Log a send skipped for want of RESEND_API_KEY. Outside production that is
  * the expected dev / test setup — a warning; in production no email can go
- * out at all — an error, with the account (Н33).
+ * out at all — an error, with the account (Н33), not the address.
  */
-const logNotConfigured = (message, toEmail, userId) => {
+const logNotConfigured = (message, userId) => {
   const level = process.env.NODE_ENV === 'production' ? 'error' : 'warn';
   logger[level](message, {
     userId,
     reason: 'RESEND_NOT_CONFIGURED',
-    toEmail,
     hint: 'Set RESEND_API_KEY env var to enable email delivery',
   });
 };
@@ -183,7 +184,7 @@ const buildTextBody = (code, userName, expiryMinutes) =>
  */
 export const sendVerificationCodeEmail = async (toEmail, code, userName, { userId } = {}) => {
   if (!ensureConfigured()) {
-    logNotConfigured('Resend not configured — email verification code not sent', toEmail, userId);
+    logNotConfigured('Resend not configured — email verification code not sent', userId);
     return { sent: false, reason: 'RESEND_NOT_CONFIGURED' };
   }
 
@@ -273,7 +274,7 @@ export const sendPasswordResetEmail = async (toEmail, rawToken, userName, { user
   const resetUrl = `${siteUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
   if (!ensureConfigured()) {
-    logNotConfigured('Resend not configured — password reset email not sent', toEmail, userId);
+    logNotConfigured('Resend not configured — password reset email not sent', userId);
     if (process.env.NODE_ENV !== 'production') {
       // Dev interception: the raw token exists nowhere but the email, and the
       // DB stores only its hash — without Resend the local console is the only

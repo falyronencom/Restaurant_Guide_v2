@@ -30,6 +30,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const { pool, getClient } = await import('../../config/database.js');
 const { generateAccessToken, generateRefreshToken } = await import('../../utils/jwt.js');
 const { authenticateWithOAuth } = await import('../../services/authService.js');
+const logger = (await import('../../utils/logger.js')).default;
 
 const yandexProvider = (overrides = {}) => ({
   providerId: 'yx-pid-1',
@@ -162,5 +163,89 @@ describe('authenticateWithOAuth', () => {
     await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
     expect(linked()).toBe(false); // not linked (the pool)
     expect(getClient).not.toHaveBeenCalled(); // not taken over (the takeover runs in a transaction)
+  });
+});
+
+// Until 30.10.2026 three of these lines wrote the person's address: the
+// unverified claim, a new account, the sign-up race. What the code hands the
+// logger is checked here — the logger's own redaction (utils/logger.js) is a
+// second layer with its own tests, and must not be what keeps these clean.
+describe('authenticateWithOAuth — the log holds no e-mail', () => {
+  const ADDRESS = 'user@yandex.ru'; // yandexProvider() and userRow() both carry it
+
+  beforeEach(() => {
+    generateAccessToken.mockReturnValue('access-token');
+    generateRefreshToken.mockReturnValue('refresh-token');
+  });
+
+  /** Every logger call of this test, with the line it wrote. */
+  const logged = () => ['info', 'warn', 'error'].flatMap((level) => logger[level].mock.calls
+    .map(([message, context]) => ({ level, message, context })));
+  const line = (message) => logged().find((call) => call.message === message);
+
+  const expectNoAddress = () => {
+    const text = JSON.stringify(logged()).toLowerCase();
+    expect(text).not.toContain(ADDRESS);
+    expect(text).not.toContain('user@'); // not even the mailbox
+  };
+
+  test('an unverified e-mail claiming an existing account: the account by its id, and the provider', async () => {
+    mockPoolFor({ oauthRows: [], emailRows: [userRow({ id: 'user-claimed', auth_method: 'email' })] });
+
+    await expect(
+      authenticateWithOAuth(yandexProvider({ emailVerified: false })),
+    ).rejects.toThrow('OAUTH_EMAIL_NOT_VERIFIED');
+
+    expectNoAddress();
+    expect(line('OAuth login: unverified email tried to claim existing account')).toEqual({
+      level: 'warn',
+      message: 'OAuth login: unverified email tried to claim existing account',
+      context: { userId: 'user-claimed', provider: 'yandex' },
+    });
+  });
+
+  test('a new account: its id and the provider', async () => {
+    mockPoolFor({ oauthRows: [], emailRows: [], returnedUser: userRow({ id: 'new-user' }) });
+
+    await authenticateWithOAuth(yandexProvider());
+
+    expectNoAddress();
+    expect(line('OAuth login: new user created').context).toEqual({ userId: 'new-user', provider: 'yandex' });
+  });
+
+  test('the sign-up race: the constraint and the provider — not the address pg quotes in `detail`', async () => {
+    // node-postgres' unique violation, as the users table raises it.
+    const dupErr = Object.assign(new Error('duplicate key value violates unique constraint "users_email_key"'), {
+      code: '23505',
+      constraint: 'users_email_key',
+      detail: `Key (email)=(${ADDRESS}) already exists.`,
+    });
+    mockPoolFor({ oauthRows: [], emailRows: [], insertError: dupErr });
+
+    await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('OAUTH_ACCOUNT_CONFLICT');
+
+    expectNoAddress();
+    expect(line('OAuth signup race condition detected').context).toEqual({
+      provider: 'yandex',
+      constraint: 'users_email_key',
+    });
+  });
+
+  test('the other paths (login, link) wrote none before and write none now', async () => {
+    mockPoolFor({ oauthRows: [userRow()] });
+    await authenticateWithOAuth(yandexProvider());
+
+    mockPoolFor({
+      oauthRows: [],
+      emailRows: [userRow({ auth_method: 'email', oauth_provider_id: null, email_verified: true })],
+      returnedUser: userRow({ auth_method: 'yandex' }),
+    });
+    await authenticateWithOAuth(yandexProvider());
+
+    expectNoAddress();
+    expect(logged().map((call) => call.message)).toEqual(expect.arrayContaining([
+      'OAuth login: existing user',
+      'OAuth login: linked existing account',
+    ]));
   });
 });
