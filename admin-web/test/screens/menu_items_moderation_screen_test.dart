@@ -225,13 +225,36 @@ void main() {
         );
 
       // На этом отборе total и ЕСТЬ число скрытых, поэтому «в очереди ещё 12»
-      // нельзя вывести из него — только из counts.visible.
+      // нельзя вывести из него — только из counts.visible. «с флагом» здесь
+      // нет: во «Скрытых» лежат и скрытые без флага (К-1, слово Координатора
+      // 29.10.2026).
       await _pump(tester, service: service, visibility: MenuItemVisibility.hidden);
 
       expect(
-        find.text('8 позиций с флагом · только скрытые, в очереди ещё 12'),
+        find.text('8 позиций · только скрытые, в очереди ещё 12'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('все: с флагом и скрытые, сколько из них скрыто', (tester) async {
+      final service = _FakeService()
+        ..response = _response(total: 20, visible: 12, hidden: 8);
+
+      await _pump(tester, service: service, visibility: MenuItemVisibility.all);
+
+      expect(
+        find.text('20 позиций · с флагом и скрытые, из них 8 скрыто'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('пустая вкладка «Все» называет обе половины', (tester) async {
+      final service = _FakeService()
+        ..response = _response(items: <FlaggedMenuItem>[], total: 0, visible: 0, hidden: 0);
+
+      await _pump(tester, service: service, visibility: MenuItemVisibility.all);
+
+      expect(find.text('Позиций с флагом и скрытых нет'), findsOneWidget);
     });
 
     testWidgets('пустая выборка под фильтром говорит про фильтр', (tester) async {

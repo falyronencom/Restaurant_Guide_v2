@@ -198,6 +198,11 @@ class _MenuItemsModerationScreenState extends State<MenuItemsModerationScreen> {
   /// Область называется вслух всегда. Раньше её приходилось угадывать: бейдж
   /// рейла считал нескрытые, а список показывал и скрытые, и разница ничем не
   /// объяснялась.
+  ///
+  /// «с флагом» — только у «Активных»: во вкладках «Скрытые» и «Все» лежат и
+  /// скрытые позиции без флага (находка К-1, 29.10.2026). Подписи этих вкладок
+  /// — слово Координатора 29.10.2026, дословно; варианты без «из них … скрыто»
+  /// и «под фильтром» выведены из них тем же порядком слов.
   String? _subtitle(MenuItemsModerationProvider provider) {
     if (!provider.hasLoaded) return null;
 
@@ -210,25 +215,25 @@ class _MenuItemsModerationScreenState extends State<MenuItemsModerationScreen> {
       return switch (provider.loadedVisibility) {
         MenuItemVisibility.visible => 'Неразобранных позиций нет',
         MenuItemVisibility.hidden => 'Скрытых позиций нет',
-        MenuItemVisibility.all => 'Позиций с флагом нет',
+        MenuItemVisibility.all => 'Позиций с флагом и скрытых нет',
       };
     }
 
     final count = countWithNoun(total, 'позиция', 'позиции', 'позиций');
-    final head = provider.loadedNarrowed
-        ? '$count с флагом под фильтром'
-        : '$count с флагом';
+    final narrowed = provider.loadedNarrowed ? ' под фильтром' : '';
+    final flagged = '$count с флагом$narrowed';
+    final head = '$count$narrowed';
 
     return switch (provider.loadedVisibility) {
       MenuItemVisibility.visible => hidden != null && hidden > 0
-          ? '$head · показаны нескрытые, ещё ${formatCount(hidden)} скрыто'
-          : '$head · показаны нескрытые',
+          ? '$flagged · показаны нескрытые, ещё ${formatCount(hidden)} скрыто'
+          : '$flagged · показаны нескрытые',
       MenuItemVisibility.hidden => visible != null && visible > 0
           ? '$head · только скрытые, в очереди ещё ${formatCount(visible)}'
           : '$head · только скрытые',
       MenuItemVisibility.all => hidden != null && hidden > 0
-          ? '$head · вместе со скрытыми, из них ${formatCount(hidden)} скрыто'
-          : '$head · вместе со скрытыми',
+          ? '$head · с флагом и скрытые, из них ${formatCount(hidden)} скрыто'
+          : '$head · с флагом и скрытые',
     };
   }
 }
