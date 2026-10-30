@@ -124,7 +124,7 @@ void main() {
         tester.widget<TextFormField>(find.byType(TextFormField).at(0));
     expect(email.controller!.text, 'moderator@example.com',
         reason: 'после опечатки почту не набирают заново');
-    expect(find.text('Неверный email или пароль'), findsOneWidget);
+    expect(find.text('Неверный email или пароль.'), findsOneWidget);
   });
 
   testWidgets('неизвестный адрес — русская страница со ссылкой на главную',

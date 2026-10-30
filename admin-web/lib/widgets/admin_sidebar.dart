@@ -639,7 +639,7 @@ Future<bool> confirmLosingVerdicts(
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          style: FilledButton.styleFrom(backgroundColor: AppTheme.errorRed),
+          style: FilledButton.styleFrom(backgroundColor: AppTheme.errorStrong),
           child: Text(confirm),
         ),
       ],

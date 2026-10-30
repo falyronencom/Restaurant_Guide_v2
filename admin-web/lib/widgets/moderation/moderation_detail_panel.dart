@@ -417,7 +417,7 @@ class ModerationEntityActions extends StatelessWidget {
             _CompactAction(
               tooltip: 'Приостановить',
               icon: Icons.pause_circle_outline,
-              color: AppTheme.errorRed,
+              color: AppTheme.errorStrong,
               onPressed: busy ? null : () => _confirmSuspend(context),
             )
           else if (onSuspend != null)
@@ -429,7 +429,7 @@ class ModerationEntityActions extends StatelessWidget {
               // проверено — в макете редизайна он не встречается ни разу.
               // Приостановка — действие с последствиями, её место в
               // предупреждающем красном канона.
-              style: _action(color: AppTheme.errorRed, borderWidth: 1.5),
+              style: _action(color: AppTheme.errorStrong, borderWidth: 1.5),
             ),
           if (onUnsuspend != null)
             FilledButton.icon(
@@ -926,7 +926,7 @@ class _RejectionNotesBlock extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: AppTheme.errorRed,
+                    color: AppTheme.errorStrong,
                   ),
                 ),
               ),
@@ -2000,7 +2000,7 @@ class _ActionBar extends StatelessWidget {
                 error,
                 style: const TextStyle(
                   fontSize: 13,
-                  color: AppTheme.errorRed,
+                  color: AppTheme.errorStrong,
                 ),
               )
             : _StateHint(provider: provider);
@@ -2008,7 +2008,7 @@ class _ActionBar extends StatelessWidget {
     final reject = OutlinedButton(
       key: const ValueKey<String>('reject-application'),
       onPressed: provider.isSubmitting ? null : () => _confirmReject(context),
-      style: AppTheme.canonCtaOutlined(color: AppTheme.errorRed),
+      style: AppTheme.canonCtaOutlined(color: AppTheme.errorStrong),
       child: const Text('Отклонить заявку', maxLines: 1, softWrap: false),
     );
     // Причина блокировки объясняется слева, а не внутри кнопки:
@@ -2187,7 +2187,7 @@ class _ActionBar extends StatelessWidget {
                     'Ни одно поле не отклонено с причиной — партнёр не узнает, '
                     'что исправлять. Отметьте ✗ у полей, которые нужно '
                     'исправить, или отклоните без причин.',
-                    style: TextStyle(fontSize: 14, color: AppTheme.errorRed),
+                    style: TextStyle(fontSize: 14, color: AppTheme.errorStrong),
                   ),
                 )
               else
@@ -2215,7 +2215,7 @@ class _ActionBar extends StatelessWidget {
               });
             },
             style: FilledButton.styleFrom(
-              backgroundColor: AppTheme.errorRed,
+              backgroundColor: AppTheme.errorStrong,
             ),
             child: Text(reasons.isEmpty ? 'Отклонить без причин' : 'Отклонить'),
           ),
@@ -2782,7 +2782,7 @@ class _SuspendReasonDialogState extends State<_SuspendReasonDialog> {
                       ? null
                       : () => Navigator.of(context).pop(reason),
                   style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.errorRed,
+                    backgroundColor: AppTheme.errorStrong,
                     disabledBackgroundColor: AppTheme.strokeGrey,
                     disabledForegroundColor: AppTheme.textSecondary,
                   ),

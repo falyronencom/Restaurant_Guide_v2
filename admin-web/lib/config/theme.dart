@@ -150,6 +150,14 @@ class AppTheme {
   static const Color statusGreen = Color(0xFF34C759);
   static const Color errorRed = Color(0xFFF44336);
 
+  /// Красный и зелёный для НАДПИСЕЙ и КНОПОК: ошибки, пометки, числа
+  /// сигналов, подписи кнопок и заливки кнопок с белой надписью. Статусные
+  /// [errorRed] и [statusGreen] дают на белом 3,7 и 2,2 : 1 — ниже нормы для
+  /// текста (решение Координатора 29.10.2026, находка PALETTE). Им остаются
+  /// точки, значки, рамки, линии графиков и полупрозрачные подложки.
+  static const Color errorStrong = Color(0xFFC62828);
+  static const Color successStrong = Color(0xFF1E7B34);
+
   /// Disclaimer-пара: «скрыт», «приостановлено», причина приостановки.
   static const Color disclaimerText = Color(0xFF80592F);
   static const Color disclaimerBg = Color(0xFFF7EFE6);
@@ -649,7 +657,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: primaryOrangeDark,
         ),
-        errorStyle: const TextStyle(fontSize: 12, color: errorRed),
+        errorStyle: const TextStyle(fontSize: 12, color: errorStrong),
       );
 
   // ============================================================================

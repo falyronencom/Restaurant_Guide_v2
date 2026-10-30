@@ -364,7 +364,7 @@ void main() {
       );
       expect(
         tester.widget<Text>(find.text('удалён')).style?.color,
-        AppTheme.errorRed,
+        AppTheme.errorStrong,
       );
     });
 
@@ -598,7 +598,7 @@ void main() {
               matching: find.byWidgetPredicate((w) => w is ButtonStyleButton)));
       final delete = button('Удалить');
       expect(delete.style!.backgroundColor!.resolve(<WidgetState>{}),
-          const Color(0xFFF44336),
+          AppTheme.errorStrong,
           reason: 'удаление — заливкой ошибки, тяжелее скрытия');
       final hide = button('Скрыть отзыв');
       expect(hide, isA<OutlinedButton>());
