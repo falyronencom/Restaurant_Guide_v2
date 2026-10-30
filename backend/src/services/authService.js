@@ -17,6 +17,7 @@
 import argon2 from 'argon2';
 import { pool, getClient } from '../config/database.js';
 import { resolveRefreshReuseGraceSeconds } from '../config/auth.js';
+import { accessTokenLifetimeSeconds } from '../config/accessToken.js';
 import {
   generateAccessToken,
   generateRefreshToken,
@@ -34,7 +35,7 @@ import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { parseModerationNotes } from '../utils/moderationNotes.js';
-import { isPanelRole } from '../config/panelRoles.js';
+import { isPanelRole, panelSessionLapsed } from '../config/panelRoles.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
 import {
@@ -91,14 +92,34 @@ const DUMMY_PASSWORD_HASH = [
 ].join('$');
 
 /**
- * Access token lifetime reported to clients, in seconds.
+ * What a failed password login writes to the log: by what the person came in
+ * (e-mail, phone), the account's id when there is one, and why — never the
+ * e-mail or the phone itself (finding 27 of the Railway incident, 29.10.2026:
+ * a wrong password at any door wrote the e-mail into the log). The id is
+ * enough to look the account up; for an unknown address there is nothing to
+ * look up. With both an e-mail and a phone the row found may be the phone's
+ * account, not the e-mail's (email = $1 OR phone = $2), so no id is written.
  *
- * Mirrors JWT_ACCESS_EXPIRY ('4h' by default, utils/jwt.js) — the JWT carries
- * its own exp, this number only tells the client when to come back. Shared by
- * the two paths that mint an access token (generateTokenPair and a replay
- * inside the reuse grace window) so they cannot drift apart.
+ * @param {Object} credentials - { email, phone } as the caller passed them
+ * @param {Object|null} user - The row found, or null
+ * @param {string} reason
+ * @returns {Object}
  */
-const ACCESS_TOKEN_EXPIRES_IN_SECONDS = 14400;
+const loginFailureFields = ({ email, phone }, user, reason) => {
+  let loginBy = 'none';
+  if (email && phone) {
+    loginBy = 'email_and_phone';
+  } else if (email) {
+    loginBy = 'email';
+  } else if (phone) {
+    loginBy = 'phone';
+  }
+  return {
+    loginBy,
+    ...(user && loginBy !== 'email_and_phone' ? { userId: user.id } : {}),
+    reason,
+  };
+};
 
 /**
  * A refresh-token row joined with its user — what refreshAccessToken starts
@@ -239,9 +260,14 @@ export async function createUser(userData) {
  *   after the same verification, with no write and no extra query, so neither
  *   the answer nor its timing nor last_login_at tells a right panel password
  *   from a wrong one (directive service_accounts 2026-10-15, B1; Phase 3.5)
+ * @param {boolean} [options.otherAccounts=true] - false on the panel's login:
+ *   an account outside the panel roles with a right password is returned
+ *   as is, without last_login_at written — the door refuses it
+ *   (adminController.adminLogin), and a refused login is not a login
+ *   (verify S1–S4 29.10.2026, «Вне меток» 3)
  * @returns {Promise<Object|null>} User object if credentials valid, null otherwise
  */
-export async function verifyCredentials(credentials, { panelAccounts = true } = {}) {
+export async function verifyCredentials(credentials, { panelAccounts = true, otherAccounts = true } = {}) {
   const { email, phone, password } = credentials;
   
   try {
@@ -291,6 +317,13 @@ export async function verifyCredentials(credentials, { panelAccounts = true } = 
         failureReason = 'panel_account_on_shared_login';
       }
 
+      if (isValidPassword && !otherAccounts && !isPanelRole(user.role)) {
+        // Another role at the panel's door: the caller refuses it with its
+        // own answer and logs the refusal; nothing is written here.
+        delete user.password_hash;
+        return user;
+      }
+
       if (isValidPassword) {
         // Update last login timestamp — only if the hash just verified is still
         // the row's hash. The verify takes tens of milliseconds, and a takeover
@@ -302,11 +335,10 @@ export async function verifyCredentials(credentials, { panelAccounts = true } = 
           [new Date(), user.id, user.password_hash],
         );
         if (stillCurrent.rowCount === 0) {
-          logger.warn('Login attempt failed', {
-            email: email || 'not_provided',
-            phone: phone || 'not_provided',
-            reason: 'password_changed_during_verification',
-          });
+          logger.warn(
+            'Login attempt failed',
+            loginFailureFields(credentials, user, 'password_changed_during_verification'),
+          );
           return null;
         }
         
@@ -327,11 +359,10 @@ export async function verifyCredentials(credentials, { panelAccounts = true } = 
     }
 
     // Log failed login attempt for security monitoring
-    logger.warn('Login attempt failed', {
-      email: email || 'not_provided',
-      phone: phone || 'not_provided',
-      reason: failureReason,
-    });
+    logger.warn(
+      'Login attempt failed',
+      loginFailureFields(credentials, result.rows[0] ?? null, failureReason),
+    );
     
     return null;
     
@@ -344,7 +375,10 @@ export async function verifyCredentials(credentials, { panelAccounts = true } = 
 /**
  * Generates a new pair of access and refresh tokens for a user
  * 
- * Access tokens are short-lived (4 hours, JWT_ACCESS_EXPIRY) JWT tokens that authenticate API requests.
+ * Access tokens are short-lived (4 hours, JWT_ACCESS_EXPIRY; the panel's accounts one hour,
+ * config/accessToken.js) JWT tokens that authenticate API requests. expiresIn tells the
+ * client the same lifetime the token carries (accessTokenLifetimeSeconds),
+ * here and on a replay inside the reuse grace window.
  * Refresh tokens are long-lived (30 days) and stored in database for validation.
  * 
  * The token pair allows secure, stateless authentication while maintaining the ability
@@ -410,7 +444,7 @@ export async function generateTokenPair(user, { replaces = null } = {}) {
     return {
       accessToken,
       refreshToken,
-      expiresIn: ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+      expiresIn: accessTokenLifetimeSeconds(user.role),
       // Row id of the refresh token just inserted. refreshAccessToken writes
       // it into the predecessor's replaced_by so a replay inside the grace
       // window can find this successor (config/auth.js). Callers that only
@@ -502,6 +536,22 @@ export async function refreshAccessToken(refreshToken) {
         [tokenData.id],
       );
       throw new Error('USER_ACCOUNT_INACTIVE');
+    }
+
+    // A panel account (admin, viewer) that has not renewed for a day: answered
+    // as an expired token (config/panelRoles.js, S1 «а» 29.10.2026). After the
+    // reuse check on purpose, not next to the expiry above: a burned token is
+    // where theft shows — a thief who renewed the moderator's token first
+    // leaves the moderator holding it, and a moderator back after a weekend
+    // must still raise the alarm that ends the thief's chain, not a quiet
+    // "log in again" that leaves it alive. After the switched-off check too,
+    // so a disabled account keeps its own answer and its burned token.
+    if (panelSessionLapsed(tokenData.role, tokenData.created_at)) {
+      logger.warn('Panel refresh token past the panel idle limit', {
+        userId: tokenData.user_id,
+        tokenId: tokenData.id,
+      });
+      throw new Error('REFRESH_TOKEN_EXPIRED');
     }
 
     // Generate new token pair for the user
@@ -725,7 +775,7 @@ async function handleReusedToken(tokenData, presentedToken, { concurrentClaim = 
       return {
         accessToken,
         refreshToken: successorToken,
-        expiresIn: ACCESS_TOKEN_EXPIRES_IN_SECONDS,
+        expiresIn: accessTokenLifetimeSeconds(user.role),
         user,
       };
     }

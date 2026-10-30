@@ -152,6 +152,26 @@ export const getByEstablishmentId = async (establishmentId, { includeHidden = fa
 };
 
 /**
+ * Whether the establishment has items hidden by admin. The partner's menu
+ * screen needs it to tell «the file was read and every dish hidden» from
+ * «the file was read and nothing found» (finding КО-1, 29.10.2026): both
+ * reach the partner as an empty list. Only the fact — no names, no count.
+ *
+ * @param {string} establishmentId - UUID
+ * @returns {Promise<boolean>}
+ */
+export const hasHiddenByEstablishment = async (establishmentId) => {
+  const result = await pool.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM menu_items
+       WHERE establishment_id = $1 AND is_hidden_by_admin = TRUE
+     ) AS has_hidden`,
+    [establishmentId],
+  );
+  return result.rows[0]?.has_hidden === true;
+};
+
+/**
  * Aggregate counts for the batch-level menu_parsed notification: how many
  * items the establishment's menu holds and how many menu files they came from.
  * Items hidden by admin are counted — they were recognised; moderation is a

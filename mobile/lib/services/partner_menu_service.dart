@@ -70,10 +70,22 @@ class PartnerMenuSnapshot {
   /// до 24.10.2026 его не присылал вовсе, а незнакомое значение — не `null`.
   final bool recognitionUnread;
 
+  /// У заведения есть позиции, скрытые модератором (`hasHiddenItems`, с
+  /// 29.10.2026, находка КО-1): пустой список тогда — не «в файле ничего не
+  /// нашлось», и совет загрузить фото чётче не поможет. Ни названий, ни числа
+  /// сервер не присылает. Сервер без поля — `false`, прежний экран.
+  final bool hasHiddenItems;
+
+  /// Сервер прислал `hasHiddenItems: null` — не смог прочитать; как с
+  /// [recognitionUnread], показанное остаётся.
+  final bool hiddenItemsUnread;
+
   const PartnerMenuSnapshot({
     required this.items,
     this.recognition,
     this.recognitionUnread = false,
+    this.hasHiddenItems = false,
+    this.hiddenItemsUnread = false,
   });
 }
 
@@ -108,6 +120,9 @@ class PartnerMenuService {
       recognition: MenuRecognition.fromJson(data['recognition']),
       recognitionUnread:
           data.containsKey('recognition') && data['recognition'] == null,
+      hasHiddenItems: data['hasHiddenItems'] == true,
+      hiddenItemsUnread:
+          data.containsKey('hasHiddenItems') && data['hasHiddenItems'] == null,
     );
   }
 

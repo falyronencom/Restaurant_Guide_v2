@@ -14,6 +14,7 @@ import { jest } from '@jest/globals';
 
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   getByEstablishmentId: jest.fn(),
+  hasHiddenByEstablishment: jest.fn(),
 }));
 jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
   checkOwnership: jest.fn(),
@@ -52,12 +53,13 @@ const ITEM = { id: 'item-1', item_name: 'Борщ' };
 beforeEach(() => {
   EstablishmentModel.checkOwnership.mockResolvedValue(true);
   MenuItemModel.getByEstablishmentId.mockResolvedValue([ITEM]);
+  MenuItemModel.hasHiddenByEstablishment.mockResolvedValue(false);
 });
 
 test('the state query fails → the items still come, recognition is null, and the log says why', async () => {
   OcrJobModel.getLatestJobPerMenuFile.mockRejectedValue(new Error('canceling statement due to statement timeout'));
 
-  await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({ items: [ITEM], recognition: null });
+  await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({ items: [ITEM], recognition: null, hasHiddenItems: false });
   expect(logger.error).toHaveBeenCalledWith(
     'Recognition state of the partner menu could not be read — answered without it',
     { establishmentId: CARD, error: 'canceling statement due to statement timeout' },
@@ -72,6 +74,7 @@ test('the state query answers → the state comes with the items', async () => {
   await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({
     items: [ITEM],
     recognition: { status: 'processing' },
+    hasHiddenItems: false,
   });
   expect(logger.error).not.toHaveBeenCalled();
 });
@@ -81,4 +84,42 @@ test('not the partner\'s card → refused before any state is read', async () =>
 
   await expect(listMenuItems(PARTNER, CARD)).rejects.toMatchObject({ statusCode: 404, code: 'ESTABLISHMENT_NOT_FOUND' });
   expect(OcrJobModel.getLatestJobPerMenuFile).not.toHaveBeenCalled();
+  expect(MenuItemModel.hasHiddenByEstablishment).not.toHaveBeenCalled();
+});
+
+// Finding КО-1 (29.10.2026): whether items are hidden is a helper field too —
+// the screen's choice between «hidden» and «nothing found». Its failure must
+// not take the list down either: null, which the app reads as «not known».
+test('the hidden-items query fails → the items and the state still come, hasHiddenItems is null, and the log says why', async () => {
+  OcrJobModel.getLatestJobPerMenuFile.mockResolvedValue([
+    { media_id: 'm-1', status: 'done', error_message: null, completed_at: null, has_done_job: true },
+  ]);
+  MenuItemModel.hasHiddenByEstablishment.mockRejectedValue(new Error('connection terminated unexpectedly'));
+
+  await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({
+    items: [ITEM],
+    recognition: { status: 'done' },
+    hasHiddenItems: null,
+  });
+  expect(logger.error).toHaveBeenCalledWith(
+    'Hidden items of the partner menu could not be read — answered without them',
+    { establishmentId: CARD, error: 'connection terminated unexpectedly' },
+  );
+});
+
+test('the hidden-items query answers → its answer comes with the items, for this card', async () => {
+  // The case КО-1 is about: the file read, every dish hidden.
+  OcrJobModel.getLatestJobPerMenuFile.mockResolvedValue([
+    { media_id: 'm-1', status: 'done', error_message: null, completed_at: null, has_done_job: true },
+  ]);
+  MenuItemModel.getByEstablishmentId.mockResolvedValue([]);
+  MenuItemModel.hasHiddenByEstablishment.mockResolvedValue(true);
+
+  await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({
+    items: [],
+    recognition: { status: 'done' },
+    hasHiddenItems: true,
+  });
+  expect(MenuItemModel.hasHiddenByEstablishment).toHaveBeenCalledWith(CARD);
+  expect(logger.error).not.toHaveBeenCalled();
 });

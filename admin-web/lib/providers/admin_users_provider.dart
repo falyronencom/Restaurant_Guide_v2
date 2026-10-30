@@ -6,6 +6,7 @@ import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/services/account_scope.dart';
 import 'package:restaurant_guide_admin_web/services/admin_user_service.dart';
 import 'package:restaurant_guide_admin_web/utils/error_text.dart';
+import 'package:restaurant_guide_admin_web/utils/id_format.dart';
 
 /// Состояние экрана «Пользователи»: список, поиск, выбранный человек и его
 /// блокировка (проход тестировщика 17.10, п. 8).
@@ -46,6 +47,9 @@ class AdminUsersProvider extends ChangeNotifier {
   bool _isLoadingDetail = false;
   String? _detailError;
 
+  /// В ссылке `?user=…` был не номер человека — карточку не запрашивали.
+  bool _linkRejected = false;
+
   bool _isSubmitting = false;
   String? _submitError;
 
@@ -65,6 +69,7 @@ class AdminUsersProvider extends ChangeNotifier {
   AdminUser? get selectedUser => _selectedUser;
   bool get isLoadingDetail => _isLoadingDetail;
   String? get detailError => _detailError;
+  bool get linkRejected => _linkRejected;
   bool get isSubmitting => _isSubmitting;
   String? get submitError => _submitError;
   String? get lastResult => _lastResult;
@@ -107,10 +112,32 @@ class AdminUsersProvider extends ChangeNotifier {
     }
   }
 
+  /// Открыть человека по номеру из адреса страницы (ссылка из отзыва или
+  /// присланная кем-то). Номер не в формате сервера — запроса нет, справа
+  /// «Пользователь не найден» (сверка меток панели 29.10, S4).
+  Future<void> openUserFromLink(String id) async {
+    if (!isUuid(id)) {
+      _closeCard(); // ответ прежней карточки сюда уже не ляжет
+      _linkRejected = true;
+      notifyListeners();
+      return;
+    }
+    await openUser(id);
+  }
+
+  /// Экран открыт без ссылки: «не найден» от прошлой битой ссылки не
+  /// остаётся — провайдер живёт дольше экрана.
+  void forgetRejectedLink() {
+    if (!_linkRejected) return;
+    _linkRejected = false;
+    notifyListeners();
+  }
+
   /// Открыть человека — из списка или по ссылке из отзыва. Карточка читается
   /// отдельным запросом: в ней последняя блокировка, а сам человек может и не
   /// стоять на текущей странице списка.
   Future<void> openUser(String id) async {
+    _linkRejected = false;
     if (_selectedId != id) {
       _selectedUser = _users.where((u) => u.id == id).firstOrNull;
       _submitError = null;
@@ -254,6 +281,7 @@ class AdminUsersProvider extends ChangeNotifier {
     _detailError = null;
     _submitError = null;
     _lastResult = null;
+    _linkRejected = false;
   }
 
   void resetAccountScope() {
@@ -273,6 +301,7 @@ class AdminUsersProvider extends ChangeNotifier {
     _selectedUser = null;
     _isLoadingDetail = false;
     _detailError = null;
+    _linkRejected = false;
     _isSubmitting = false;
     _submitError = null;
     _lastResult = null;
