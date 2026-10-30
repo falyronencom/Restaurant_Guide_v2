@@ -42,6 +42,20 @@ const _nothingFoundHint = 'Файл прочитан, но блюд и цен в
     'Загрузите более чёткое фото или другой файл в разделе «Медиа».';
 const _retryButton = 'Перезапустить распознавание';
 
+/// Решения Координатора 29.10.2026 («1 — Б; 2 — да»; пояснение — «По
+/// рекомендации», 21:18Z), дословно.
+const _hiddenTitle = 'Позиции не показываются';
+const _hiddenHint = 'Файл прочитан, но позиции из него сейчас не показываются '
+    'гостям. Если это ошибка — напишите в поддержку: support@nirivio.by';
+const _noFilesTitle = 'Меню ещё не загружено';
+const _noFilesHint = 'Добавьте фото страниц меню или PDF в разделе «Медиа» — '
+    'позиции появятся здесь сами через несколько минут.';
+
+/// Прежний текст — запасной: ответ без состояния, незнакомое состояние.
+const _emptyHint = 'Если вы добавили фото меню или PDF в разделе «Медиа», '
+    'распознавание выполняется автоматически в течение нескольких минут. '
+    'Если ещё не добавили — добавьте их в разделе «Медиа».';
+
 /// Фраза сервера (`MENU_RECOGNITION_FAILURES.serviceFailure`).
 const _serviceFailure = 'Сбой распознавания — попробуйте позже.';
 
@@ -180,7 +194,11 @@ void main() {
     expect(find.text(_otherFileHint), findsNothing);
   });
 
-  testWidgets('«none» без позиций → прежний пустой экран', (tester) async {
+  // КО-5 (решение Координатора 29.10.2026): «none» с 26.10 значит только
+  // «ни одного файла меню» — добавленный файл даёт другой статус. Прежний
+  // текст «Если вы добавили…» говорил о файле тому, кто его не добавлял.
+  testWidgets('«none» без позиций → «Меню ещё не загружено» и что сделать',
+      (tester) async {
     answer = () => {
           'success': true,
           'data': <dynamic>[],
@@ -188,7 +206,10 @@ void main() {
         };
     await openMenu(tester);
 
-    expect(find.text(_emptyTitle), findsOneWidget);
+    expect(find.text(_noFilesTitle), findsOneWidget);
+    expect(find.text(_noFilesHint), findsOneWidget);
+    expect(find.text(_emptyTitle), findsNothing);
+    expect(find.textContaining('Если вы добавили'), findsNothing);
     expect(find.text(_processingTitle), findsNothing);
     expect(find.text(_failedTitle), findsNothing);
     expect(find.text(_notStartedTitle), findsNothing);
@@ -249,10 +270,125 @@ void main() {
     expect(find.textContaining('автоматически'), findsNothing);
   });
 
+  // КО-1, вариант Б (решение Координатора 29.10.2026): модератор скрыл все
+  // позиции — список пуст, а экран советовал фото чётче. Скрытие держится за
+  // название блюда и переживает перечитывание: совет тратил попытки.
+  testWidgets(
+      'распознано, позиций ноль, скрытые есть → «Позиции не показываются», '
+      'без совета про фото', (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'done'},
+          'hasHiddenItems': true,
+        };
+    await openMenu(tester);
+
+    expect(find.text(_hiddenTitle), findsOneWidget);
+    expect(find.text(_hiddenHint), findsOneWidget);
+    expect(find.text(_nothingFoundTitle), findsNothing);
+    expect(find.textContaining('чёткое фото'), findsNothing);
+    expect(find.textContaining('Новое фото'), findsNothing);
+    expect(find.textContaining('модератор'), findsNothing);
+    // Перечитанный файл даст те же скрытые позиции, а нажатие тратит суточную
+    // попытку: кнопки перезапуска здесь нет (решение Координатора 29.10.2026).
+    expect(find.text(_retryButton), findsNothing);
+  });
+
+  testWidgets(
+      'распознано, позиций ноль, скрытых нет → прежнее «Позиций не нашлось»',
+      (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'done'},
+          'hasHiddenItems': false,
+        };
+    await openMenu(tester);
+
+    expect(find.text(_nothingFoundTitle), findsOneWidget);
+    expect(find.text(_nothingFoundHint), findsOneWidget);
+    expect(find.text(_hiddenTitle), findsNothing);
+    expect(find.text(_retryButton), findsOneWidget,
+        reason: 'кнопка прячется только при скрытых');
+  });
+
+  testWidgets(
+      'скрытые есть, но распознавание идёт, упало или позиции видны → '
+      'экраны прежние', (tester) async {
+    final provider = await openMenu(tester);
+    Future<void> show(Map<String, dynamic> body) async {
+      answer = () => body;
+      provider.fetchMenuItems(silent: true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await show({
+      'success': true,
+      'data': <dynamic>[],
+      'recognition': {'status': 'processing'},
+      'hasHiddenItems': true,
+    });
+    expect(find.text(_processingTitle), findsOneWidget);
+    expect(find.text(_hiddenTitle), findsNothing);
+    expect(find.text(_retryButton), findsOneWidget);
+
+    await show({
+      'success': true,
+      'data': <dynamic>[],
+      'recognition': {'status': 'failed', 'reason': _serviceFailure},
+      'hasHiddenItems': true,
+    });
+    expect(find.text(_failedTitle), findsOneWidget);
+    expect(find.text(_hiddenTitle), findsNothing);
+
+    // Скрыта часть — партнёр видит оставшееся, без пометки.
+    await show({
+      'success': true,
+      'data': [_item('Борщ')],
+      'recognition': {'status': 'done'},
+      'hasHiddenItems': true,
+    });
+    expect(find.text('Борщ'), findsOneWidget);
+    expect(find.text(_hiddenTitle), findsNothing);
+    expect(find.text(_bannerTitle), findsNothing);
+    expect(find.text(_retryButton), findsOneWidget);
+  });
+
+  // Ревью 25.10.2026 (линза), то же для признака скрытых: сервер не смог его
+  // прочитать (`hasHiddenItems: null`) — показанный экран остаётся, а не
+  // откатывается к совету про фото.
+  testWidgets('признак скрытых не прочитался на сервере → показанное остаётся',
+      (tester) async {
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'done'},
+          'hasHiddenItems': true,
+        };
+    await openMenu(tester);
+    expect(find.text(_hiddenTitle), findsOneWidget);
+
+    answer = () => {
+          'success': true,
+          'data': <dynamic>[],
+          'recognition': {'status': 'done'},
+          'hasHiddenItems': null,
+        };
+    await tester.pump(const Duration(seconds: 31));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text(_hiddenTitle), findsOneWidget);
+    expect(find.text(_nothingFoundTitle), findsNothing);
+    expect(find.text(_retryButton), findsNothing);
+  });
+
   testWidgets('сервер без поля (до правки) и статус, которого сборка не знает, '
       '→ прежний пустой экран', (tester) async {
     final provider = await openMenu(tester);
     expect(find.text(_emptyTitle), findsOneWidget);
+    expect(find.text(_emptyHint), findsOneWidget);
+    expect(find.text(_noFilesTitle), findsNothing);
     expect(find.text(_failedTitle), findsNothing);
 
     answer = () => {
@@ -265,6 +401,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text(_emptyTitle), findsOneWidget);
+    expect(find.text(_emptyHint), findsOneWidget);
+    expect(find.text(_noFilesTitle), findsNothing);
     expect(find.text(_failedTitle), findsNothing);
     expect(find.text(_processingTitle), findsNothing);
   });

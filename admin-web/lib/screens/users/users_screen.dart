@@ -90,17 +90,33 @@ class _UsersScreenState extends State<UsersScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _provider.loadUsers();
-      final id = widget.initialUserId;
-      if (id != null && id.isNotEmpty) _provider.openUser(id);
+      _applyLink();
     });
+  }
+
+  /// Номер из адреса: открыть человека (только номер в формате сервера) или,
+  /// если ссылки нет, убрать «не найден» от прошлой — провайдер живёт
+  /// дольше экрана.
+  void _applyLink() {
+    final id = widget.initialUserId;
+    if (id != null && id.isNotEmpty) {
+      _provider.openUserFromLink(id);
+    } else {
+      _provider.forgetRejectedLink();
+    }
   }
 
   @override
   void didUpdateWidget(UsersScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     final id = widget.initialUserId;
-    if (id != null && id.isNotEmpty && id != oldWidget.initialUserId) {
-      _provider.openUser(id);
+    if (id != oldWidget.initialUserId) {
+      // После кадра, как в initState: didUpdateWidget идёт внутри сборки, и
+      // уведомление провайдера отсюда терялось — справа оставалось прежнее
+      // («не найден» от прошлой ссылки поверх загруженного человека).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.initialUserId == id) _applyLink();
+      });
     }
   }
 
@@ -500,6 +516,15 @@ class _UserPanel extends StatelessWidget {
           title: 'Карточка не загрузилась',
           message: error,
           onAction: provider.retryDetail,
+        );
+      }
+      if (provider.linkRejected) {
+        return const AdminColumnMessage(
+          key: ValueKey<String>('user-link-rejected'),
+          icon: Icons.person_off_outlined,
+          title: 'Пользователь не найден',
+          message: 'В ссылке нет правильного номера человека. '
+              'Найдите его поиском в списке слева.',
         );
       }
       return const Center(

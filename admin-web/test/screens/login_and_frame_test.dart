@@ -151,10 +151,39 @@ void main() {
     expect(html, contains('<html lang="ru">'));
     expect(html, contains('id="boot-placeholder"'));
     expect(html, contains('NIRIVIO'));
-    expect(html, contains("'flutter-first-frame'"),
-        reason: 'заглушка снимается первым кадром приложения');
     expect(html.indexOf('boot-placeholder'),
         lessThan(html.indexOf('flutter_bootstrap.js')),
         reason: 'заглушка стоит раньше загрузки движка');
+
+    // Снимает её отдельный файл: встроенный скрипт политика источников
+    // панели не пустит (Caddyfile, сверка меток панели 29.10, S2). Файл —
+    // обычным (не async) тегом раньше движка: слушатель первого кадра
+    // встаёт до того, как движок может его отправить.
+    final script = File('web/boot_placeholder.js').readAsStringSync();
+    expect(script, contains("'flutter-first-frame'"),
+        reason: 'заглушка снимается первым кадром приложения');
+    expect(script, contains("getElementById('boot-placeholder')"));
+    const tag = '<script src="boot_placeholder.js"></script>';
+    expect(html, contains(tag));
+    expect(html.indexOf(tag), lessThan(html.indexOf('flutter_bootstrap.js')));
+  });
+
+  test('index.html: ни одного встроенного скрипта', () {
+    // Политика источников панели — script-src без 'unsafe-inline' (Caddyfile):
+    // встроенный <script> или обработчик on…= в разметке молча не
+    // исполнится в браузере, а тест на Dart VM этого не увидит.
+    final html = File('web/index.html').readAsStringSync();
+    final tags = RegExp(r'<script\b([^>]*)>([\s\S]*?)</script>',
+            caseSensitive: false)
+        .allMatches(html)
+        .toList();
+    expect(tags, hasLength(2), reason: 'заглушка и загрузчик движка');
+    for (final tag in tags) {
+      expect(tag.group(1), contains('src='), reason: tag.group(0));
+      expect(tag.group(2)!.trim(), isEmpty, reason: tag.group(0));
+    }
+    expect(RegExp(r'\son[a-z]+\s*=', caseSensitive: false).hasMatch(html),
+        isFalse,
+        reason: 'обработчик событий в разметке');
   });
 }

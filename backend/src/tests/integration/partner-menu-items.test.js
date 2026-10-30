@@ -137,6 +137,79 @@ describe('GET /api/v1/partner/establishments/:id/menu-items', () => {
   });
 });
 
+// Finding КО-1 (Coordinator's choice «Б», 29.10.2026): when the moderator hid
+// every dish, the partner's list is empty and the screen said «nothing found —
+// upload a clearer photo», though the hiding is tied to the dish name and
+// survives a re-read. The answer now says that hidden items exist — the fact
+// only: the hidden items, their names and reasons stay out of `data`.
+describe('GET /api/v1/partner/establishments/:id/menu-items — hidden items', () => {
+  const menuOf = async (partner, estId) => {
+    const res = await request(app)
+      .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .expect(200);
+    return res.body;
+  };
+
+  test('every dish hidden → an empty list, hasHiddenItems true, and nothing of the hidden dishes in the answer', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedMenuItem(estId, mediaId, { itemName: 'Скрытый борщ', isHiddenByAdmin: true });
+    await seedMenuItem(estId, mediaId, { itemName: 'Скрытый салат', isHiddenByAdmin: true });
+    await query(
+      `UPDATE menu_items SET hidden_reason = 'Причина модератора' WHERE establishment_id = $1`,
+      [estId],
+    );
+
+    const body = await menuOf(partner, estId);
+    expect(body.data).toEqual([]);
+    expect(body.hasHiddenItems).toBe(true);
+    const raw = JSON.stringify(body);
+    expect(raw).not.toContain('Скрытый');
+    expect(raw).not.toContain('Причина модератора');
+  });
+
+  test('nothing hidden → hasHiddenItems false, with an empty list and with a full one', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    expect((await menuOf(partner, estId)).hasHiddenItems).toBe(false);
+
+    const mediaId = await seedPdfMedia(estId);
+    await seedMenuItem(estId, mediaId, { itemName: 'Кофе' });
+    const body = await menuOf(partner, estId);
+    expect(body.data).toHaveLength(1);
+    expect(body.hasHiddenItems).toBe(false);
+  });
+
+  test('some dishes hidden → the rest in the list, hasHiddenItems true', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedMenuItem(estId, mediaId, { itemName: 'Кофе' });
+    await seedMenuItem(estId, mediaId, { itemName: 'Скрытый чай', isHiddenByAdmin: true });
+
+    const body = await menuOf(partner, estId);
+    expect(body.data.map((item) => item.item_name)).toEqual(['Кофе']);
+    expect(body.hasHiddenItems).toBe(true);
+  });
+
+  test('hidden dishes of another card — even of the same partner — do not count', async () => {
+    const partner = await createPartner();
+    const other = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const ownOther = await createEstablishmentFor(partner.user.id);
+    const foreign = await createEstablishmentFor(other.user.id);
+    await seedMenuItem(ownOther, await seedPdfMedia(ownOther), { itemName: 'Скрыт там', isHiddenByAdmin: true });
+    await seedMenuItem(foreign, await seedPdfMedia(foreign), { itemName: 'Скрыт у чужого', isHiddenByAdmin: true });
+
+    const body = await menuOf(partner, estId);
+    expect(body.data).toEqual([]);
+    expect(body.hasHiddenItems).toBe(false);
+    expect((await menuOf(partner, ownOther)).hasHiddenItems).toBe(true);
+  });
+});
+
 /**
  * The newest OCR job of a file, written as the queue writes it. `ageMinutes`
  * puts created_at (and completed_at of a settled job) that far back, so that

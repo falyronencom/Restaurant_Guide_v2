@@ -18,6 +18,7 @@ import * as refreshTokenPruner from './services/refreshTokenPruner.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
+import { accessTokenLifetime } from './config/accessToken.js';
 import { resolveTrustProxyHops } from './config/trustProxy.js';
 import {
   createGracefulShutdown,
@@ -51,6 +52,7 @@ const shutdownBudget = resolveShutdownBudget(process.env, {
  * changed without a code path caching it.
  */
 const refreshReuseGrace = resolveRefreshReuseGraceSeconds(process.env);
+const accessLifetime = accessTokenLifetime();
 
 /**
  * Trust Railway's edge chain — TRUST_PROXY_HOPS entries of X-Forwarded-For
@@ -255,6 +257,17 @@ const startServer = async () => {
     });
     if (refreshReuseGrace.warning) {
       logger.warn(`Refresh reuse grace window: ${refreshReuseGrace.warning}`);
+    }
+
+    // How long an access token lives (config/accessToken.js): said at startup
+    // because JWT_ACCESS_EXPIRY is set in the Railway dashboard and shows
+    // nowhere else. A day or more is warned about; the server starts anyway.
+    logger.info('Access token lifetime resolved', {
+      seconds: accessLifetime.seconds,
+      panelSeconds: accessLifetime.panelSeconds,
+    });
+    if (accessLifetime.warning) {
+      logger.warn(`Access token lifetime: ${accessLifetime.warning}`);
     }
 
     // Whose address req.ip is (config/trustProxy.js): said at startup because

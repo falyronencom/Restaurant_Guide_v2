@@ -718,17 +718,30 @@ describe('searchService', () => {
   // GET /search/health отвечает без входа: «ok / сбой», без версии PostGIS и
   // без текста ошибки (20.10.2026).
   describe('checkSearchHealth', () => {
+    // Время ответа закреплено на моменте, где в нём есть «3.1» (…:33.178Z):
+    // прежняя проверка искала версию шаблоном по всей строке ответа вместе со
+    // временем и при таком времени краснела (PR #155, прогон 40945350933,
+    // 29.10.2026). Теперь ответ закреплён целиком — три ключа, их значения и
+    // само время, — так что версии негде оказаться.
     test('PostGIS отвечает — healthy, версии в ответе нет', async () => {
       pool.query.mockResolvedValue({
         rows: [{ version: '3.1 USE_GEOS=1 USE_PROJ=1 USE_STATS=1' }],
         rowCount: 1,
       });
 
-      const result = await checkSearchHealth();
+      jest.useFakeTimers({ now: new Date('2026-10-29T20:04:33.178Z') });
+      let result;
+      try {
+        result = await checkSearchHealth();
+      } finally {
+        jest.useRealTimers();
+      }
 
-      expect(Object.keys(result).sort()).toEqual(['healthy', 'postgis', 'timestamp']);
-      expect(result).toMatchObject({ healthy: true, postgis: 'healthy' });
-      expect(JSON.stringify(result)).not.toMatch(/3\.1|GEOS/);
+      expect(result).toStrictEqual({
+        healthy: true,
+        postgis: 'healthy',
+        timestamp: '2026-10-29T20:04:33.178Z',
+      });
 
       expect(pool.query).toHaveBeenCalledWith(`
       SELECT PostGIS_version() as version
