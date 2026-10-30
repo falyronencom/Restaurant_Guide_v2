@@ -18,6 +18,7 @@ import { randomUUID } from 'crypto';
 import request from 'supertest';
 import app from '../../server.js';
 import * as AdminUserService from '../../services/adminUserService.js';
+import { AUTH_REFUSALS, SUPPORT_EMAIL } from '../../constants/authRefusals.js';
 import * as ReviewService from '../../services/reviewService.js';
 import { getClient } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
@@ -545,5 +546,46 @@ describe('отзывы в панели ведут к автору', () => {
       expect(body.data).toHaveLength(1);
       expect(body.data[0].author_id).toBeNull();
     }
+  });
+});
+
+/*
+ * Живая проверка Координатора 30.10.2026 не прошла: заблокировал тестовую
+ * учётную запись в панели, на сайте нажал F5 на «Профиле» — обычная форма
+ * входа, без слов «учётная запись отключена» и адреса поддержки. Причина:
+ * блокировка не только выключает учётную запись, но и завершает все её
+ * сеансы (endAllAccess), а обновление сеанса проверяло «сеансы завершены»
+ * раньше, чем «выключена», и отвечало 401 TOKEN_REVOKED. Сайт и приложение
+ * называют причину только на ACCOUNT_INACTIVE. Здесь — тот же путь: блокировка
+ * из панели, затем то, что делают сайт и приложение при обновлении страницы.
+ */
+describe('заблокирован из панели — обновление страницы называет причину', () => {
+  test('ключ доступа и обновление сеанса — 401 ACCOUNT_INACTIVE со словами сервера и адресом поддержки', async () => {
+    const blocked = await person({ name: 'Проверка Блокировки' });
+    // Открытый «Профиль»: сеанс живой, статус учётной записи в кэше.
+    await request(app).get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${blocked.accessToken}`).expect(200);
+
+    await asAdmin('post', `/users/${blocked.id}/block`, { reason: 'тест' }).expect(200);
+
+    // F5: профиль с прежним ключом доступа…
+    const me = await request(app).get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${blocked.accessToken}`).expect(401);
+    expect(me.body.error.code).toBe('ACCOUNT_INACTIVE');
+
+    // …затем обновление сеанса — по его коду сайт и приложение и пишут причину.
+    const refresh = await request(app).post('/api/v1/auth/refresh')
+      .send({ refreshToken: blocked.refreshToken }).expect(401);
+    expect(refresh.body.error).toEqual({
+      code: 'ACCOUNT_INACTIVE',
+      message: AUTH_REFUSALS.accountInactive,
+    });
+    expect(refresh.body.error.message).toContain(SUPPORT_EMAIL);
+
+    // Тот же токен ещё раз (вторая вкладка, повтор после обрыва связи) — та же
+    // причина, а не тревога о краже токена.
+    const again = await request(app).post('/api/v1/auth/refresh')
+      .send({ refreshToken: blocked.refreshToken }).expect(401);
+    expect(again.body.error.code).toBe('ACCOUNT_INACTIVE');
   });
 });
