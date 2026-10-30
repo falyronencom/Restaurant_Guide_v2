@@ -5,6 +5,7 @@ import { AuthRedirect } from '@/components/auth/AuthRedirect';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
 import { messageForAuthError } from '@/lib/auth/oauth-error';
+import { getAuthNotice } from '@/lib/auth/session';
 import { guardReturnTo } from '@/lib/auth/yandex';
 
 /*
@@ -30,8 +31,12 @@ export default async function LoginPage({
   const params = await searchParams;
   const raw = typeof params.returnTo === 'string' ? params.returnTo : undefined;
   const returnTo = guardReturnTo(raw);
-  // A failed Yandex sign-in lands here (auth/yandex/callback) — say why.
-  const authError = messageForAuthError(params.auth_error);
+  // A failed Yandex sign-in lands here (auth/yandex/callback) — say why. So
+  // does a session the server ended because the account was switched off or
+  // deleted (session.ts, COOKIE_AUTH_NOTICE).
+  const authError =
+    messageForAuthError(params.auth_error) ??
+    messageForAuthError((await getAuthNotice()) ?? undefined);
   const registerHref =
     returnTo === '/'
       ? '/register'
@@ -50,7 +55,7 @@ export default async function LoginPage({
         </div>
       </div>
       <p className="mt-l text-body-m text-figma-text-grey">
-        Нет аккаунта?{' '}
+        Нет учётной записи?{' '}
         <Link
           href={registerHref}
           className="font-medium text-brand transition-colors hover:text-brand-dark"

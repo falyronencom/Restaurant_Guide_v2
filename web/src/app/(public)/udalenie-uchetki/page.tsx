@@ -13,7 +13,7 @@ import {
  * /udalenie-uchetki — how to delete a Nirivio account (brief В1, 18.10.2026).
  * The page Google Play links to: deletion without the app, and what is
  * deleted and what stays. Static RSC, no session: anyone can read it, signed
- * in or not. Indexed — a person searching «удалить учётку Nirivio» should find
+ * in or not. Indexed — a person searching «удалить учётную запись Nirivio» should find
  * it.
  *
  * Without signing in: a letter to support, which the operator answers with
@@ -31,9 +31,9 @@ import {
 
 export const metadata: Metadata = {
   // The layout's template adds «| Nirivio».
-  title: 'Как удалить учётку',
+  title: 'Как удалить учётную запись',
   description:
-    'Удалить учётку Nirivio можно в приложении, на сайте или письмом в поддержку. Что удаляется и что остаётся без имени.',
+    'Удалить учётную запись Nirivio можно в приложении, на сайте или письмом в поддержку. Что удаляется и что остаётся без имени.',
   alternates: { canonical: '/udalenie-uchetki' },
 };
 
@@ -41,18 +41,18 @@ export default function AccountDeletionPage() {
   return (
     <main className="mx-auto w-full max-w-2xl px-l py-xl">
       <h1 className="font-display text-display-s text-foreground">
-        Как удалить учётку Nirivio
+        Как удалить учётную запись Nirivio
       </h1>
       <p className="mt-s text-body-m text-figma-text-grey">
-        Учётку можно удалить самому — в приложении или на сайте. Удаление
-        происходит сразу, вернуть учётку нельзя.
+        Учётную запись можно удалить самому — в приложении или на сайте. Удаление
+        происходит сразу, вернуть учётную запись нельзя.
       </p>
 
       <section className="mt-l flex flex-col gap-s rounded-card bg-figma-bg-warm p-l">
         <h2 className="text-label-l text-foreground">В приложении</h2>
         <p className="text-body-m text-foreground">
-          «Профиль» → «Показать профиль» → «Мои данные» → «Удалить учётку».
-          Введите слово {ACCOUNT_DELETION_WORD} и нажмите «Удалить учётку».
+          «Профиль» → «Показать профиль» → «Мои данные» → «Удалить учётную запись».
+          Введите слово {ACCOUNT_DELETION_WORD} и нажмите «Удалить учётную запись».
         </p>
       </section>
 
@@ -65,8 +65,8 @@ export default function AccountDeletionPage() {
           >
             Войдите
           </Link>{' '}
-          и откройте «Профиль» → «Удалить учётку». Введите слово{' '}
-          {ACCOUNT_DELETION_WORD} и нажмите «Удалить учётку».
+          и откройте «Профиль» → «Удалить учётную запись». Введите слово{' '}
+          {ACCOUNT_DELETION_WORD} и нажмите «Удалить учётную запись».
         </p>
       </section>
 
@@ -75,19 +75,19 @@ export default function AccountDeletionPage() {
         <p className="text-body-m text-foreground">
           Напишите на{' '}
           <a
-            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Удаление учётки')}`}
+            href={`mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Удаление учётной записи')}`}
             className="font-medium text-brand transition-colors hover:text-brand-dark"
           >
             {SUPPORT_EMAIL}
           </a>{' '}
-          с почты, на которую заведена учётка: мы ответим на этот адрес и
-          попросим подтвердить удаление. Удалим учётку в течение 15 дней.
+          с почты, на которую заведена учётная запись: мы ответим на этот адрес и
+          попросим подтвердить удаление. Удалим учётную запись в течение 15 дней.
         </p>
         <p className="text-body-m text-foreground">
-          Учётка заведена на номер телефона? Войти по номеру сейчас нельзя ни
+          Учётная запись заведена на номер телефона? Войти по номеру сейчас нельзя ни
           в приложении, ни на сайте — напишите нам с любой почты: укажите
-          номер, имя в профиле и примерно когда вы завели учётку. Мы сверим их
-          с учёткой и свяжемся с вами по этому номеру.
+          номер, имя в профиле и примерно когда вы завели учётную запись. Мы сверим их
+          с учётной записью и свяжемся с вами по этому номеру.
         </p>
         <p className="text-body-m text-foreground">
           Если у вас есть карточки заведений, их сначала нужно передать другому
@@ -108,7 +108,7 @@ export default function AccountDeletionPage() {
           {KEPT_ITEMS.map((item) => <li key={item}>{item}</li>)}
         </ul>
         <p className="text-body-m text-figma-text-grey">
-          Новую учётку можно завести на ту же почту или телефон.
+          Новую учётную запись можно завести на ту же почту или телефон.
         </p>
       </section>
     </main>

@@ -130,7 +130,7 @@ describe('verifyEmailCodeAction — backend error mapping', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'INVALID_OR_EXPIRED_CODE' });
     expect((result as { message: string }).message).toBe(
-      'Код неверный или истёк — запросите новый.',
+      'Код истёк или недействителен. Запросите новый.',
     );
   });
 

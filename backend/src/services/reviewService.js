@@ -15,7 +15,7 @@ import { publicAuthorId } from '../projections/reviewProjections.js';
 import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import { ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/authRefusals.js';
 import { incrementWithExpiry, decrement, getCounter } from '../config/redis.js';
 import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 

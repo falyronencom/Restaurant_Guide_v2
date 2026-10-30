@@ -43,7 +43,7 @@ const AUTH = '/api/v1/auth';
 const PASSWORD = 'Person123!@#';
 const WORD = 'УДАЛИТЬ';
 
-const OWNS_CARDS_TEXT = 'У вас есть карточки заведений. Удалить учётку можно, когда их передадут '
+const OWNS_CARDS_TEXT = 'У вас есть карточки заведений. Удалить учётную запись можно, когда их передадут '
   + 'другому владельцу, — напишите в поддержку: support@nirivio.by';
 
 /** Человек, вошедший по паролю: с живыми токенами, как из приложения. */
@@ -210,7 +210,7 @@ describe('DELETE /auth/account — подтверждение словом УД�
     ).expect(422);
 
     expect(response.body.error.code).toBe('CONFIRMATION_REQUIRED');
-    expect(response.body.message).toBe('Чтобы удалить учётку, введите слово УДАЛИТЬ');
+    expect(response.body.message).toBe('Чтобы удалить учётную запись, введите слово УДАЛИТЬ');
     const row = await userRow(p.id);
     expect(row).toMatchObject({ email: p.email, name: 'Иван Тестов', is_active: true });
     expect(await deletionEntries(p.id)).toHaveLength(0);
@@ -620,7 +620,7 @@ describe('DELETE /auth/account — владельца карточек и учё
     const response = await deleteAccount(viewer.accessToken).expect(409);
 
     expect(response.body.error.code).toBe('ACCOUNT_OPERATOR_MANAGED');
-    expect(response.body.message).toBe('Эту учётку удаляет оператор платформы. Напишите в поддержку: support@nirivio.by');
+    expect(response.body.message).toBe('Эту учётную запись удаляет оператор платформы. Напишите в поддержку: support@nirivio.by');
     expect((await userRow(viewer.user.id)).is_active).toBe(true);
   });
 
@@ -693,7 +693,7 @@ describe('Панель: удалённую учётку не блокируют,
 
     expect(response.body.error.code).toBe('ACCOUNT_DELETED');
     expect(response.body.message).toBe(
-      'Учётка удалена. Удалённую учётку не блокируют, не включают и не переименовывают',
+      'Учётная запись удалена. Удалённую учётную запись не блокируют, не включают и не переименовывают',
     );
     expect(await userRow(p.id)).toMatchObject({ name: 'Гость', is_active: false, email: null });
   });
@@ -1006,7 +1006,7 @@ describe('Бронь, отправленная во время удаления,
     }
 
     expect({ status: response.status, code: response.body.error?.code }).toEqual({ status: 403, code: 'USER_INACTIVE' });
-    expect(response.body.message).toBe('Учётка отключена — забронировать нельзя');
+    expect(response.body.message).toBe('Учётная запись отключена — забронировать нельзя');
     expect(await count('SELECT COUNT(*)::int AS n FROM bookings WHERE user_id = $1', [p.id])).toBe(0);
   });
 });

@@ -219,7 +219,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      isAuthenticated ? 'Показать профиль' : 'Войти в аккаунт',
+                      isAuthenticated ? 'Показать профиль' : 'Войти в учётную запись',
                       style: const TextStyle(
                         fontSize: 14,
                         color: _greyText,
@@ -582,7 +582,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         ),
         title: const Text(
-          'Выйти из аккаунта?',
+          'Выйти из учётной записи?',
           style: TextStyle(
             fontWeight: FontWeight.w600,
           ),

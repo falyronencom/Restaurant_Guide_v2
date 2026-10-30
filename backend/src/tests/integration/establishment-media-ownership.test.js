@@ -43,7 +43,7 @@ import { testEstablishments } from '../fixtures/establishments.js';
 import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 
 const REFUSAL =
-  'Одно из фото или файлов меню загружено не с этого аккаунта. Удалите его и загрузите заново.';
+  'Одно из фото или файлов меню загружено не с этой учётной записи. Удалите его и загрузите заново.';
 const REFUSAL_LOG = 'Media link refused: not among the partner\'s own uploads';
 
 // Каноническая ссылка доставки, как её строит generateAllResolutions.

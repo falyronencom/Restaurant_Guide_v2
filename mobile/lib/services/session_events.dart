@@ -19,20 +19,23 @@ class SessionEvents {
   // `sync: true`: подписчик переводит состояние в тот же момент, когда
   // транспорт отверг запрос, — без лишнего кадра, на котором экран ещё
   // «вошёл», а токенов уже нет.
-  static StreamController<void> _controller =
-      StreamController<void>.broadcast(sync: true);
+  static StreamController<String?> _controller =
+      StreamController<String?>.broadcast(sync: true);
 
-  static Stream<void> get expired => _controller.stream;
+  /// Значение — слова сервера о причине, если он их назвал (учётную запись
+  /// отключили или удалили), иначе `null`.
+  static Stream<String?> get expired => _controller.stream;
 
-  /// Сообщить, что обновить сессию больше нельзя.
-  static void reportExpired() {
-    if (!_controller.isClosed) _controller.add(null);
+  /// Сообщить, что обновить сессию больше нельзя; [reason] — слова сервера
+  /// о причине, если они есть.
+  static void reportExpired([String? reason]) {
+    if (!_controller.isClosed) _controller.add(reason);
   }
 
   /// Только для изоляции тестов — новая шина без прежних подписчиков.
   @visibleForTesting
   static void debugReset() {
     _controller.close();
-    _controller = StreamController<void>.broadcast(sync: true);
+    _controller = StreamController<String?>.broadcast(sync: true);
   }
 }

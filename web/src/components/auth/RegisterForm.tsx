@@ -122,7 +122,7 @@ export function RegisterForm({ returnTo }: { returnTo: string }) {
       </p>
 
       <Button type="submit" size="cta" className="w-full" disabled={pending}>
-        {pending ? 'Создаём аккаунт…' : 'Зарегистрироваться'}
+        {pending ? 'Создаём учётную запись…' : 'Зарегистрироваться'}
       </Button>
     </form>
   );

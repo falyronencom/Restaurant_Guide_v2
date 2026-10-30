@@ -75,7 +75,7 @@ import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
 import * as NotificationService from './notificationService.js';
 import logger from '../utils/logger.js';
-import { SUPPORT_EMAIL } from '../constants/accountRefusals.js';
+import { ACCOUNT_INACTIVE_TEXT, SUPPORT_EMAIL } from '../constants/authRefusals.js';
 
 /** The author of a deleted account's reviews — decision 1. */
 export const DELETED_USER_NAME = 'Гость';
@@ -83,7 +83,7 @@ export const DELETED_USER_NAME = 'Гость';
 /** The word that confirms the deletion — decision 4. */
 export const DELETION_CONFIRMATION_WORD = 'УДАЛИТЬ';
 
-/** Where the refusals send the person — one address for the whole server (constants/accountRefusals.js). */
+/** Where the refusals send the person — one address for the whole server (constants/authRefusals.js). */
 export { SUPPORT_EMAIL };
 
 /** The journal action that marks a deleted account. */
@@ -97,12 +97,13 @@ const UNFINISHED_CARD_STATUSES = Object.freeze(['draft', 'rejected']);
 
 /** What the person reads when the server refuses. */
 export const ACCOUNT_DELETION_REFUSALS = Object.freeze({
-  CONFIRMATION_REQUIRED: `Чтобы удалить учётку, введите слово ${DELETION_CONFIRMATION_WORD}`,
-  ACCOUNT_OWNS_ESTABLISHMENTS: 'У вас есть карточки заведений. Удалить учётку можно, когда их передадут '
+  CONFIRMATION_REQUIRED: `Чтобы удалить учётную запись, введите слово ${DELETION_CONFIRMATION_WORD}`,
+  ACCOUNT_OWNS_ESTABLISHMENTS: 'У вас есть карточки заведений. Удалить учётную запись можно, когда их передадут '
     + `другому владельцу, — напишите в поддержку: ${SUPPORT_EMAIL}`,
-  ACCOUNT_OPERATOR_MANAGED: `Эту учётку удаляет оператор платформы. Напишите в поддержку: ${SUPPORT_EMAIL}`,
-  ACCOUNT_INACTIVE: `Учётка отключена. Напишите в поддержку: ${SUPPORT_EMAIL}`,
-  USER_NOT_FOUND: 'Учётка не найдена',
+  ACCOUNT_OPERATOR_MANAGED: `Эту учётную запись удаляет оператор платформы. Напишите в поддержку: ${SUPPORT_EMAIL}`,
+  // Тот же код, что у проверки входа, — те же слова (constants/authRefusals.js).
+  ACCOUNT_INACTIVE: ACCOUNT_INACTIVE_TEXT,
+  USER_NOT_FOUND: 'Учётная запись не найдена',
 });
 
 const refuse = (code, status) => new AppError(ACCOUNT_DELETION_REFUSALS[code], status, code);

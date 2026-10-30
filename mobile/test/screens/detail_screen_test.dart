@@ -240,7 +240,7 @@ void main() {
       await pumpDetail(tester);
       await tapBook(tester);
 
-      expect(find.text('Чтобы забронировать столик, войдите в аккаунт.'),
+      expect(find.text('Чтобы забронировать столик, войдите в учётную запись.'),
           findsOneWidget);
       expect(find.byType(BookingBottomSheet), findsNothing);
 
@@ -254,7 +254,7 @@ void main() {
       await tapBook(tester);
 
       expect(find.byType(BookingBottomSheet), findsOneWidget);
-      expect(find.text('Чтобы забронировать столик, войдите в аккаунт.'),
+      expect(find.text('Чтобы забронировать столик, войдите в учётную запись.'),
           findsNothing);
     });
   });
