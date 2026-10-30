@@ -45,7 +45,7 @@ export default async function RegisterPage({
         </div>
       </div>
       <p className="mt-l text-body-m text-figma-text-grey">
-        Уже есть аккаунт?{' '}
+        Уже есть учётная запись?{' '}
         <Link
           href={loginHref}
           className="font-medium text-brand transition-colors hover:text-brand-dark"

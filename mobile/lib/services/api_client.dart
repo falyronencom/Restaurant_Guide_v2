@@ -26,11 +26,17 @@ enum _RefreshOutcome { refreshed, rejected, transient }
 /// таймаута уже есть точный русский текст от `_enhanceError` («Нет связи…»,
 /// «Сервер не отвечает…»), и он полезнее общей фразы. Носитель один на цикл —
 /// все запросы, ждавшие одного обновления, получают один и тот же итог.
+///
+/// [notice] — у [_RefreshOutcome.rejected], когда сервер сказал, почему сеанс
+/// кончился: учётную запись отключили или удалили (401 `ACCOUNT_INACTIVE`).
+/// Человек читает текст сервера с адресом поддержки, а не «Сеанс истёк»
+/// (решение Координатора 29.10.2026).
 class _RefreshResult {
-  const _RefreshResult(this.outcome, {this.failure});
+  const _RefreshResult(this.outcome, {this.failure, this.notice});
 
   final _RefreshOutcome outcome;
   final DioException? failure;
+  final String? notice;
 
   static const refreshed = _RefreshResult(_RefreshOutcome.refreshed);
   static const rejected = _RefreshResult(_RefreshOutcome.rejected);
@@ -188,6 +194,26 @@ class ApiClient {
   /// Текст отказа, когда обновить сессию больше нечем.
   static const String sessionExpiredMessage = 'Сеанс истёк. Войдите заново.';
 
+  /// Сеанс кончился, потому что учётную запись отключили или удалили, —
+  /// слова сервера (`AUTH_REFUSALS.accountInactive`,
+  /// `backend/src/constants/authRefusals.js`). Сервер присылает их сам; эта
+  /// фраза — когда в ответе русского текста нет. Равенство словарю стережёт
+  /// `test/providers/auth_refusals_guard_test.dart`.
+  static const String accountInactiveMessage =
+      'Учётная запись отключена или удалена. Если это ошибка — напишите в '
+      'поддержку: support@nirivio.by';
+
+  /// Метка в `RequestOptions.extra` у отказа «сеанс кончился, обновлять
+  /// нечем». Текст такого отказа — не всегда [sessionExpiredMessage] (бывает
+  /// и [accountInactiveMessage] или слова сервера), поэтому узнают его по
+  /// метке ([isSessionEnded]), а не по тексту.
+  static const String sessionEndedKey = 'sessionEnded';
+
+  /// Отказ запросу, потому что сеанс кончился и обновлять его нечем.
+  static bool isSessionEnded(DioException error) =>
+      error.requestOptions.extra[sessionEndedKey] == true ||
+      error.error == sessionExpiredMessage;
+
   /// Текст отказа, когда обновление не дошло до сервера, но сессия жива.
   static const String refreshUnavailableMessage =
       'Сервер временно недоступен. Попробуйте ещё раз.';
@@ -291,11 +317,13 @@ class ApiClient {
           } else {
             // Обновить нечем: токены стёрты и провайдер оповещён в
             // `_attemptTokenRefresh` — один раз на цикл, сколько бы
-            // запросов ни ждало этого обновления.
+            // запросов ни ждало этого обновления. Сервер сказал, почему, —
+            // его слова, иначе «Сеанс истёк».
+            error.requestOptions.extra[sessionEndedKey] = true;
             return handler.reject(
               DioException(
                 requestOptions: error.requestOptions,
-                error: sessionExpiredMessage,
+                error: result.notice ?? sessionExpiredMessage,
                 type: DioExceptionType.badResponse,
               ),
             );
@@ -450,8 +478,9 @@ class ApiClient {
       // Хранилище пусто, обновить сессию больше нечем — об этом обязан
       // узнать провайдер авторизации, иначе он останется «вошедшим» с
       // пустым хранилищем. Слушатель сам отличает истёкшую сессию от
-      // запроса без входа по своему состоянию.
-      SessionEvents.reportExpired();
+      // запроса без входа по своему состоянию. Причина, если сервер её
+      // назвал, уходит вместе с сигналом — её покажет главный экран.
+      SessionEvents.reportExpired(result.notice);
     }
     return result;
   }
@@ -540,7 +569,10 @@ class ApiClient {
       // таймаут, 5xx окна деплоя Railway (их перехватчик уже повторил трижды).
       final status = e.response?.statusCode;
       if (status != null && status >= 400 && status < 500 && status != 429) {
-        return _RefreshResult.rejected;
+        final notice = _accountInactiveNotice(e.response);
+        return notice == null
+            ? _RefreshResult.rejected
+            : _RefreshResult(_RefreshOutcome.rejected, notice: notice);
       }
       return _RefreshResult(_RefreshOutcome.transient, failure: e);
     } catch (_) {
@@ -551,6 +583,21 @@ class ApiClient {
       // ошибке.
       return _RefreshResult.rejected;
     }
+  }
+
+  /// Слова отказа, когда сервер отверг обновление, потому что учётную запись
+  /// отключили или удалили (401 `ACCOUNT_INACTIVE`): русский текст сервера,
+  /// иначе [accountInactiveMessage]. Прочие отказы — `null`: для них хватает
+  /// «Сеанс истёк».
+  static String? _accountInactiveNotice(Response<dynamic>? response) {
+    if (response?.statusCode != 401) return null;
+    final data = response!.data;
+    final error = data is Map ? data['error'] : null;
+    if (error is! Map || error['code'] != 'ACCOUNT_INACTIVE') return null;
+    final message = error['message'];
+    return message is String && RegExp('[А-Яа-яЁё]').hasMatch(message)
+        ? message.trim()
+        : accountInactiveMessage;
   }
 
   /// Clear all stored tokens
@@ -737,7 +784,8 @@ class ApiClient {
       case 400:
         return 'Некорректный запрос. Проверьте введённые данные.';
       case 401:
-        return 'Необходима авторизация. Войдите в аккаунт.';
+        // Слова сервера на 401 без токена (constants/authRefusals.js).
+        return 'Войдите в учётную запись.';
       case 403:
         return 'Доступ запрещён.';
       case 404:

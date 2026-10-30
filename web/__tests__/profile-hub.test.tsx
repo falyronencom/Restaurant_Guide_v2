@@ -211,13 +211,13 @@ it('carries the account deletion; once it ends, only its outcome stands in place
     await screen.findByLabelText('Чтобы подтвердить, введите слово УДАЛИТЬ'),
     'УДАЛИТЬ',
   );
-  await user.click(screen.getByRole('button', { name: 'Удалить учётку' }));
+  await user.click(screen.getByRole('button', { name: 'Удалить учётную запись' }));
 
-  expect(await screen.findByText('Учётка удалена.')).toBeInTheDocument();
+  expect(await screen.findByText('Учётная запись удалена.')).toBeInTheDocument();
   expect(screen.queryByLabelText('Имя')).not.toBeInTheDocument();
   expect(screen.queryByText('v@example.by')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Выйти' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Удалить учётку' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Удалить учётную запись' })).not.toBeInTheDocument();
 });
 
 it('logs out and navigates home', async () => {

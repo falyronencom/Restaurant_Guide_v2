@@ -166,7 +166,7 @@ class _WriteReviewScreenState extends State<WriteReviewScreen> {
     }
 
     if (statusCode == 401) {
-      return 'Необходимо войти в аккаунт';
+      return 'Необходимо войти в учётную запись';
     }
 
     if (statusCode == 422) {

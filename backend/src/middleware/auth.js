@@ -2,7 +2,7 @@ import { verifyAccessToken, extractTokenFromHeader, accessTokenIssuedAtMs } from
 import { getAccountStatus, issuedBeforeRevocation } from '../services/accountStatus.js';
 import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
-import { ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
+import { AUTH_REFUSALS } from '../constants/authRefusals.js';
 
 /**
  * What a client reads when authorize refuses (403): the account's role is not
@@ -10,7 +10,7 @@ import { ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
  * the Coordinator, 15.10.2026. The app shows the response's message as is; the
  * code FORBIDDEN stays what clients key on.
  */
-export const INSUFFICIENT_ROLE_MESSAGE = 'Недостаточно прав для этого действия.';
+export const INSUFFICIENT_ROLE_MESSAGE = AUTH_REFUSALS.insufficientRole;
 
 /**
  * Authentication middleware that verifies JWT access tokens.
@@ -48,7 +48,7 @@ export const authenticate = async (req, res, next) => {
     if (!authHeader) {
       return res.status(401).json({
         success: false,
-        message: 'No authorization token provided',
+        message: AUTH_REFUSALS.signInRequired,
         error: {
           code: 'MISSING_TOKEN',
         },
@@ -61,7 +61,7 @@ export const authenticate = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid authorization header format. Expected: Bearer <token>',
+        message: AUTH_REFUSALS.sessionInvalid,
         error: {
           code: 'INVALID_TOKEN_FORMAT',
         },
@@ -72,16 +72,18 @@ export const authenticate = async (req, res, next) => {
     // Verify token signature and expiration
     decoded = verifyAccessToken(token);
   } catch (error) {
-    // JWT verification throws specific errors we can categorize
+    // JWT verification throws specific errors we can categorize. The text is
+    // the one the person reads (constants/authRefusals.js); clients act on the
+    // code — TOKEN_EXPIRED is refreshed silently and rarely reaches a screen.
     let errorCode = 'INVALID_TOKEN';
-    let message = 'Invalid or expired access token';
+    let message = AUTH_REFUSALS.sessionInvalid;
 
     if (error.name === 'TokenExpiredError') {
       errorCode = 'TOKEN_EXPIRED';
-      message = 'Access token has expired. Please refresh your token.';
+      message = AUTH_REFUSALS.sessionExpired;
     } else if (error.name === 'JsonWebTokenError') {
       errorCode = 'MALFORMED_TOKEN';
-      message = 'Access token is malformed or invalid';
+      message = AUTH_REFUSALS.sessionInvalid;
     }
 
     logger.warn('Authentication failed', {
@@ -113,7 +115,7 @@ export const authenticate = async (req, res, next) => {
     // Russian: errorHandler lets a 5xx out as written only when it is a
     // sentence for a person, otherwise it sends the general failure text.
     return next(new AppError(
-      'Не удалось проверить учётную запись. Повторите попытку через несколько секунд.',
+      AUTH_REFUSALS.accountCheckUnavailable,
       503,
       'AUTH_CHECK_UNAVAILABLE',
     ));
@@ -126,7 +128,7 @@ export const authenticate = async (req, res, next) => {
     });
     return res.status(401).json({
       success: false,
-      message: ACCOUNT_INACTIVE_TEXT,
+      message: AUTH_REFUSALS.accountInactive,
       error: {
         code: 'ACCOUNT_INACTIVE',
       },
@@ -143,7 +145,7 @@ export const authenticate = async (req, res, next) => {
     });
     return res.status(401).json({
       success: false,
-      message: 'Access token has been revoked. Please log in again.',
+      message: AUTH_REFUSALS.sessionRevoked,
       error: {
         code: 'TOKEN_REVOKED',
       },
@@ -200,7 +202,7 @@ export const authorize = (allowedRoles) => {
       });
       return res.status(500).json({
         success: false,
-        message: 'Internal server error: authorization misconfigured',
+        message: AUTH_REFUSALS.serverError,
         error: {
           code: 'AUTH_MISCONFIGURATION',
         },

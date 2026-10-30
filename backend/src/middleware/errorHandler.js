@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import { discardTempUpload } from '../utils/tempUpload.js';
 import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { AUTH_REFUSALS } from '../constants/authRefusals.js';
 import { validationResult } from 'express-validator';
 
 /**
@@ -206,11 +207,11 @@ export const errorHandler = (err, req, res, _next) => {
     // JWT errors should have been caught by auth middleware, but handle just in case
     statusCode = 401;
     errorCode = 'INVALID_TOKEN';
-    message = 'Authentication token is invalid';
+    message = AUTH_REFUSALS.sessionInvalid;
   } else if (err.name === 'TokenExpiredError') {
     statusCode = 401;
     errorCode = 'TOKEN_EXPIRED';
-    message = 'Authentication token has expired';
+    message = AUTH_REFUSALS.sessionExpired;
   } else if (err.type === 'entity.parse.failed') {
     // JSON parsing error from body-parser
     statusCode = 400;

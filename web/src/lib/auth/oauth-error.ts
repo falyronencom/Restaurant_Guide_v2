@@ -13,11 +13,17 @@ import { ApiError } from '@/lib/api/types';
  * backend code — so the page cannot be made to print arbitrary words.
  */
 
-/** Backend codes of POST /auth/oauth whose own Russian text is worth showing. */
+/**
+ * Backend codes whose own Russian text is worth showing on /login: those of
+ * POST /auth/oauth, and ACCOUNT_INACTIVE — the session the server ended
+ * because the account was switched off or deleted (session.ts,
+ * COOKIE_AUTH_NOTICE).
+ */
 const BACKEND_CODES = [
   'ACCOUNT_DEACTIVATED',
   'ACCOUNT_CONFLICT',
   'RATE_LIMIT_EXCEEDED',
+  'ACCOUNT_INACTIVE',
 ] as const;
 
 const YANDEX_CANCELLED = 'yandex_cancelled';

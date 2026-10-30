@@ -1,3 +1,5 @@
+import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
+
 /// Distance filter options (single selection)
 enum DistanceOption {
   m500,   // В радиусе 500 м
@@ -62,17 +64,9 @@ enum PriceRange {
     }
   }
 
-  /// Description text
-  String get description {
-    switch (this) {
-      case PriceRange.budget:
-        return '< 20 бел. руб';
-      case PriceRange.medium:
-        return '< 50 бел. руб';
-      case PriceRange.expensive:
-        return '> 50 бел. руб';
-    }
-  }
+  /// Средний чек словами — те же слова, что в карточке и на сайте
+  /// ([priceRangeDescriptions]); до 29.10.2026 фильтр писал «< 50 бел. руб».
+  String get description => priceRangeDescriptions[apiValue]!;
 
   /// API value
   String get apiValue {

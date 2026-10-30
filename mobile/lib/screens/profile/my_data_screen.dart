@@ -7,7 +7,7 @@ import 'package:restaurant_guide_mobile/screens/profile/delete_account_screen.da
 import 'package:restaurant_guide_mobile/screens/profile/notification_preferences_screen.dart';
 
 /// «Мои данные» — что приложение знает о человеке, и выход к удалению
-/// учётки (бриф В1, 18.10.2026: «Профиль» → «Показать профиль» → «Мои
+/// учётной записи (бриф В1, 18.10.2026: «Профиль» → «Показать профиль» → «Мои
 /// данные»).
 ///
 /// Имя, способ входа, почта или телефон — из профиля, который приложение уже
@@ -86,7 +86,7 @@ class MyDataScreen extends StatelessWidget {
           key: const Key('my-data-delete-account'),
           leading: const Icon(Icons.delete_outline, color: AppTheme.errorRedDark),
           title: const Text(
-            'Удалить учётку',
+            'Удалить учётную запись',
             style: TextStyle(fontSize: 16, color: AppTheme.errorRedDark),
           ),
           onTap: () {

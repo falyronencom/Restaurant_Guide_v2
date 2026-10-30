@@ -25,7 +25,7 @@ import { authedFetch, clearSession } from '@/lib/auth/session';
 const mockAuthedFetch = authedFetch as jest.Mock;
 const mockClearSession = clearSession as jest.Mock;
 
-const OWNS_CARDS_TEXT = 'У вас есть карточки заведений. Удалить учётку можно, когда их передадут '
+const OWNS_CARDS_TEXT = 'У вас есть карточки заведений. Удалить учётную запись можно, когда их передадут '
   + 'другому владельцу, — напишите в поддержку: support@nirivio.by';
 
 beforeEach(() => jest.clearAllMocks());

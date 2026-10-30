@@ -6,14 +6,14 @@ import 'package:restaurant_guide_mobile/screens/profile/delete_account_screen.da
 import '../support/secure_storage_stand.dart';
 import '../support/wire_stand.dart';
 
-/// Экран «Удалить учётку» (бриф В1, 18.10.2026).
+/// Экран «Удалить учётную запись» (бриф В1, 18.10.2026).
 ///
 /// Что видит человек: сначала ответ сервера «можно ли»; владельцу карточек —
 /// текст сервера и «Написать в поддержку» (решение 3), без поля для слова;
 /// остальным — предупреждение и кнопка, доступная только со словом УДАЛИТЬ
-/// (решение 4). После удаления — главный экран гостем и «Учётка удалена».
+/// (решение 4). После удаления — главный экран гостем и «Учётная запись удалена».
 void main() {
-  const ownsCardsText = 'У вас есть карточки заведений. Удалить учётку можно, '
+  const ownsCardsText = 'У вас есть карточки заведений. Удалить учётную запись можно, '
       'когда их передадут другому владельцу, — напишите в поддержку: '
       'support@nirivio.by';
 
@@ -65,7 +65,7 @@ void main() {
     expect(deleteButton(tester).onPressed, isNull);
   });
 
-  testWidgets('со словом — удаление, выход на телефоне, главный экран и «Учётка удалена»',
+  testWidgets('со словом — удаление, выход на телефоне, главный экран и «Учётная запись удалена»',
       (tester) async {
     final wire = installWireStand((options) {
       if (options.method == 'DELETE') {
@@ -87,14 +87,14 @@ void main() {
     expect(sent.data, {'confirmation': 'удалить'});
     expect(signOuts, 1);
     expect(find.text('Главный экран'), findsOneWidget);
-    expect(find.text('Учётка удалена'), findsOneWidget);
+    expect(find.text('Учётная запись удалена'), findsOneWidget);
     expect(find.byType(DeleteAccountScreen), findsNothing);
   });
 
   testWidgets('сеанс погас без ответа «удалена» — выход, главный экран и «Сеанс завершён»',
       (tester) async {
-    // Ответ на первую попытку потерялся: учётки уже нет, повтор получает 401,
-    // продление сеанса — тоже 401, и транспорт стирает токены. Что учётка
+    // Ответ на первую попытку потерялся: учётной записи уже нет, повтор получает 401,
+    // продление сеанса — тоже 401, и транспорт стирает токены. Что учётная запись
     // удалена, сервер не подтвердил — экран этого и не говорит.
     installWireStand((options) {
       final path = options.uri.path;
@@ -124,7 +124,7 @@ void main() {
     expect(signOuts, 1);
     expect(find.text('Главный экран'), findsOneWidget);
     expect(find.text('Сеанс завершён'), findsOneWidget);
-    expect(find.text('Учётка удалена'), findsNothing);
+    expect(find.text('Учётная запись удалена'), findsNothing);
   });
 
   testWidgets('владельцу карточек — текст сервера и «Написать в поддержку», поля для слова нет',
@@ -142,7 +142,7 @@ void main() {
 
     await pumpScreen(tester);
 
-    expect(find.text('Сейчас учётку удалить нельзя'), findsOneWidget);
+    expect(find.text('Сейчас учётную запись удалить нельзя'), findsOneWidget);
     expect(find.text(ownsCardsText), findsOneWidget);
     expect(find.text('Написать в поддержку'), findsOneWidget);
     expect(find.byKey(const Key('delete-account-word')), findsNothing);
@@ -188,7 +188,7 @@ void main() {
     }, accessToken: 'valid');
     await pumpScreen(tester);
 
-    expect(find.text('Не удалось проверить учётку. Проверьте интернет.'), findsOneWidget);
+    expect(find.text('Не удалось проверить учётную запись. Проверьте интернет.'), findsOneWidget);
     await tester.tap(find.text('Повторить'));
     await tester.pumpAndSettle();
 

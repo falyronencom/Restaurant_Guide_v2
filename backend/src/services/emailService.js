@@ -225,7 +225,7 @@ const buildResetHtmlBody = (resetUrl, userName, expiryMinutes) => `
   <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
     <h1 style="color: #F06B32; font-size: 24px; margin-bottom: 16px; letter-spacing: 2px;">NIRIVIO</h1>
     <p style="font-size: 16px; line-height: 1.5;">Здравствуйте${userName ? `, ${userName}` : ''}!</p>
-    <p style="font-size: 16px; line-height: 1.5;">Мы получили запрос на сброс пароля вашего аккаунта. Чтобы задать новый пароль, нажмите на кнопку:</p>
+    <p style="font-size: 16px; line-height: 1.5;">Мы получили запрос на сброс пароля вашей учётной записи. Чтобы задать новый пароль, нажмите на кнопку:</p>
     <div style="text-align: center; margin: 24px 0;">
       <a href="${resetUrl}" style="display: inline-block; background: #F06B32; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; padding: 14px 32px; border-radius: 8px;">Сбросить пароль</a>
     </div>
@@ -241,7 +241,7 @@ const buildResetHtmlBody = (resetUrl, userName, expiryMinutes) => `
  */
 const buildResetTextBody = (resetUrl, userName, expiryMinutes) =>
   `Здравствуйте${userName ? `, ${userName}` : ''}!\n\n` +
-  `Мы получили запрос на сброс пароля вашего аккаунта. ` +
+  `Мы получили запрос на сброс пароля вашей учётной записи. ` +
   `Чтобы задать новый пароль, перейдите по ссылке:\n\n` +
   `${resetUrl}\n\n` +
   `Ссылка действительна ${expiryMinutes} минут и сработает только один раз. ` +

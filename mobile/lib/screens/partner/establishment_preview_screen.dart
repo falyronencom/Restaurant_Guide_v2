@@ -5,6 +5,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
+import 'package:restaurant_guide_mobile/widgets/average_check_line.dart';
 
 /// Preview screen for partner to see how their establishment card will look
 /// Based on EstablishmentDetailScreen but with preview mode:
@@ -611,6 +612,7 @@ class _EstablishmentPreviewScreenState
 
           // Working hours
           _buildWorkingHours(),
+          AverageCheckLine(data.priceRange),
 
           const SizedBox(height: 30),
 

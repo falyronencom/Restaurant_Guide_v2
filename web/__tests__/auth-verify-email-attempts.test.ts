@@ -107,7 +107,7 @@ it('five wrong entries each say "wrong code"; only the sixth says the code is go
   expect(sixth).toMatchObject({
     ok: false,
     code: 'INVALID_OR_EXPIRED_CODE',
-    message: 'Код неверный или истёк — запросите новый.',
+    message: 'Код истёк или недействителен. Запросите новый.',
   });
   expect(refreshCalls()).toBe(0);
 });

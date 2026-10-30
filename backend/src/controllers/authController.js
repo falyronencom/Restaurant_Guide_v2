@@ -29,7 +29,7 @@ import { sendWithinDailyAllowance } from '../services/uploadAllowance.js';
 import { discardUnrecordedUpload } from '../services/unrecordedUpload.js';
 import logger from '../utils/logger.js';
 import { NAME_REFUSALS } from '../utils/userName.js';
-import { ACCOUNT_DEACTIVATED_TEXT, ACCOUNT_INACTIVE_TEXT } from '../constants/accountRefusals.js';
+import { AUTH_REFUSALS } from '../constants/authRefusals.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
@@ -89,7 +89,7 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Either email or phone must be provided',
+          message: AUTH_REFUSALS.emailOrPhoneRequired,
         },
       });
     }
@@ -112,7 +112,7 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Email is required when auth_method is email',
+          message: AUTH_REFUSALS.emailRequired,
         },
       });
     }
@@ -122,7 +122,7 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Phone is required when auth_method is phone',
+          message: AUTH_REFUSALS.phoneRequired,
         },
       });
     }
@@ -180,7 +180,7 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'EMAIL_EXISTS',
-          message: 'An account with this email already exists',
+          message: AUTH_REFUSALS.emailExists,
         },
       });
     }
@@ -190,7 +190,7 @@ export async function register(req, res, next) {
         success: false,
         error: {
           code: 'PHONE_EXISTS',
-          message: 'An account with this phone number already exists',
+          message: AUTH_REFUSALS.phoneExists,
         },
       });
     }
@@ -229,7 +229,7 @@ export async function login(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Either email or phone must be provided',
+          message: AUTH_REFUSALS.emailOrPhoneRequired,
         },
       });
     }
@@ -239,7 +239,7 @@ export async function login(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Password is required',
+          message: AUTH_REFUSALS.passwordRequired,
         },
       });
     }
@@ -264,7 +264,7 @@ export async function login(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_CREDENTIALS',
-          message: 'Invalid email/phone or password',
+          message: AUTH_REFUSALS.invalidCredentials,
         },
       });
     }
@@ -327,7 +327,7 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Refresh token is required',
+          message: AUTH_REFUSALS.sessionInvalid,
         },
       });
     }
@@ -360,7 +360,7 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_TOKEN',
-          message: 'Invalid or expired refresh token',
+          message: AUTH_REFUSALS.sessionInvalid,
         },
       });
     }
@@ -370,7 +370,7 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'TOKEN_EXPIRED',
-          message: 'Refresh token has expired. Please log in again.',
+          message: AUTH_REFUSALS.sessionExpired,
         },
       });
     }
@@ -385,20 +385,19 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'TOKEN_REVOKED',
-          message: 'Refresh token has been revoked. Please log in again.',
+          message: AUTH_REFUSALS.sessionRevoked,
         },
       });
     }
 
     if (error.message === 'REFRESH_TOKEN_REUSE_DETECTED') {
       // This is a security incident - return 403 Forbidden. The text is the
-      // one the person reads (Russian, like the other refusals of the account);
-      // the code and status are what the clients act on.
+      // one the person reads; the code and status are what the clients act on.
       return res.status(403).json({
         success: false,
         error: {
           code: 'TOKEN_REUSE_DETECTED',
-          message: 'В целях безопасности все сеансы этой учётной записи завершены. Войдите снова.',
+          message: AUTH_REFUSALS.sessionReuse,
         },
       });
     }
@@ -408,7 +407,7 @@ export async function refresh(req, res, next) {
         success: false,
         error: {
           code: 'ACCOUNT_INACTIVE',
-          message: ACCOUNT_INACTIVE_TEXT,
+          message: AUTH_REFUSALS.accountInactive,
         },
       });
     }
@@ -449,7 +448,7 @@ export async function logout(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'Refresh token is required',
+          message: AUTH_REFUSALS.sessionInvalid,
         },
       });
     }
@@ -466,7 +465,7 @@ export async function logout(req, res, next) {
     return res.status(200).json({
       success: true,
       data: {
-        message: 'Logged out successfully',
+        message: AUTH_REFUSALS.signedOut,
       },
     });
     
@@ -508,7 +507,7 @@ export async function updateProfile(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_REQUEST',
-          message: 'At least one field (name or avatar_url) must be provided',
+          message: AUTH_REFUSALS.profileFieldRequired,
         },
       });
     }
@@ -563,13 +562,13 @@ export async function updateProfile(req, res, next) {
     if (error.message === 'AVATAR_URL_TOO_LONG') {
       return res.status(400).json({
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Avatar URL must be 500 characters or fewer' },
+        error: { code: 'VALIDATION_ERROR', message: AUTH_REFUSALS.avatarUrlTooLong },
       });
     }
     if (error.message === 'USER_NOT_FOUND') {
       return res.status(404).json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+        error: { code: 'USER_NOT_FOUND', message: AUTH_REFUSALS.accountNotFound },
       });
     }
     next(error);
@@ -716,7 +715,7 @@ export async function getCurrentUser(req, res, next) {
         success: false,
         error: {
           code: 'USER_NOT_FOUND',
-          message: 'User not found',
+          message: AUTH_REFUSALS.accountNotFound,
         },
       });
     }
@@ -773,7 +772,7 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_PROVIDER',
-          message: 'Unsupported OAuth provider',
+          message: AUTH_REFUSALS.oauthProviderUnsupported,
         },
       });
     }
@@ -807,7 +806,10 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'INVALID_TOKEN',
-          message: 'Invalid or expired OAuth token',
+          // The service that failed is named: the app shows the text as is.
+          message: req.body?.provider === 'yandex'
+            ? AUTH_REFUSALS.oauthYandexFailed
+            : AUTH_REFUSALS.oauthGoogleFailed,
         },
       });
     }
@@ -817,7 +819,7 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'OAUTH_NO_EMAIL',
-          message: 'OAuth account does not have an email address',
+          message: AUTH_REFUSALS.oauthNoEmail,
         },
       });
     }
@@ -827,7 +829,7 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'OAUTH_EMAIL_NOT_VERIFIED',
-          message: 'Cannot link account: OAuth email is not verified',
+          message: AUTH_REFUSALS.oauthEmailNotVerified,
         },
       });
     }
@@ -837,7 +839,7 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'ACCOUNT_DEACTIVATED',
-          message: ACCOUNT_DEACTIVATED_TEXT,
+          message: AUTH_REFUSALS.accountDeactivated,
         },
       });
     }
@@ -847,7 +849,7 @@ export async function oauthLogin(req, res, next) {
         success: false,
         error: {
           code: 'ACCOUNT_CONFLICT',
-          message: 'An account with this OAuth provider already exists',
+          message: AUTH_REFUSALS.oauthConflict,
         },
       });
     }
@@ -887,25 +889,25 @@ export async function sendVerificationCode(req, res, next) {
     if (error.message === 'EMAIL_ALREADY_VERIFIED') {
       return res.status(409).json({
         success: false,
-        error: { code: 'EMAIL_ALREADY_VERIFIED', message: 'Email is already verified' },
+        error: { code: 'EMAIL_ALREADY_VERIFIED', message: AUTH_REFUSALS.emailAlreadyVerified },
       });
     }
     if (error.message === 'NO_EMAIL') {
       return res.status(400).json({
         success: false,
-        error: { code: 'NO_EMAIL', message: 'Account has no email address' },
+        error: { code: 'NO_EMAIL', message: AUTH_REFUSALS.noEmail },
       });
     }
     if (error.message === 'RATE_LIMITED') {
       return res.status(429).json({
         success: false,
-        error: { code: 'RATE_LIMITED', message: 'Too many verification requests. Please try again later.' },
+        error: { code: 'RATE_LIMITED', message: AUTH_REFUSALS.codeSendLimited },
       });
     }
     if (error.message === 'USER_NOT_FOUND') {
       return res.status(404).json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+        error: { code: 'USER_NOT_FOUND', message: AUTH_REFUSALS.accountNotFound },
       });
     }
     next(error);
@@ -938,7 +940,7 @@ export async function verifyEmailCode(req, res, next) {
     if (!code || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
       return res.status(400).json({
         success: false,
-        error: { code: 'INVALID_REQUEST', message: 'Code must be a 6-digit string' },
+        error: { code: 'INVALID_REQUEST', message: AUTH_REFUSALS.codeFormat },
       });
     }
 
@@ -965,25 +967,25 @@ export async function verifyEmailCode(req, res, next) {
     if (error.message === 'INVALID_OR_EXPIRED_CODE') {
       return res.status(410).json({
         success: false,
-        error: { code: 'INVALID_OR_EXPIRED_CODE', message: 'No active code or it has expired' },
+        error: { code: 'INVALID_OR_EXPIRED_CODE', message: AUTH_REFUSALS.codeExpired },
       });
     }
     if (error.message === 'TOO_MANY_ATTEMPTS') {
       return res.status(429).json({
         success: false,
-        error: { code: 'TOO_MANY_ATTEMPTS', message: 'Too many failed attempts. Request a new code.' },
+        error: { code: 'TOO_MANY_ATTEMPTS', message: AUTH_REFUSALS.codeTooManyAttempts },
       });
     }
     if (error.message === 'INVALID_CODE') {
       return res.status(401).json({
         success: false,
-        error: { code: 'INVALID_CODE', message: 'Verification code is incorrect' },
+        error: { code: 'INVALID_CODE', message: AUTH_REFUSALS.codeInvalid },
       });
     }
     if (error.message === 'USER_NOT_FOUND') {
       return res.status(404).json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+        error: { code: 'USER_NOT_FOUND', message: AUTH_REFUSALS.accountNotFound },
       });
     }
     next(error);
@@ -1025,7 +1027,7 @@ export async function forgotPassword(req, res) {
   return res.status(200).json({
     success: true,
     data: {
-      message: 'If this email is registered, a password reset link has been sent',
+      message: AUTH_REFUSALS.passwordResetSent,
     },
   });
 }
@@ -1057,20 +1059,20 @@ export async function resetPassword(req, res, next) {
     return res.status(200).json({
       success: true,
       data: {
-        message: 'Password has been reset successfully',
+        message: AUTH_REFUSALS.passwordResetDone,
       },
     });
   } catch (error) {
     if (error.message === 'INVALID_OR_EXPIRED_TOKEN') {
       return res.status(410).json({
         success: false,
-        error: { code: 'INVALID_OR_EXPIRED_TOKEN', message: 'Reset link is invalid or has expired' },
+        error: { code: 'INVALID_OR_EXPIRED_TOKEN', message: AUTH_REFUSALS.resetLinkInvalid },
       });
     }
     if (error.message === 'USER_NOT_FOUND') {
       return res.status(404).json({
         success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'User not found' },
+        error: { code: 'USER_NOT_FOUND', message: AUTH_REFUSALS.accountNotFound },
       });
     }
     next(error);

@@ -72,7 +72,8 @@ const {
 } = await import('../../services/authService.js');
 const { getClient } = await import('../../config/database.js');
 
-const GENERIC_FORGOT_MESSAGE = 'If this email is registered, a password reset link has been sent';
+const GENERIC_FORGOT_MESSAGE =
+  'Если такой email зарегистрирован, мы отправили на него письмо со ссылкой для сброса пароля.';
 
 /** «Forgot password» over HTTP, then wait for the issue it started. */
 const forgot = async (email) => {

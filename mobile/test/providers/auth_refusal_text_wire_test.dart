@@ -231,7 +231,7 @@ void main() {
 
       await auth.login(emailOrPhone: 'guest@example.com', password: 'typo');
 
-      expect(auth.errorMessage, 'Неверный email/телефон или пароль');
+      expect(auth.errorMessage, 'Неверный email/телефон или пароль.');
     });
   });
 

@@ -9,24 +9,40 @@
  * cross-target sync — a code the backend throws but this map omits degrades
  * SILENTLY to the neutral fallback (the drift class pinned by
  * auth-errors.test.ts).
+ *
+ * The words are the backend's own (backend/src/constants/authRefusals.js —
+ * one dictionary of sign-in refusals for the server, the app and the site,
+ * Coordinator 25.10 and 29.10.2026); auth-refusals-guard.test.ts reads that
+ * file and holds every shared case equal. The site keeps its own texts by
+ * code rather than printing the backend's: a code travels in the URL
+ * (oauth-error.ts), a text never does.
  */
+
+import { SUPPORT_EMAIL } from '@/lib/account/deletion';
 
 export function messageForCode(code: string | undefined, status: number): string {
   switch (code) {
     case 'INVALID_TOKEN':
-      return 'Не удалось войти через Google. Попробуйте ещё раз.';
+      // Google only: a failed Yandex sign-in has its own line (oauth-error.ts).
+      return 'Не удалось войти через Google. Попробуйте ещё раз или войдите другим способом.';
     case 'OAUTH_NO_EMAIL':
-      return 'В аккаунте Google нет адреса электронной почты.';
+      return 'Сервис входа не передал адрес почты. Войдите другим способом.';
     case 'OAUTH_EMAIL_NOT_VERIFIED':
-      return 'Email в аккаунте Google не подтверждён.';
+      return 'Почта в этом сервисе не подтверждена. Подтвердите её там или войдите другим способом.';
     case 'ACCOUNT_DEACTIVATED':
-      return 'Этот аккаунт деактивирован.';
+      return `Учётная запись отключена. Если это ошибка — напишите в поддержку: ${SUPPORT_EMAIL}`;
+    case 'ACCOUNT_INACTIVE':
+      // The session ended because the account was switched off or deleted.
+      return `Учётная запись отключена или удалена. Если это ошибка — напишите в поддержку: ${SUPPORT_EMAIL}`;
     case 'ACCOUNT_CONFLICT':
-      return 'Аккаунт с этим провайдером уже существует.';
+      // Two first sign-ins with one address collided — a retry goes through.
+      return 'Не удалось завершить вход. Попробуйте ещё раз.';
     case 'EMAIL_EXISTS':
-      return 'Аккаунт с таким email уже существует. Попробуйте войти.';
+      return 'Этот email уже зарегистрирован. Попробуйте войти.';
     case 'INVALID_CREDENTIALS':
       // Deliberately generic — mirrors the backend's anti-enumeration stance.
+      // The site signs in by email only, so the backend's «email/телефон»
+      // narrows to «email» here — the one sanctioned difference.
       return 'Неверный email или пароль.';
     case 'INVALID_OR_EXPIRED_TOKEN':
       return 'Ссылка для сброса пароля недействительна или устарела. Запросите новую.';
@@ -41,7 +57,7 @@ export function messageForCode(code: string | undefined, status: number): string
       // wrong try marks the code used, so the 6th call is 410 — NOT 429
       // (auth-email-verification.test.js). Hence "запросите новый", not
       // "слишком много попыток".
-      return 'Код неверный или истёк — запросите новый.';
+      return 'Код истёк или недействителен. Запросите новый.';
     case 'TOO_MANY_ATTEMPTS':
       // 429 from verify (defensive, near-unreachable — see 410 note above).
       return 'Слишком много неверных попыток. Запросите новый код.';
@@ -49,7 +65,7 @@ export function messageForCode(code: string | undefined, status: number): string
       // 429 from send: service-side per-user throttle (5 sends/hour).
       return 'Слишком много запросов кода. Попробуйте позже.';
     case 'NO_EMAIL':
-      return 'У аккаунта не указан email.';
+      return 'В учётной записи не указана почта.';
     case 'EMAIL_ALREADY_VERIFIED':
       // 409 — a graceful terminal state, not an error, on the verify screen.
       return 'Почта уже подтверждена.';

@@ -3,7 +3,7 @@ import 'package:restaurant_guide_mobile/services/account_service.dart';
 import 'package:restaurant_guide_mobile/services/auth_service.dart';
 import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 
-/// Где сейчас экран удаления учётки.
+/// Где сейчас экран удаления учётной записи.
 enum AccountDeletionStage {
   /// Спрашиваем сервер, можно ли удалить.
   checking,
@@ -11,7 +11,7 @@ enum AccountDeletionStage {
   /// Спросить не удалось (нет сети, сбой) — экран предлагает «Повторить».
   checkFailed,
 
-  /// Сервер отказал: владелец карточек, учётка оператора. Текст — его.
+  /// Сервер отказал: владелец карточек, учётная запись оператора. Текст — его.
   refused,
 
   /// Можно: предупреждение и поле для слова.
@@ -20,11 +20,11 @@ enum AccountDeletionStage {
   /// Запрос удаления в пути.
   deleting,
 
-  /// Учётка удалена, вход на телефоне завершён.
+  /// Учётная запись удалена, вход на телефоне завершён.
   deleted,
 }
 
-/// Шаги удаления учётки (бриф В1, 18.10.2026): проверка, затем удаление
+/// Шаги удаления учётной записи (бриф В1, 18.10.2026): проверка, затем удаление
 /// по слову УДАЛИТЬ (решение 4).
 ///
 /// Живёт, пока открыт экран удаления, — в общий список провайдеров
@@ -33,7 +33,7 @@ enum AccountDeletionStage {
 /// После удаления на сервере зовёт [onDeleted] — выход на этом телефоне
 /// (экран удаления: хранилище очищено, сигнал `SessionEvents`). Зовёт сам, а
 /// не оставляет экрану: экран могут закрыть, пока запрос в пути, а телефон не
-/// должен остаться «вошедшим» в учётку, которой больше нет.
+/// должен остаться «вошедшим» в учётную запись, которой больше нет.
 class AccountDeletionProvider extends ChangeNotifier {
   AccountDeletionProvider({
     required Future<void> Function() onDeleted,
@@ -53,11 +53,11 @@ class AccountDeletionProvider extends ChangeNotifier {
   /// Отказ сервера пришёл без текста — такого быть не должно, но человек
   /// всё равно должен понять, куда идти.
   static const String fallbackRefusal =
-      'Сейчас учётку удалить нельзя. Напишите в поддержку: support@nirivio.by';
+      'Сейчас учётную запись удалить нельзя. Напишите в поддержку: support@nirivio.by';
 
   /// Удаление сорвалось без текста от сервера (нет сети, сбой).
   static const String fallbackDeleteError =
-      'Не удалось удалить учётку. Проверьте интернет и попробуйте ещё раз.';
+      'Не удалось удалить учётную запись. Проверьте интернет и попробуйте ещё раз.';
 
   AccountDeletionStage _stage = AccountDeletionStage.checking;
   String? _refusalMessage;
@@ -69,7 +69,7 @@ class AccountDeletionProvider extends ChangeNotifier {
 
   /// Сервер ответил «удалена». `false` в шаге [AccountDeletionStage.deleted] —
   /// сеанс кончился по дороге: ответ на первую попытку потерялся, а повтор
-  /// нашёл сеансы учётки погашенными. Экран говорит тогда «Сеанс завершён».
+  /// нашёл сеансы учётной записи погашенными. Экран говорит тогда «Сеанс завершён».
   bool get deletionConfirmed => _deletionConfirmed;
 
   /// Текст отказа сервера — для [AccountDeletionStage.refused].
@@ -83,7 +83,7 @@ class AccountDeletionProvider extends ChangeNotifier {
   static bool isConfirmation(String typed) =>
       typed.trim().toUpperCase() == AccountService.confirmationWord;
 
-  /// Спросить сервер, можно ли удалить учётку.
+  /// Спросить сервер, можно ли удалить учётную запись.
   Future<void> check() async {
     _stage = AccountDeletionStage.checking;
     _refusalMessage = null;
@@ -103,7 +103,7 @@ class AccountDeletionProvider extends ChangeNotifier {
     _notify();
   }
 
-  /// Удалить учётку словом [typed]. `true` — удалена и вход завершён.
+  /// Удалить учётную запись словом [typed]. `true` — удалена и вход завершён.
   ///
   /// Без слова и не из готового шага ничего не отправляет: кнопка на экране
   /// и так недоступна, это вторая защита от случайного нажатия.
@@ -122,9 +122,9 @@ class AccountDeletionProvider extends ChangeNotifier {
       await _service.deleteAccount(confirmation: typed);
     } catch (error) {
       // Сеанса больше нет: сервер отказал транспорту в продлении, и тот стёр
-      // токены. Так бывает, когда первая попытка удалила учётку, а её ответ
+      // токены. Так бывает, когда первая попытка удалила учётную запись, а её ответ
       // потерялся: повтор приходит к погашенным сеансам. Оставаться на форме
-      // с ошибкой незачем — войти в эту учётку с телефона уже нельзя.
+      // с ошибкой незачем — войти в эту учётную запись с телефона уже нельзя.
       if (!await _sessionAlive()) {
         await _endSession(confirmed: false);
         return true;

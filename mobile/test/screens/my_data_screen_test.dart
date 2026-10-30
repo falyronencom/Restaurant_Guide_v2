@@ -16,7 +16,7 @@ import '../support/wire_stand.dart';
 
 /// «Мои данные» (бриф В1, 18.10.2026): «Профиль» → «Показать профиль» →
 /// «Мои данные» — имя, способ входа, почта или телефон, «Уведомления» и
-/// «Удалить учётку».
+/// «Удалить учётную запись».
 class _SignedIn extends AuthProvider {
   _SignedIn(this._user);
 
@@ -103,7 +103,7 @@ void main() {
     // «Почта» — и подпись строки адреса, и способ входа.
     expect(find.text('Почта'), findsNWidgets(2));
     expect(find.text('Уведомления'), findsOneWidget);
-    expect(find.text('Удалить учётку'), findsOneWidget);
+    expect(find.text('Удалить учётную запись'), findsOneWidget);
   });
 
   testWidgets('вход по телефону: «Телефон» как способ и номер', (tester) async {
@@ -128,7 +128,7 @@ void main() {
     expect(MyDataScreen.authMethodLabel(null), isNull);
   });
 
-  testWidgets('«Удалить учётку» открывает экран удаления; партнёру — с черновиками', (tester) async {
+  testWidgets('«Удалить учётную запись» открывает экран удаления; партнёру — с черновиками', (tester) async {
     await tall(tester);
     await tester.pumpWidget(appWith(
       const User(
