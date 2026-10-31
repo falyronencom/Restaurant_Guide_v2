@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
+import 'package:restaurant_guide_mobile/screens/auth/email_verification_screen.dart';
 import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
 import 'package:restaurant_guide_mobile/utils/validators.dart';
 import 'package:restaurant_guide_mobile/widgets/forms/custom_text_field.dart';
@@ -81,14 +82,21 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
         return;
       }
 
-      // Check if auto-login succeeded (no verification needed)
+      // Check if auto-login succeeded
       if (authProvider.isAuthenticated) {
-        // Navigate to home (name already saved during registration)
-        Navigator.pushNamedAndRemoveUntil(
-          context,
-          '/home',
-          (route) => false,
-        );
+        // Главный экран, а поверх него — ввод кода из письма регистрации,
+        // как на сайте; «Позже» и «назад» возвращают на главный. Раньше
+        // открывался сразу главный, и подтвердить почту можно было только из
+        // «Профиля», который слал новое письмо, — код первого письма гас, и
+        // человек видел «Неверный код» (сводка находок, группа Б, 30.10).
+        final navigator = Navigator.of(context);
+        navigator.pushNamedAndRemoveUntil('/home', (route) => false);
+        if (authProvider.currentUser?.emailVerified != true) {
+          navigator.pushNamed(
+            '/auth/email-verification',
+            arguments: {EmailVerificationScreen.codeJustSentArg: true},
+          );
+        }
       } else {
         // Navigate to email verification screen
         // Pass name to update profile after verification
@@ -98,6 +106,7 @@ class _EmailRegistrationScreenState extends State<EmailRegistrationScreen> {
           arguments: {
             'email': _emailController.text.trim(),
             'name': name,
+            EmailVerificationScreen.codeJustSentArg: true,
           },
         );
       }
