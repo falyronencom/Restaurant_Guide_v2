@@ -11,6 +11,13 @@ import 'package:restaurant_guide_mobile/widgets/forms/error_banner.dart';
 class EmailVerificationScreen extends StatefulWidget {
   const EmailVerificationScreen({super.key});
 
+  /// Подсказка над «Прислать код повторно» — слово Координатора 30.10.2026:
+  /// пока у домена nirivio.by нет сайта, письмо с кодом попадает в «Спам».
+  /// Те же слова — на сайте (`web/src/components/auth/VerifyEmailForm.tsx`).
+  static const String spamHint = 'Не пришёл код? Проверьте папку «Спам».';
+
+  static const Key spamHintKey = ValueKey<String>('verify-spam-hint');
+
   @override
   State<EmailVerificationScreen> createState() =>
       _EmailVerificationScreenState();
@@ -211,7 +218,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
               // Description
               Text(
-                'Мы прислали письмо на вашу почту с кодом подтверждения, проверяйте папку спам',
+                'Мы прислали письмо на вашу почту с кодом подтверждения.',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 15,
                   height: 1.53, // 23/15
@@ -235,33 +242,58 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                 ),
 
               // Verification code input boxes
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: List.generate(6, (index) {
-                  return _CodeInputBox(
-                    controller: _codeControllers[index],
-                    focusNode: _focusNodes[index],
-                    isFirst: index == 0,
-                    onChanged: (value) {
-                      if (value.isNotEmpty && index < 5) {
-                        // Move to next field
-                        _focusNodes[index + 1].requestFocus();
-                      } else if (value.isEmpty && index > 0) {
-                        // Move to previous field on backspace
-                        _focusNodes[index - 1].requestFocus();
-                      }
+              //
+              // Клетка — до 50 dp, на узком экране уже (не меньше 36): шесть
+              // по 50 не помещались в 272 dp экрана шириной 320, и правая
+              // уходила за край (найдено тестом подсказки про «Спам»,
+              // 30.10.2026). Между клетками — не меньше 6 dp.
+              LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: List.generate(6, (index) {
+                    return _CodeInputBox(
+                      width: ((constraints.maxWidth - 5 * 6) / 6)
+                          .clamp(36.0, 50.0),
+                      controller: _codeControllers[index],
+                      focusNode: _focusNodes[index],
+                      isFirst: index == 0,
+                      onChanged: (value) {
+                        if (value.isNotEmpty && index < 5) {
+                          // Move to next field
+                          _focusNodes[index + 1].requestFocus();
+                        } else if (value.isEmpty && index > 0) {
+                          // Move to previous field on backspace
+                          _focusNodes[index - 1].requestFocus();
+                        }
 
-                      // Auto-submit when all 6 digits are entered
-                      if (index == 5 && value.isNotEmpty) {
-                        _handleVerification();
-                      }
-                    },
-                    enabled: !_isLoading,
-                  );
-                }),
+                        // Auto-submit when all 6 digits are entered
+                        if (index == 5 && value.isNotEmpty) {
+                          _handleVerification();
+                        }
+                      },
+                      enabled: !_isLoading,
+                    );
+                  }),
+                ),
               ),
 
               const SizedBox(height: 32),
+
+              // Пока у домена nirivio.by нет сайта, письмо с кодом попадает в
+              // «Спам» (письмо Координатору, 30.10.2026). Та же строка — над
+              // «Отправить код повторно» на сайте (VerifyEmailForm.tsx).
+              Text(
+                EmailVerificationScreen.spamHint,
+                key: EmailVerificationScreen.spamHintKey,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  height: 1.38, // 18/13
+                  color: const Color(0xFF5F5F5F),
+                ),
+              ),
+
+              const SizedBox(height: 4),
 
               // Resend code timer/button
               Center(
@@ -332,6 +364,7 @@ class _CodeInputBox extends StatelessWidget {
   final bool isFirst;
   final ValueChanged<String> onChanged;
   final bool enabled;
+  final double width;
 
   const _CodeInputBox({
     required this.controller,
@@ -339,12 +372,13 @@ class _CodeInputBox extends StatelessWidget {
     this.isFirst = false,
     required this.onChanged,
     this.enabled = true,
+    this.width = 50,
   });
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 50,
+      width: width,
       height: 60,
       child: TextFormField(
         controller: controller,

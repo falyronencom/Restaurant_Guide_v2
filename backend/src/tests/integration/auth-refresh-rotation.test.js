@@ -164,9 +164,11 @@ describe('POST /api/v1/auth/refresh — reuse grace window', () => {
     // Deactivation is how an account is closed or suspended. The window exists
     // to forgive a lost response, and a closed account has nothing to forgive:
     // handing it a fresh access token would keep a suspended user working for
-    // another four hours.
-    const response = await refresh(refreshToken).expect(403);
-    expect(response.body.error.code).toBe('TOKEN_REUSE_DETECTED');
+    // another four hours. The verdict is the account's (since 30.10.2026 the
+    // switched-off check runs first): the clients name the reason only on it.
+    const response = await refresh(refreshToken).expect(401);
+    expect(response.body.error.code).toBe('ACCOUNT_INACTIVE');
+    expect(response.body.data).toBeUndefined();
   });
 
   test('a successor belonging to another user is not handed out', async () => {

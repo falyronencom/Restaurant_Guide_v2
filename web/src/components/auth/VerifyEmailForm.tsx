@@ -30,6 +30,14 @@ import { useAuth } from './AuthProvider';
  * under the form skips the code for now — the profile keeps «Подтвердить»
  * (сверка находок тестировщика с сайтом, 18.10, п. 11).
  */
+
+/**
+ * Over «Отправить код повторно»: until nirivio.by has a site the letter with
+ * the code lands in «Спам» (Coordinator, 30.10.2026). The app says the same
+ * words (mobile EmailVerificationScreen.spamHint).
+ */
+export const SPAM_HINT = 'Не пришёл код? Проверьте папку «Спам».';
+
 export function VerifyEmailForm({ returnTo = '/' }: { returnTo?: string }) {
   const [verifyState, verifyAction, verifyPending] = useActionState(
     verifyEmailCodeAction,
@@ -149,6 +157,7 @@ export function VerifyEmailForm({ returnTo = '/' }: { returnTo?: string }) {
         >
           {resendMessage}
         </p>
+        <p className="text-caption-l text-figma-text-grey">{SPAM_HINT}</p>
         <button
           type="submit"
           disabled={resendPending}

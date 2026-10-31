@@ -959,20 +959,27 @@ describe('authService', () => {
         process.env[GRACE_ENV] = '60';
 
         pool.query
-          .mockResolvedValueOnce({ rows: [burnedRow({ is_active: false })], rowCount: 1 });
-        routeClient({ burned: 1 }); // revoke
+          .mockResolvedValueOnce({ rows: [burnedRow({ is_active: false })], rowCount: 1 })
+          .mockResolvedValueOnce({ rows: [], rowCount: 0 }); // burn: already used
 
         await expect(refreshAccessToken('burned_token')).rejects.toThrow(
-          'REFRESH_TOKEN_REUSE_DETECTED'
+          'USER_ACCOUNT_INACTIVE'
         );
 
-        // The lookup is the only query on the pool — the revocation runs in a
-        // transaction of its own: the window is not even consulted. It
-        // forgives a lost answer, never a closed account — and the verdict stays
-        // TOKEN_REUSE_DETECTED rather than ACCOUNT_INACTIVE because the reuse
-        // check has always run first.
-        expect(pool.query).toHaveBeenCalledTimes(1);
-        expectSessionsRevoked('user-123');
+        // The window is not even consulted: it forgives a lost answer, never a
+        // closed account. Since 30.10.2026 the switched-off check runs first,
+        // so the verdict is ACCOUNT_INACTIVE — the one code on which the
+        // clients tell the person why (the block from the panel revokes the
+        // sessions too). Lookup and the no-op burn only: no successor, no
+        // claim, no transaction.
+        expect(pool.query).toHaveBeenCalledTimes(2);
+        expect(pool.query.mock.calls[1][0]).toMatch(/^UPDATE refresh_tokens SET used_at = NOW\(\)/);
+        expect(getClient).not.toHaveBeenCalled();
+        // A replay of a rotated token still leaves a trace.
+        expect(logger.warn).toHaveBeenCalledWith(
+          expect.stringContaining('switched-off account'),
+          expect.objectContaining({ userId: 'user-123', alreadyUsed: true }),
+        );
       });
 
       test('a token burned by logout has no successor and is never forgiven', async () => {

@@ -15,6 +15,8 @@
  * set of `name` attributes each auth form renders. Read the pair as covered
  * because THAT file exists, not because these two describe the same field.
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -58,6 +60,23 @@ describe('VerifyEmailForm — auth awareness', () => {
     expect(
       screen.getByRole('button', { name: 'Отправить код повторно' }),
     ).toBeInTheDocument();
+  });
+
+  it('over «Отправить код повторно» — the hint to look in «Спам», the same words as the app', () => {
+    render(<VerifyEmailForm />);
+
+    const hint = screen.getByText('Не пришёл код? Проверьте папку «Спам».');
+    const resend = screen.getByRole('button', { name: 'Отправить код повторно' });
+    // Above the button in reading order, inside the same resend form.
+    expect(hint.compareDocumentPosition(resend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(hint.closest('form')).toBe(resend.closest('form'));
+
+    // The app's screen says the same (mobile EmailVerificationScreen.spamHint).
+    const app = readFileSync(
+      join(__dirname, '..', '..', 'mobile', 'lib', 'screens', 'auth', 'email_verification_screen.dart'),
+      'utf8',
+    );
+    expect(app).toContain("static const String spamHint = 'Не пришёл код? Проверьте папку «Спам».';");
   });
 
   it('renders the form optimistically while the context hydrates', () => {

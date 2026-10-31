@@ -477,6 +477,13 @@ export async function generateTokenPair(user, { replaces = null } = {}) {
  * reset, a detected reuse, account takeover) is refused before any of that,
  * as REFRESH_TOKEN_REVOKED: the revocation burned it, nobody stole it.
  *
+ * Any token of a switched-off account is refused first of all, as
+ * USER_ACCOUNT_INACTIVE — the order authenticate keeps for access tokens.
+ * The block from the panel switches the account off AND revokes its sessions
+ * (endAllAccess); answering its tokens as revoked or expired left the person
+ * reading «Сеанс истёк» on the app and a bare login form on the site, never
+ * that the account was switched off (Coordinator's live check, 30.10.2026).
+ *
  * @param {string} refreshToken - The refresh token to exchange
  * @returns {Promise<Object>} New token pair with user info
  * @throws {Error} If token is invalid, expired, revoked, or already used
@@ -495,6 +502,30 @@ export async function refreshAccessToken(refreshToken) {
     }
 
     const tokenData = result.rows[0];
+
+    // A switched-off account: the presented session ends here, whatever else
+    // is true of the token — the block from the panel also revokes every
+    // session (endAllAccess), and that verdict must not hide this one: the
+    // clients tell the person the account is switched off, with the support
+    // address, only on this code. Burned (no-op when already used or
+    // revoked), so switching the account back on does not bring it back
+    // (directive service_accounts 2026-10-15, B4; critic 2B B2). NOW(), as
+    // the claim below writes used_at; replaced_by stays empty, so a later
+    // replay of it is never forgiven as a lost answer.
+    if (!tokenData.is_active) {
+      // Before 30.10.2026 a replay of an already-used token reached the reuse
+      // alarm first; the trace stays, the verdict is the account's.
+      logger.warn('Refresh token of a switched-off account presented', {
+        userId: tokenData.user_id,
+        tokenId: tokenData.id,
+        alreadyUsed: tokenData.used_at !== null,
+      });
+      await pool.query(
+        'UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL',
+        [tokenData.id],
+      );
+      throw new Error('USER_ACCOUNT_INACTIVE');
+    }
 
     // Check if token has expired
     if (new Date(tokenData.expires_at) < new Date()) {
@@ -525,19 +556,6 @@ export async function refreshAccessToken(refreshToken) {
     // separates the two by the grace window.
     if (tokenData.used_at !== null) {
       return await handleReusedToken(tokenData, refreshToken);
-    }
-
-    // A switched-off account: the presented session ends here rather than
-    // waiting — burned, so switching the account back on does not bring it
-    // back (directive service_accounts 2026-10-15, B4; critic 2B B2). NOW(),
-    // as the claim below writes used_at; replaced_by stays empty, so a later
-    // replay of it is never forgiven as a lost answer.
-    if (!tokenData.is_active) {
-      await pool.query(
-        'UPDATE refresh_tokens SET used_at = NOW() WHERE id = $1 AND used_at IS NULL',
-        [tokenData.id],
-      );
-      throw new Error('USER_ACCOUNT_INACTIVE');
     }
 
     // A panel account (admin, viewer) that has not renewed for a day: answered
