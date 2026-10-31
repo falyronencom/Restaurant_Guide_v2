@@ -18,6 +18,21 @@ class EmailVerificationScreen extends StatefulWidget {
 
   static const Key spamHintKey = ValueKey<String>('verify-spam-hint');
 
+  /// Строка под заголовком. Экран не знает, дошло ли письмо: из «Профиля» он
+  /// открывается без нового письма, а повтор может не уйти. Поэтому строка
+  /// не говорит «мы прислали» — слово Координатора 30.10.2026; те же слова
+  /// на сайте (`VerifyEmailForm.tsx`).
+  static const String codeLetterHint =
+      'Код подтверждения приходит письмом на вашу почту.';
+
+  /// Под «Позже» — как на сайте; слово Координатора 30.10.2026.
+  static const String laterHint = 'Подтвердить почту можно потом в профиле.';
+
+  /// Аргумент маршрута: письмо с кодом только что ушло (регистрация) — до
+  /// повтора идёт отсчёт. Из «Профиля» письма не было, повтор доступен сразу:
+  /// код письма регистрации мог давно истечь.
+  static const String codeJustSentArg = 'codeJustSent';
+
   @override
   State<EmailVerificationScreen> createState() =>
       _EmailVerificationScreenState();
@@ -30,20 +45,17 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
   bool _isLoading = false;
   String? _errorMessage;
-  int _resendTimer = 12;
+  int _resendTimer = 0;
   Timer? _timer;
 
   String? _name;
-
-  @override
-  void initState() {
-    super.initState();
-    _startResendTimer();
-  }
+  bool _argsRead = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_argsRead) return;
+    _argsRead = true;
     // Get arguments passed from registration screen.
     // 'email' key is accepted for backwards-compat but not used directly —
     // the resend endpoint operates on the authenticated session.
@@ -51,6 +63,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
     if (args != null) {
       _name = args['name'] as String?;
+    }
+    if (args?[EmailVerificationScreen.codeJustSentArg] == true) {
+      _startResendTimer();
     }
   }
 
@@ -66,12 +81,11 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
     super.dispose();
   }
 
-  /// Start resend code timer
+  /// Start resend code timer. Без setState: зовётся и до первой отрисовки
+  /// (из didChangeDependencies), и внутри setState после повтора.
   void _startResendTimer() {
     _timer?.cancel();
-    setState(() {
-      _resendTimer = 12;
-    });
+    _resendTimer = 12;
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
@@ -138,8 +152,13 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
   }
 
   /// Handle resend verification code
+  ///
+  /// Пока запрос в пути, второе нажатие ничего не делает: два запроса дают два
+  /// письма с разными кодами, и код из «не того» письма — «Неверный код».
+  /// Проверка здесь, а не только в `onPressed`: два нажатия в одном кадре
+  /// приходят раньше, чем кнопка перерисуется выключенной.
   Future<void> _handleResendCode() async {
-    if (_resendTimer > 0) return;
+    if (_resendTimer > 0 || _isLoading) return;
 
     setState(() {
       _isLoading = true;
@@ -160,8 +179,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
       return;
     }
 
-    _startResendTimer();
     setState(() {
+      _startResendTimer();
       _isLoading = false;
     });
 
@@ -171,6 +190,16 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
         backgroundColor: Colors.green,
       ),
     );
+  }
+
+  /// «Позже»: назад, на экран под этим; если его нет — на главный.
+  void _skipForNow() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      navigator.pushNamedAndRemoveUntil('/home', (route) => false);
+    }
   }
 
   @override
@@ -218,7 +247,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
 
               // Description
               Text(
-                'Мы прислали письмо на вашу почту с кодом подтверждения.',
+                EmailVerificationScreen.codeLetterHint,
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontSize: 15,
                   height: 1.53, // 23/15
@@ -298,7 +327,9 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               // Resend code timer/button
               Center(
                 child: TextButton(
-                  onPressed: _resendTimer == 0 ? _handleResendCode : null,
+                  onPressed: _resendTimer == 0 && !_isLoading
+                      ? _handleResendCode
+                      : null,
                   child: Text(
                     _resendTimer > 0
                         ? 'Прислать код повторно через 00:${_resendTimer.toString().padLeft(2, '0')}'
@@ -346,6 +377,33 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                           color: AppTheme.backgroundWarm,
                         ),
                       ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // «Позже» — подтвердить потом: после регистрации под экраном
+              // кода лежит главный, из «Профиля» — профиль (как на сайте).
+              Center(
+                child: TextButton(
+                  onPressed: _skipForNow,
+                  child: Text(
+                    'Позже',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.primaryOrangeDark,
+                    ),
+                  ),
+                ),
+              ),
+              Text(
+                EmailVerificationScreen.laterHint,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  height: 1.38, // 18/13
+                  color: const Color(0xFF5F5F5F),
+                ),
               ),
 
               const SizedBox(height: 24),
