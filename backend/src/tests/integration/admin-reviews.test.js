@@ -1073,11 +1073,14 @@ describe('setVisibility: the journal entry is part of the change', () => {
 // отзыва, пока запрос модератора не встанет в ожидание её замка.
 
 describe('setVisibility: the review changed between the read and the write', () => {
-  const waitForLockWaiter = async () => {
+  // Ждать именно того, кто ждёт эту транзакцию: без привязки ранний COMMIT
+  // молча увёл бы запрос в ранний возврат или в 404 до записи.
+  const waitForWaiterOn = async (blockerPid) => {
     for (let attempt = 0; attempt < 250; attempt += 1) {
       const { rows } = await query(
         `SELECT COUNT(*)::int AS n FROM pg_stat_activity
-          WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+          WHERE $1 = ANY(pg_blocking_pids(pid))`,
+        [blockerPid],
       );
       if (rows[0].n > 0) return;
       await new Promise((resolve) => { setTimeout(resolve, 20); });
@@ -1091,6 +1094,7 @@ describe('setVisibility: the review changed between the read and the write', () 
     let hide;
     try {
       await other.query('BEGIN');
+      const { rows: [{ pid }] } = await other.query('SELECT pg_backend_pid() AS pid');
       await other.query(change, [reviewId]);
 
       hide = request(app)
@@ -1098,7 +1102,7 @@ describe('setVisibility: the review changed between the read and the write', () 
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ is_visible: false })
         .then((response) => response);
-      await waitForLockWaiter();
+      await waitForWaiterOn(pid);
       await other.query('COMMIT');
     } catch (error) {
       await other.query('ROLLBACK');
@@ -1114,8 +1118,9 @@ describe('setVisibility: the review changed between the read and the write', () 
     await createTestReview(null, establishment.id, { rating: 5 });
     const review = await createTestReview(null, establishment.id, { rating: 1 });
 
-    // Другая сторона только скрывает строку и рейтинг не пересчитывает —
-    // так оставляет его первая попытка, умершая до своего пересчёта.
+    // Другая сторона только скрывает строку. Триггер базы после этого
+    // считает и скрытый отзыв (3,00 при двух) — верный рейтинг даёт только
+    // пересчёт сервиса в ветке гонки.
     const response = await hideWhileAnotherChanges(
       review.id,
       'UPDATE reviews SET is_visible = false WHERE id = $1',

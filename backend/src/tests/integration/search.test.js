@@ -471,6 +471,9 @@ describe('Search System - Bounds-Based Search: фильтры внутри об�
     expect(await mapNames({ hours_filter: hoursFilter })).toEqual(expected);
   });
 
+  // Фраза с рамкой сейчас не приходит ни от одного клиента: карта телефона
+  // фразу на /search/map не шлёт (map_screen.dart), сайт с фразой убирает
+  // рамку (web/src/app/api/map/route.ts). Охраняется параметр API как есть.
   test('фраза — по названию', async () => {
     expect(await mapNames({ search: 'жаворон' })).toEqual(['Жаворонок']);
   });

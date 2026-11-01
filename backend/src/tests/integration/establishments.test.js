@@ -1839,11 +1839,14 @@ describe('Establishments System - Slug Lifecycle', () => {
         const first = await createActive('Первый в гонке');
         const second = await createActive('Второй в гонке');
 
-        const waitForLockWaiter = async () => {
+        // Ждать именно того, кто ждёт эту транзакцию: без привязки ранний
+        // COMMIT молча увёл бы запрос в обычную проверку занятости.
+        const waitForWaiterOn = async (blockerPid) => {
           for (let attempt = 0; attempt < 250; attempt += 1) {
             const { rows } = await query(
               `SELECT COUNT(*)::int AS n FROM pg_stat_activity
-                WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+                WHERE $1 = ANY(pg_blocking_pids(pid))`,
+              [blockerPid],
             );
             if (rows[0].n > 0) return;
             await new Promise((resolve) => { setTimeout(resolve, 20); });
@@ -1857,10 +1860,11 @@ describe('Establishments System - Slug Lifecycle', () => {
         let patch;
         try {
           await other.query('BEGIN');
+          const { rows: [{ pid }] } = await other.query('SELECT pg_backend_pid() AS pid');
           await other.query('UPDATE establishments SET slug = $1 WHERE id = $2', ['zanyatyi-adres', second.id]);
 
           patch = patchSlug(first.id, { slug: 'zanyatyi-adres' }).then((response) => response);
-          await waitForLockWaiter();
+          await waitForWaiterOn(pid);
           await other.query('COMMIT');
         } catch (error) {
           await other.query('ROLLBACK');
@@ -1887,7 +1891,11 @@ describe('Establishments System - Slug Lifecycle', () => {
 // Тело запроса — в той форме, в какой его собирает телефон
 // (mobile/lib/models/partner_registration.dart, toJson): реквизиты лежат в корне
 // под legal_name, unp, contact_person, contact_email, поле уходит, только если
-// оно не null; правка (PUT) шлёт то же тело целиком. Партнёр видит реквизиты
+// оно не null; правка (PUT) шлёт то же тело целиком. contact_person в
+// приложении — номер контактного лица (mobile/lib/screens/partner/steps/
+// legal_info_step.dart), отсюда номера в тестах. Приложение не пускает дальше
+// без всех четырёх полей, так что «часть реквизитов» — защита от других
+// клиентов API, а не путь телефона. Партнёр видит реквизиты
 // в своей карточке (GET /partner/establishments/:id — их читает
 // mobile/lib/models/partner_establishment.dart). До 01.11.2026 запись
 // реквизитов (partnerDocumentsModel.createPartnerDocument) не выполнял ни один
@@ -1923,7 +1931,7 @@ describe('Establishments System - Юридические реквизиты па
   const legal = {
     legal_name: 'ООО «Васильковый двор»',
     unp: '191234567',
-    contact_person: 'Ольга Ковалёва',
+    contact_person: '+375291112244',
     contact_email: 'buh@vasilki.by',
   };
 
@@ -1950,19 +1958,20 @@ describe('Establishments System - Юридические реквизиты па
       partner_id: partnerId,
       company_name: 'ООО «Васильковый двор»',
       tax_id: '191234567',
-      contact_person: 'Ольга Ковалёва',
+      contact_person: '+375291112244',
       contact_email: 'buh@vasilki.by',
     }]);
     expect(await partnerCard(id)).toMatchObject({
       legal_name: 'ООО «Васильковый двор»',
       unp: '191234567',
-      contact_person: 'Ольга Ковалёва',
+      contact_person: '+375291112244',
       contact_email: 'buh@vasilki.by',
     });
   });
 
-  // Телефон не шлёт поле, которое партнёр не заполнил; очищенное поле может
-  // прийти пустой строкой. Ни то, ни другое не пишется в базу пустой строкой.
+  // Клиент может не прислать поле или прислать его пустой строкой. При
+  // создании карточки ни то, ни другое не пишется в базу пустой строкой
+  // (правка пустую строку пишет как есть — её здесь не проверяем).
   test.each([
     [
       'без названия, лицо очищено',
@@ -1971,8 +1980,8 @@ describe('Establishments System - Юридические реквизиты па
     ],
     [
       'без УНП, почта очищена',
-      { legal_name: 'ООО «Васильковый двор»', contact_person: 'Ольга Ковалёва', contact_email: '' },
-      { company_name: 'ООО «Васильковый двор»', tax_id: null, contact_person: 'Ольга Ковалёва', contact_email: null },
+      { legal_name: 'ООО «Васильковый двор»', contact_person: '+375291112244', contact_email: '' },
+      { company_name: 'ООО «Васильковый двор»', tax_id: null, contact_person: '+375291112244', contact_email: null },
     ],
   ])('часть реквизитов: присланное записано, неприсланное и пустое — пусто (%s)', async (_label, sent, stored) => {
     const created = await request(app)
@@ -2004,7 +2013,7 @@ describe('Establishments System - Юридические реквизиты па
       partner_id: partnerId,
       company_name: 'ООО «Васильковый двор»',
       tax_id: '191234567',
-      contact_person: 'Ольга Ковалёва',
+      contact_person: '+375291112244',
       contact_email: 'buh@vasilki.by',
     }]);
   });
@@ -2023,7 +2032,7 @@ describe('Establishments System - Юридические реквизиты па
       .send(mobileBody({
         legal_name: 'ОДО «Новый двор»',
         unp: '192345678',
-        contact_person: 'Пётр Лис',
+        contact_person: '+375447778899',
         contact_email: 'office@newdvor.by',
       }))
       .expect(200);
@@ -2032,13 +2041,13 @@ describe('Establishments System - Юридические реквизиты па
       partner_id: partnerId,
       company_name: 'ОДО «Новый двор»',
       tax_id: '192345678',
-      contact_person: 'Пётр Лис',
+      contact_person: '+375447778899',
       contact_email: 'office@newdvor.by',
     }]);
     expect(await partnerCard(id)).toMatchObject({
       legal_name: 'ОДО «Новый двор»',
       unp: '192345678',
-      contact_person: 'Пётр Лис',
+      contact_person: '+375447778899',
       contact_email: 'office@newdvor.by',
     });
   });
