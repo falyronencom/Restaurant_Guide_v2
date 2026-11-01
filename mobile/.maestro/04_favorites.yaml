@@ -1,0 +1,69 @@
+# Избранное: тестовый пользователь отмечает заведение сердечком на карточке,
+# и оно появляется на вкладке «Избранное». В конце отметка снимается —
+# следующий прогон начинает с того же состояния.
+appId: com.nirivio.app
+name: "Избранное — отметить заведение и найти его на вкладке"
+tags:
+  - smoke
+---
+- runFlow: subflows/login.yaml
+- tapOn:
+    id: "e2e-home-search-field"
+- inputText: "Maestro"
+- tapOn:
+    id: "e2e-home-search-button"
+# Регулярка «Maestro Coffee.*» не задевает строку поиска: в ней «Maestro».
+- extendedWaitUntil:
+    visible: "Maestro Coffee.*"
+    timeout: 20000
+- tapOn: "Maestro Coffee.*"
+- extendedWaitUntil:
+    visible: "ул. Ленина, 5"
+    timeout: 20000
+# Сердечко — метка e2e-detail-favorite, признак selected — «в избранном».
+# Прошлый прогон мог упасть до уборки, и тогда заведение уже в избранном:
+# нажатие убрало бы его. Поэтому сначала — к состоянию «не в избранном».
+- runFlow:
+    when:
+      visible:
+        id: "e2e-detail-favorite"
+        selected: true
+    commands:
+      - tapOn:
+          id: "e2e-detail-favorite"
+- extendedWaitUntil:
+    visible:
+      id: "e2e-detail-favorite"
+      selected: false
+    timeout: 10000
+- tapOn:
+    id: "e2e-detail-favorite"
+- extendedWaitUntil:
+    visible:
+      id: "e2e-detail-favorite"
+      selected: true
+    timeout: 10000
+- back
+- tapOn: "Избранное.*"
+- extendedWaitUntil:
+    visible: "Maestro Coffee.*"
+    timeout: 20000
+# Уборка: снять отметку с той же карточки.
+- tapOn: "Maestro Coffee.*"
+- extendedWaitUntil:
+    visible: "ул. Ленина, 5"
+    timeout: 20000
+- tapOn:
+    id: "e2e-detail-favorite"
+- extendedWaitUntil:
+    visible:
+      id: "e2e-detail-favorite"
+      selected: false
+    timeout: 10000
+- back
+# Пустое избранное вошедшего: подсказка про сердечко (у гостя другая). Это
+# одна надпись с заголовком «Здесь будут ваши места» перед ней — отсюда «.*»
+# в начале регулярки.
+- extendedWaitUntil:
+    visible: ".*Нажмите ♡.*"
+    timeout: 20000

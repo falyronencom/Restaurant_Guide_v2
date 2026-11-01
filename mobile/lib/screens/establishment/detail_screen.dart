@@ -742,12 +742,20 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       builder: (context, provider, child) {
         final isFavorite = provider.isFavorite(widget.establishmentId);
 
-        return GestureDetector(
-          onTap: _toggleFavorite,
-          child: Icon(
-            isFavorite ? Icons.favorite : Icons.favorite_border,
-            color: isFavorite ? _primaryOrange : _backgroundColor,
-            size: 30,
+        // Метка и признак «в избранном» — для сквозных сценариев Maestro
+        // (mobile/.maestro): у сердечка нет текста, а без признака сценарий
+        // не отличит «добавлено» от «убрано» и не вернёт избранное как было.
+        return Semantics(
+          container: true,
+          identifier: 'e2e-detail-favorite',
+          selected: isFavorite,
+          child: GestureDetector(
+            onTap: _toggleFavorite,
+            child: Icon(
+              isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: isFavorite ? _primaryOrange : _backgroundColor,
+              size: 30,
+            ),
           ),
         );
       },
