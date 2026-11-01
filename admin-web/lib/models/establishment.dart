@@ -97,6 +97,12 @@ class EstablishmentDetail {
   final String? suspendedByName;
   final DateTime? suspendedByAt;
 
+  /// Последняя приостановка карточки, пришедшей в очередь
+  /// (`previous_suspension`, решение Координатора 01.11.2026, «А+В»):
+  /// панель показывает её пометкой «Раньше приостановлена». `null` —
+  /// карточку не приостанавливали или она не в очереди.
+  final PreviousSuspension? previousSuspension;
+
   /// Владелец карточки (`partner` в детали, с 21.10.2026, пункт A1-02).
   /// У просмотрщика сервер отдаёт ключ без имени и почты.
   final String? partnerName;
@@ -151,6 +157,7 @@ class EstablishmentDetail {
     this.moderationNotes,
     this.suspendedByName,
     this.suspendedByAt,
+    this.previousSuspension,
     this.partnerName,
     this.partnerEmail,
     this.partnerDataRedacted = false,
@@ -217,11 +224,55 @@ class EstablishmentDetail {
       moderationNotes: _parseJsonMap(json['moderation_notes']),
       suspendedByName: suspendedBy?['name'] as String?,
       suspendedByAt: _parseDate(suspendedBy?['at']),
+      previousSuspension:
+          PreviousSuspension.fromJson(_parseJsonMap(json['previous_suspension'])),
       partnerName: partner?['name'] as String?,
       partnerEmail: partner?['email'] as String?,
       partnerDataRedacted: json['partner_data_redacted'] == true,
       createdAt: _parseDate(json['created_at']),
       updatedAt: _parseDate(json['updated_at']),
+    );
+  }
+}
+
+/// Кто раньше приостанавливал карточку из очереди (backend
+/// `adminService.toPreviousSuspension`): модератор, система (учётная запись
+/// перешла к владельцу почты) или сам партнёр.
+enum SuspensionAuthor { moderator, system, partner }
+
+class PreviousSuspension {
+  final SuspensionAuthor by;
+
+  /// Имя модератора, когда журнал его знает; у просмотрщика — `null`.
+  final String? name;
+
+  /// Причина; у паузы партнёра её нет.
+  final String? reason;
+  final DateTime? at;
+
+  const PreviousSuspension({
+    required this.by,
+    this.name,
+    this.reason,
+    this.at,
+  });
+
+  /// `null` — нет истории или автор незнаком (ответ новее панели): пометка
+  /// с выдуманным «кто» хуже, чем никакой.
+  static PreviousSuspension? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final by = switch (json['by']) {
+      'moderator' => SuspensionAuthor.moderator,
+      'system' => SuspensionAuthor.system,
+      'partner' => SuspensionAuthor.partner,
+      _ => null,
+    };
+    if (by == null) return null;
+    return PreviousSuspension(
+      by: by,
+      name: json['name'] as String?,
+      reason: json['reason'] as String?,
+      at: _parseDate(json['at']),
     );
   }
 }

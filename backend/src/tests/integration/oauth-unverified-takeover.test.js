@@ -255,6 +255,103 @@ describe('запись с неподтверждённым e-mail переход
       .toEqual([activeCard.id, secondActive.id].sort());
   });
 
+  // «А+В» (Координатор, 01.11.2026): спорную карточку новый держатель на
+  // модерацию не отправит — иначе модератор одобрил бы её как обычную заявку,
+  // не решив, кому она принадлежит. Решает модератор — «Возобновить» в
+  // «Приостановленных». Причина — та, что пишет сам переход, а не заготовка
+  // теста: так ловится и расхождение текста причины с проверкой отправки.
+  test('спорную карточку новый держатель на модерацию не отправит; снимает её модератор', async () => {
+    const { activeCard } = await registeredWithoutProof({ partner: true });
+    const signedIn = await signInWith('yandex').expect(200);
+    const holderToken = signedIn.body.data.accessToken;
+
+    const submit = await request(app)
+      .post(`/api/v1/partner/establishments/${activeCard.id}/submit`)
+      .set('Authorization', `Bearer ${holderToken}`);
+
+    expect(submit.status).toBe(403);
+    expect(submit.body.error?.code).toBe('OWNERSHIP_DISPUTE');
+    expect((await cardState(activeCard.id)).status).toBe('suspended');
+
+    const { accessToken: adminToken } = await createUserAndGetTokens({
+      email: 'takeover-moderator@test.com',
+      password: 'Admin123!@#',
+      name: 'Модератор',
+      role: 'admin',
+    });
+    await request(app)
+      .post(`/api/v1/admin/establishments/${activeCard.id}/unsuspend`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    const after = await cardState(activeCard.id);
+    expect(after.status).toBe('active');
+    expect(after.notes?.suspend_reason).toBeUndefined();
+  });
+
+  // «Р1» (Координатор, 01.11.2026): карточку, которую регистрант сам снял с
+  // показа, переход замораживает так же — иначе «Возобновить» нового
+  // держателя вернул бы её гостям без решения модератора. Снятие такой
+  // приостановки возвращает карточку на паузу, а не к гостям. Карточку,
+  // которую уже держит модератор своей причиной, переход не трогает.
+  test('пауза регистранта тоже замораживается; «Возобновить» — отказ; модератор возвращает её на паузу', async () => {
+    const { user, activeCard } = await registeredWithoutProof({ partner: true });
+    // Пауза — настоящим маршрутом регистранта, до перехода.
+    const { rows: [{ id: pausedId }] } = await query(
+      'SELECT id FROM establishments WHERE id = $1', [activeCard.id],
+    );
+    const registrantLogin = await passwordLogin().expect(200);
+    await request(app)
+      .post(`/api/v1/partner/establishments/${pausedId}/suspend`)
+      .set('Authorization', `Bearer ${registrantLogin.body.data.accessToken}`)
+      .expect(200);
+    // И карточка, которую модератор уже приостановил за содержание.
+    const heldCard = await createTestEstablishment(user.id);
+    const heldNotes = { suspend_reason: 'Фото не того заведения', suspended_at: '2026-10-29T10:00:00.000Z', suspended_from: 'active' };
+    await query(
+      "UPDATE establishments SET status = 'suspended', moderation_notes = $2 WHERE id = $1",
+      [heldCard.id, JSON.stringify(heldNotes)],
+    );
+
+    const signedIn = await signInWith('yandex').expect(200);
+    const holderToken = signedIn.body.data.accessToken;
+
+    const parked = await cardState(pausedId);
+    expect(parked.status).toBe('suspended');
+    expect(parked.notes.suspend_reason).toBe(TAKEOVER_REASON);
+    expect(parked.notes.suspended_from).toBe('suspended');
+    const { rows: audit } = await query(
+      "SELECT user_id, old_data FROM audit_log WHERE entity_id = $1 AND action = 'suspend'",
+      [pausedId],
+    );
+    expect(audit).toEqual([{ user_id: null, old_data: { status: 'suspended' } }]);
+
+    expect(await cardState(heldCard.id)).toEqual({ status: 'suspended', notes: heldNotes });
+
+    const resume = await request(app)
+      .post(`/api/v1/partner/establishments/${pausedId}/resume`)
+      .set('Authorization', `Bearer ${holderToken}`);
+    expect(resume.status).toBe(403);
+    expect(resume.body.message).toContain('до решения модератора: кому она принадлежит');
+    expect((await cardState(pausedId)).status).toBe('suspended');
+
+    const { accessToken: adminToken } = await createUserAndGetTokens({
+      email: 'takeover-moderator-r1@test.com',
+      password: 'Admin123!@#',
+      name: 'Модератор',
+      role: 'admin',
+    });
+    await request(app)
+      .post(`/api/v1/admin/establishments/${pausedId}/unsuspend`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    // Снова пауза партнёра: статус тот же, меток нет — включает её сам держатель.
+    const lifted = await cardState(pausedId);
+    expect(lifted.status).toBe('suspended');
+    expect(lifted.notes?.suspend_reason).toBeUndefined();
+  });
+
   test('повторный вход после перехода — обычный вход в ту же запись', async () => {
     const { user } = await registeredWithoutProof();
     await signInWith('yandex').expect(200);

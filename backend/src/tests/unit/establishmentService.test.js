@@ -70,6 +70,8 @@ const {
 
 import { createMockEstablishment } from '../mocks/helpers.js';
 import { AppError } from '../../middleware/errorHandler.js';
+import { ESTABLISHMENT_REFUSALS } from '../../constants/establishmentRefusals.js';
+import { TAKEOVER_SUSPEND_REASON } from '../../utils/moderationNotes.js';
 
 describe('establishmentService', () => {
   let partnerId;
@@ -867,6 +869,53 @@ describe('establishmentService', () => {
 
       await expect(submitEstablishmentForModeration(establishmentId, partnerId)).resolves.toEqual(submitted);
       expect(EstablishmentModel.submitForModeration).toHaveBeenCalledWith(establishmentId);
+    });
+
+    // Of the suspensions only the moderator's own goes back through
+    // moderation (Coordinator, 01.11.2026, «А+В»): the partner's own pause —
+    // no marks — and a card parked by an account takeover — the system's
+    // reason — are refused before the write, each with its own code.
+    test.each([
+      ['the partner\'s own pause (no notes)', null, 400, 'SELF_PAUSED_SUBMISSION', ESTABLISHMENT_REFUSALS.submitFromOwnPause],
+      ['the partner\'s own pause (field comments only)', JSON.stringify({ name: 'Уточните' }), 400, 'SELF_PAUSED_SUBMISSION', ESTABLISHMENT_REFUSALS.submitFromOwnPause],
+      [
+        'an account takeover',
+        JSON.stringify({
+          suspend_reason: TAKEOVER_SUSPEND_REASON,
+          suspended_at: '2026-10-30T09:00:00.000Z',
+          suspended_from: 'active',
+        }),
+        403,
+        'OWNERSHIP_DISPUTE',
+        ESTABLISHMENT_REFUSALS.submitOwnershipDispute,
+      ],
+    ])('refuses to send a card suspended by %s', async (_label, moderationNotes, statusCode, code, message) => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'suspended',
+        moderation_notes: moderationNotes,
+      });
+
+      await expect(
+        submitEstablishmentForModeration(establishmentId, partnerId),
+      ).rejects.toMatchObject({ statusCode, code, message });
+      expect(EstablishmentModel.submitForModeration).not.toHaveBeenCalled();
+    });
+
+    // A moderator's reason that merely mentions the owner is still the
+    // moderator's suspension: only the system's literal text parks the card.
+    test('sends a card the moderator suspended with a reason of their own about the owner', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'suspended',
+        moderation_notes: JSON.stringify({ suspend_reason: 'Уточните, кому принадлежит заведение' }),
+      });
+      EstablishmentModel.submitForModeration.mockResolvedValue({ id: establishmentId, status: 'pending' });
+
+      await expect(submitEstablishmentForModeration(establishmentId, partnerId))
+        .resolves.toMatchObject({ status: 'pending' });
     });
 
     // Each required field on its own: a card missing only that one is not sent,

@@ -45,6 +45,31 @@ export const isModeratorSuspension = (status, notes) => (
   status === 'suspended' && typeof notes.suspend_reason === 'string' && notes.suspend_reason.trim() !== ''
 );
 
+/**
+ * The reason the system writes when an account passes to the owner of its
+ * e-mail after a Google or Yandex sign-in (authService.takeOverUnverifiedAccount).
+ * The moderator reads it on the card, the account's new holder too. Literal:
+ * both read it as is — and the text itself is the mark of such a suspension
+ * (isAccountTakeoverSuspension): a changed wording leaves the cards parked
+ * under the old one unrecognised, so keep the old text beside a new one.
+ */
+export const TAKEOVER_SUSPEND_REASON =
+  'Учётная запись перешла к владельцу адреса e-mail после входа через Google или Яндекс. '
+  + 'Карточка приостановлена до решения модератора: кому она принадлежит.';
+
+/**
+ * Is the card parked by an account takeover — held until a moderator decides
+ * whom it belongs to (Coordinator, 01.11.2026, «А+В»)? Such a suspension has
+ * the moderator's marks and the system's reason; its new holder may not send
+ * the card to moderation and so get past that decision.
+ *
+ * @param {string} status
+ * @param {Object} notes - parsed moderation_notes
+ */
+export const isAccountTakeoverSuspension = (status, notes) => (
+  isModeratorSuspension(status, notes) && notes.suspend_reason === TAKEOVER_SUSPEND_REASON
+);
+
 /** Any of the moderator's suspension marks present? */
 export const hasModeratorSuspensionMarks = (notes) => MODERATOR_SUSPENSION_KEYS.some((key) => key in notes);
 

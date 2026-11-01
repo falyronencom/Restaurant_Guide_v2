@@ -15,6 +15,8 @@
  * below says whether its wording is approved or still awaits the word.
  */
 
+import { SUPPORT_EMAIL } from './authRefusals.js';
+
 /** Required fields named in the submit refusal, in the accusative («заполните: …»). */
 const MISSING_FIELD_NAMES = {
   name: 'название',
@@ -66,6 +68,18 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
     'Одно из фото или файлов меню загружено не с этой учётной записи. Удалите его и загрузите заново.',
   moderatorSuspended:
     'Заведение приостановлено модератором. Исправьте замечания и отправьте повторно на модерацию.',
+
+  // A suspended card (Coordinator, 01.11.2026, «А+В»): the partner's own
+  // pause is the partner's to lift, and a card parked by an account takeover
+  // waits for the moderator's decision on whom it belongs to — it is neither
+  // sent to moderation, nor resumed (the same text), nor edited. Approved by
+  // the Coordinator, 01.11.2026.
+  submitFromOwnPause:
+    'Показ заведения приостановлен вами — отправлять его на модерацию не нужно. Чтобы гости снова видели заведение, возобновите показ.',
+  submitOwnershipDispute:
+    `Карточка приостановлена до решения модератора: кому она принадлежит. До этого решения отправить её на модерацию нельзя. Если заведение ваше, напишите в поддержку: ${SUPPORT_EMAIL}`,
+  editOwnershipDispute:
+    `Карточка приостановлена до решения модератора: кому она принадлежит. До этого решения изменить её нельзя. Если заведение ваше, напишите в поддержку: ${SUPPORT_EMAIL}`,
 
   // The app's form does not let these happen: they come from a version
   // mismatch between the app and the server, or a stale screen. Mostly the
