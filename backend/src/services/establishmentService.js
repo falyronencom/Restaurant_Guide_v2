@@ -312,6 +312,81 @@ const coordinateChanged = (incoming, stored) =>
   incoming !== undefined && Number(incoming) !== parseFloat(stored);
 
 /**
+ * The legal details (step «Ваши данные» of the app) and the partner_documents
+ * column each is stored in, with the column's length. A value longer than its
+ * column had been lost at create (the write of the record failed and was only
+ * logged) and failed the whole edit with a 500 after the photos were already
+ * synced (Crapper measurement, 01.11.2026). The length counts characters as
+ * the database does — code points, not UTF-16 units.
+ */
+const LEGAL_FIELDS = [
+  {
+    field: 'legal_name',
+    column: 'company_name',
+    maxLength: 255,
+    code: 'INVALID_LEGAL_NAME',
+    refusal: () => new AppError(ESTABLISHMENT_REFUSALS.legalNameTooLong, 422, 'INVALID_LEGAL_NAME'),
+  },
+  {
+    field: 'unp',
+    column: 'tax_id',
+    maxLength: 50,
+    // Nine digits, as the app checks it (partner_registration_provider.dart).
+    format: /^\d{9}$/,
+    code: 'INVALID_UNP',
+    refusal: () => new AppError(ESTABLISHMENT_REFUSALS.unpInvalid, 422, 'INVALID_UNP'),
+  },
+  {
+    // The contact person's phone number in the app, not a name.
+    field: 'contact_person',
+    column: 'contact_person',
+    maxLength: 100,
+    code: 'INVALID_CONTACT_PERSON',
+    refusal: () => new AppError(ESTABLISHMENT_REFUSALS.contactPersonTooLong, 422, 'INVALID_CONTACT_PERSON'),
+  },
+  {
+    field: 'contact_email',
+    column: 'contact_email',
+    maxLength: 255,
+    // Wider than the app's own pattern: whatever the app lets through passes.
+    format: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    code: 'INVALID_CONTACT_EMAIL',
+    refusal: () => new AppError(ESTABLISHMENT_REFUSALS.contactEmailInvalid, 422, 'INVALID_CONTACT_EMAIL'),
+  },
+];
+
+/**
+ * Refuse legal details the record cannot hold, before the first write of a
+ * create or an edit. Only the fields sent are checked; absent, null and empty
+ * mean «not given» or «cleared», as before. The length is checked always — no
+ * longer value can be stored. The format (УНП, e-mail) only of a value that
+ * differs from the stored one: the app re-sends the whole card on every save,
+ * and a partner whose old details do not fit the format still saves an edit
+ * that does not touch them (decision of the parent session, 01.11.2026).
+ *
+ * @param {Object} sent - the request body
+ * @param {Object|null} stored - the card's partner_documents record, if any
+ */
+function assertValidLegalFields(sent, stored) {
+  for (const { field, column, maxLength, format, code, refusal } of LEGAL_FIELDS) {
+    const value = sent[field];
+    if (value === undefined || value === null || value === '') continue;
+    if (typeof value !== 'string') {
+      throw new AppError(ESTABLISHMENT_REFUSALS.constraintViolation, 422, code);
+    }
+    if ([...value].length > maxLength) throw refusal();
+    if (format && !sameLegalValue(value, stored?.[column]) && !format.test(value)) throw refusal();
+  }
+}
+
+/**
+ * An unchanged legal value. The app trims every field of the step when the
+ * partner opens it, so a stored value with spaces at its ends comes back
+ * trimmed without being touched (Phase 3.5 review, 01.11.2026).
+ */
+const sameLegalValue = (sent, stored) => typeof stored === 'string' && sent.trim() === stored.trim();
+
+/**
  * Create a new establishment
  *
  * This is the core business operation that implements the complete establishment
@@ -455,6 +530,10 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     const pdfFiles = new Set(menuPdfs.map((pdf) => menuFileKey(pdf.url)));
     const menuPhotos = oneLinkPerFile(Array.isArray(menu_photos) ? menu_photos : [], menuFileKey)
       .filter((url) => !pdfFiles.has(menuFileKey(url)));
+
+    // Legal details, before the INSERT: a value the record cannot hold is
+    // refused here, not lost after the card is created.
+    assertValidLegalFields(establishmentData, null);
 
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
@@ -1054,6 +1133,16 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       });
     }
 
+    // Legal details, before the media sync below — the first write of an
+    // edit. A refused value leaves the card, its photos and its record as they
+    // were. The stored record is what an unchanged value is compared with.
+    const hasLegalUpdates = updates.legal_name !== undefined || updates.unp !== undefined ||
+      updates.contact_person !== undefined || updates.contact_email !== undefined;
+    const storedLegal = hasLegalUpdates
+      ? await PartnerDocumentsModel.findByEstablishmentId(establishmentId)
+      : null;
+    if (hasLegalUpdates) assertValidLegalFields(updates, storedLegal);
+
     // Handle features and capacity - store in attributes JSONB field for compatibility
     if (updates.features !== undefined || updates.capacity !== undefined) {
       if (!updates.attributes) {
@@ -1230,9 +1319,6 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
     }
 
     // Sync legal fields to partner_documents
-    const hasLegalUpdates = updates.legal_name !== undefined || updates.unp !== undefined ||
-      updates.contact_person !== undefined || updates.contact_email !== undefined;
-
     if (hasLegalUpdates) {
       const legalData = {
         company_name: updates.legal_name,
@@ -1241,7 +1327,9 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         contact_email: updates.contact_email,
       };
 
-      // Try update first, create if no record exists
+      // Try update first, create if no record exists. Read again right before
+      // the write: the record checked above was read before the media sync,
+      // and a second save could have created it since (Phase 3.5 review).
       const existing = await PartnerDocumentsModel.findByEstablishmentId(establishmentId);
       if (existing) {
         await PartnerDocumentsModel.updateByEstablishmentId(establishmentId, legalData);

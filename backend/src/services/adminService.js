@@ -28,6 +28,7 @@ import {
 import { getClient, query as dbQuery } from '../config/database.js';
 import logger from '../utils/logger.js';
 import { likeContains } from '../utils/likePattern.js';
+import { isCanonicalUuid } from '../utils/canonicalUuid.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 import { SANITY_FLAG_REASONS } from './ocr/sanityChecker.js';
@@ -1090,10 +1091,12 @@ export const updateEstablishmentSlug = async (establishmentId, params) => {
   }
 
   try {
-    const existing = await EstablishmentModel.findEstablishmentById(
-      establishmentId,
-      true,
-    );
+    // An id that is no UUID names no card. The database would refuse it with a
+    // format error, answered «не удалось» 500 (Crapper measurement, 01.11.2026);
+    // the partner's routes answer such an id 404 too.
+    const existing = isCanonicalUuid(establishmentId)
+      ? await EstablishmentModel.findEstablishmentById(establishmentId, true)
+      : null;
 
     if (!existing) {
       throw new AppError(
@@ -1103,7 +1106,11 @@ export const updateEstablishmentSlug = async (establishmentId, params) => {
       );
     }
 
-    // Uniqueness check (excluding self — admin can re-submit current slug as no-op)
+    // The current address sent again changes nothing: no write and no journal
+    // entry «X → X» (Crapper measurement, 01.11.2026).
+    if (trimmed === existing.slug) return existing;
+
+    // Uniqueness check (excluding self)
     const isDuplicate = await EstablishmentModel.checkDuplicateSlug(trimmed, establishmentId);
     if (isDuplicate) {
       throw new AppError(
