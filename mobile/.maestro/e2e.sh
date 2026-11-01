@@ -34,6 +34,7 @@
 #                                    #    не закрывать до конца прогона
 #   mobile/.maestro/e2e.sh user      # 4. завести тестового пользователя
 #   mobile/.maestro/e2e.sh build     # 5. собрать и поставить тестовую сборку
+#                                    #    (то же, что apk, затем install)
 #   mobile/.maestro/e2e.sh test      # 6. прогнать все сценарии
 #   mobile/.maestro/e2e.sh test mobile/.maestro/02_search_card.yaml  # один
 #
@@ -44,10 +45,15 @@
 # отчёта (C:\Users\<имя>\.maestro\tests\<дата_время>): там снимки экрана и
 # журнал шагов.
 #
+# В CI те же шаги идут на Linux — .github/workflows/e2e.yml: база и Redis там
+# сервисы задания (E2E_PG_CONTAINER — id контейнера базы), эмулятор поднимает
+# сам workflow, а build разбит надвое — apk собирает сборку до эмулятора,
+# install ставит её на поднятый эмулятор.
+#
 # Только эмулятор. Сценарии стирают данные приложения, а шаг test выключает
 # на устройстве геолокацию и рукописный ввод стилусом. На телефоне это вывело
-# бы владельца из профиля и поменяло бы его настройки, поэтому build и test на
-# устройство без признака эмулятора (ro.boot.qemu) не пойдут.
+# бы владельца из профиля и поменяло бы его настройки, поэтому build, install
+# и test на устройство без признака эмулятора (ro.boot.qemu) не пойдут.
 #
 # Известная заминка: изредка Maestro сразу пишет «Device emulator-5554 was
 # requested, but it is not connected», хотя эмулятор работает, — запустить
@@ -71,7 +77,10 @@
 #
 # Переменные (необязательные): E2E_DEVICE (emulator-5554), E2E_AVD (Pixel_6),
 # E2E_PG_CONTAINER (pg-test), E2E_DB_NAME (maestro_e2e), E2E_REDIS_DB (0 —
-# индекс dev; 1–15 заняты тестами backend), MAESTRO_HOME (C:\maestro).
+# индекс dev; 1–15 заняты тестами backend), MAESTRO_HOME (C:\maestro),
+# E2E_REPORT_DIR (не задана — отчёт только в выводе; задана — шаг test кладёт
+# туда отчёт JUnit report.xml и журналы Maestro debug/, а при падении ещё и
+# logcat.txt эмулятора).
 # =============================================================================
 set -euo pipefail
 
@@ -102,15 +111,17 @@ E2E_APK="$MOBILE/build/maestro/app-e2e-debug.apk"
 die() { echo "Ошибка: $*" >&2; exit 1; }
 
 # Пути для программ Windows (node, adb, docker): C:/Users/…, а не /c/Users/….
-win_path() { cygpath -m "$1"; }
+# На Linux (CI) cygpath нет, и пути остаются как есть.
+win_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
+unix_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s\n' "$1"; fi; }
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${LOCALAPPDATA:-}/Android/Sdk}}"
-SDK="$(cygpath -u "$SDK")"
+SDK="$(unix_path "$SDK")"
 ADB="$SDK/platform-tools/adb"
 
 find_maestro() {
   if command -v maestro >/dev/null 2>&1; then command -v maestro; return; fi
-  local home; home="$(cygpath -u "${MAESTRO_HOME:-C:/maestro}")"
+  local home; home="$(unix_path "${MAESTRO_HOME:-C:/maestro}")"
   [ -x "$home/bin/maestro" ] || die "Maestro не найден: нет $home/bin/maestro (см. шапку скрипта)"
   echo "$home/bin/maestro"
 }
@@ -121,7 +132,7 @@ ensure_java() {
   if [ -n "${JAVA_HOME:-}" ] || command -v java >/dev/null 2>&1; then return; fi
   local jbr
   for jbr in "/c/Android/Android Studio/jbr" "/c/Program Files/Android/Android Studio/jbr" \
-             "$(cygpath -u "${LOCALAPPDATA:-C:/}")/Programs/Android Studio/jbr"; do
+             "$(unix_path "${LOCALAPPDATA:-C:/}")/Programs/Android Studio/jbr"; do
     if [ -x "$jbr/bin/java" ]; then export JAVA_HOME="$jbr"; return; fi
   done
   die "Java 17+ не найдена: задайте JAVA_HOME (подходит папка jbr из Android Studio)"
@@ -276,8 +287,8 @@ step_user() {
   echo "Вход проверен."
 }
 
-step_build() {
-  require_device
+# Сборка без устройства: в CI она идёт до того, как поднят эмулятор.
+step_apk() {
   # Ключ входа через Яндекс — как у обычной сборки (run.sh); ключ MapKit
   # Gradle берёт из android/local.properties сам.
   local yandex
@@ -288,8 +299,21 @@ step_build() {
     --dart-define=ENV=development --dart-define=YANDEX_CLIENT_ID="$yandex")
   mkdir -p "$(dirname "$E2E_APK")"
   mv -f "$MOBILE/build/app/outputs/flutter-apk/app-debug.apk" "$E2E_APK"
+  echo "Тестовая сборка готова: $E2E_APK (ENV=development → 10.0.2.2:$PORT)."
+}
+
+step_install() {
+  require_device
+  [ -f "$E2E_APK" ] || die "нет тестовой сборки $E2E_APK — сначала: $0 apk"
   "$ADB" -s "$DEVICE" install -r "$(win_path "$E2E_APK")"
   echo "Тестовая сборка стоит на $DEVICE: $APP_ID (ENV=development → 10.0.2.2:$PORT)."
+}
+
+step_build() {
+  # Устройство — до сборки: без эмулятора минуты сборки ушли бы впустую.
+  require_device
+  step_apk
+  step_install
 }
 
 step_test() {
@@ -313,10 +337,18 @@ step_test() {
   # клавиатура Google открывала обучение «Try out your stylus» — оно
   # перехватывало ввод: из «Maestro» в поле доходило «Mae».
   "$ADB" -s "$DEVICE" shell settings put secure stylus_handwriting_enabled 0
-  # Метка начала прогона — для уборки ниже.
-  local tmp_dir marker
-  tmp_dir="$(cygpath -u "${LOCALAPPDATA:-C:/}")/Temp"
+  # Метка начала прогона — для уборки ниже. Временная папка — та, куда Java
+  # кладёт копии: на Windows %LOCALAPPDATA%\Temp, на Linux /tmp.
+  local tmp_dir=/tmp marker
+  if command -v cygpath >/dev/null 2>&1; then tmp_dir="$(cygpath -u "${LOCALAPPDATA:-C:/}")/Temp"; fi
   marker="$(mktemp "$tmp_dir/maestro-run.XXXXXX")"
+  # Отчёт для CI: JUnit и журналы Maestro в одну папку, без подпапок с датой.
+  local report=()
+  if [ -n "${E2E_REPORT_DIR:-}" ]; then
+    mkdir -p "$E2E_REPORT_DIR"
+    report=(--format junit --output "$(win_path "$E2E_REPORT_DIR/report.xml")"
+            --debug-output "$(win_path "$E2E_REPORT_DIR/debug")" --flatten-debug-output)
+  fi
   # MAESTRO_CLI_NO_ANALYTICS: не отправлять разработчику Maestro статистику
   # запусков. JAVA_OPTS: Java на русской Windows печатает в cp1251, и
   # кириллица в выводе Maestro превращается в «?».
@@ -325,7 +357,12 @@ step_test() {
   JAVA_OPTS="${JAVA_OPTS:-} -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8" \
     "$maestro" --device "$DEVICE" test \
     -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" \
-    "${converted[@]}" || code=$?
+    ${report[@]+"${report[@]}"} "${converted[@]}" || code=$?
+  # Журнал устройства — для разбора падения: там видно, не упало ли само
+  # приложение.
+  if [ "$code" -ne 0 ] && [ -n "${E2E_REPORT_DIR:-}" ]; then
+    "$ADB" -s "$DEVICE" logcat -d > "$E2E_REPORT_DIR/logcat.txt" 2>&1 || true
+  fi
   # Уборка — и после упавшего прогона. Maestro на каждом сценарии кладёт во
   # временную папку копию установленного приложения (tmp….apk, ~190 МБ) и не
   # убирает её: 01.11.2026 за день прогонов набралось 34 копии, 6,1 ГБ, и диск C
@@ -348,9 +385,11 @@ case "${1:-}" in
   server) step_server ;;
   user) step_user ;;
   build) step_build ;;
+  apk) step_apk ;;
+  install) step_install ;;
   test) shift; step_test "$@" ;;
   *)
-    echo "Использование: $0 emulator|db|server|user|build|test [сценарий.yaml…]" >&2
+    echo "Использование: $0 emulator|db|server|user|build|apk|install|test [сценарий.yaml…]" >&2
     echo "Порядок и подробности — в шапке скрипта." >&2
     exit 2
     ;;
