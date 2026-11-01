@@ -104,11 +104,20 @@ describe('toPublicEstablishment — full detail projection', () => {
     expect(result.city).toBe('Минск');
     expect(result.address).toBe('ул. Ленина 1');
     expect(result.phone).toBe('+375291234567');
-    expect(result.email).toBe('cafe@example.com');
     expect(result.website).toBe('https://cafe.by');
     expect(result.price_range).toBe('$$');
     expect(result.primary_image_url).toBe('https://cdn.example.com/img.jpg');
     expect(result.booking_enabled).toBe(true);
+  });
+
+  // Ф1 (Coordinator, 01.11.2026): the card's e-mail stays off every open
+  // answer — the row carries one (cafe@example.com), the projection drops the
+  // key, not just the value.
+  test('drops the card\'s e-mail', () => {
+    expect(rawEstablishmentRow.email).toBe('cafe@example.com');
+    const result = toPublicEstablishment(rawEstablishmentRow);
+    expect(result).not.toHaveProperty('email');
+    expect(JSON.stringify(result)).not.toContain('cafe@example.com');
   });
 
   test('preserves status (mobile non-nullable cast guard)', () => {

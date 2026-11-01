@@ -34,7 +34,7 @@ import {
 import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
-import { parseModerationNotes } from '../utils/moderationNotes.js';
+import { isModeratorSuspension, parseModerationNotes, TAKEOVER_SUSPEND_REASON } from '../utils/moderationNotes.js';
 import { isPanelRole, panelSessionLapsed } from '../config/panelRoles.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { randomUUID, randomBytes, createHash } from 'crypto';
@@ -1062,11 +1062,10 @@ export async function updateUserProfile(userId, profileData) {
  */
 /**
  * What the moderator reads on a card parked by an account takeover, and what
- * the account's new holder is told. Literal: both read it as is.
+ * the account's new holder is told — kept beside the other suspension marks
+ * (utils/moderationNotes.js), where it also tells such a suspension apart.
  */
-export const TAKEOVER_SUSPEND_REASON =
-  'Учётная запись перешла к владельцу адреса e-mail после входа через Google или Яндекс. '
-  + 'Карточка приостановлена до решения модератора: кому она принадлежит.';
+export { TAKEOVER_SUSPEND_REASON };
 
 /**
  * Hand a record whose e-mail was never confirmed to the person who just proved
@@ -1085,8 +1084,11 @@ export const TAKEOVER_SUSPEND_REASON =
  * The typed name, avatar and phone give way to the provider's data. The
  * partner role stays with the record, but the active cards are not published
  * under the new holder's name silently: each is suspended with a moderator's
- * mark and a reason, and the moderator decides; the holder may edit and
- * resubmit them, which puts them in the moderation queue with the marks kept.
+ * mark and a reason, and the moderator decides whom it belongs to — until then
+ * the holder may not edit it, send it to moderation or resume it (Coordinator,
+ * 01.11.2026, «А+В», «Р1», «Р2»). The cards the registrant paused themself are
+ * parked the same way: the partner's own «resume» would put them back before
+ * the guests; lifting such a suspension returns the card to that pause.
  * Drafts, pending and rejected cards are not public and stay as they are.
  * Reviews, favorites, bookings, partner documents and notification
  * preferences stay on the record.
@@ -1149,13 +1151,17 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
     );
     deactivatedDevices = devices.rowCount;
 
-    const cards = await client.query(
+    // Active cards and the registrant's own pauses; a card a moderator
+    // suspended already stays under that suspension — the moderator holds it.
+    const candidates = await client.query(
       `SELECT id, status, moderation_notes FROM establishments
-       WHERE partner_id = $1 AND status = 'active'
+       WHERE partner_id = $1 AND status IN ('active', 'suspended')
        FOR UPDATE`,
       [existingUser.id],
     );
-    for (const card of cards.rows) {
+    const cards = candidates.rows.filter((card) => card.status === 'active'
+      || !isModeratorSuspension(card.status, parseModerationNotes(card.moderation_notes)));
+    for (const card of cards) {
       const notes = {
         ...parseModerationNotes(card.moderation_notes),
         suspend_reason: TAKEOVER_SUSPEND_REASON,
@@ -1169,7 +1175,7 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
         [JSON.stringify(notes), card.id],
       );
     }
-    parkedCards = cards.rows.map((card) => card.id);
+    parkedCards = cards.map((card) => ({ id: card.id, from: card.status }));
 
     await client.query('COMMIT');
   } catch (error) {
@@ -1185,13 +1191,13 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
 
   // Outside the transaction, as the moderator's own suspension does: the
   // journal and the notice must not undo a takeover that is already committed.
-  for (const establishmentId of parkedCards) {
+  for (const { id: establishmentId, from } of parkedCards) {
     await AuditLogModel.createAuditLog({
       user_id: null,
       action: 'suspend',
       entity_type: 'establishment',
       entity_id: establishmentId,
-      old_data: { status: 'active' },
+      old_data: { status: from },
       new_data: { status: 'suspended', reason: TAKEOVER_SUSPEND_REASON, account_takeover: provider },
       ip_address: null,
       user_agent: null,

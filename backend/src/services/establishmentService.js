@@ -19,6 +19,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import {
   hasModeratorSuspensionMarks,
+  isAccountTakeoverSuspension,
   isModeratorSuspension,
   parseModerationNotes,
   withoutModeratorSuspension,
@@ -887,6 +888,13 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       if (!notes.suspend_reason) {
         throw new AppError(ESTABLISHMENT_REFUSALS.selfPausedEdit, 403, 'ESTABLISHMENT_SUSPENDED');
       }
+      // A card parked by an account takeover is not edited until the
+      // moderator decides whom it belongs to (Coordinator, 01.11.2026, «Р2»):
+      // lifting that suspension returns the card to the guests directly, and
+      // the new holder's edits would reach them with no review of content.
+      if (isAccountTakeoverSuspension(currentEstablishment.status, notes)) {
+        throw new AppError(ESTABLISHMENT_REFUSALS.editOwnershipDispute, 403, 'OWNERSHIP_DISPUTE');
+      }
       // Admin-suspended with suspend_reason: allow editing (fall through)
     }
 
@@ -1353,6 +1361,22 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
       throw new AppError(ESTABLISHMENT_REFUSALS.alreadySubmitted, 400, 'INVALID_STATUS_FOR_SUBMISSION');
     }
 
+    // Of the suspensions only the moderator's own — for the card's content —
+    // goes back through moderation (Coordinator, 01.11.2026, «А+В»). The
+    // partner's own pause would put an unchanged card in the queue (it cannot
+    // be edited); a card parked by an account takeover would reach the
+    // guests on its new holder's edits with the moderator's decision on whom
+    // it belongs to never taken.
+    if (establishment.status === 'suspended') {
+      const notes = parseModerationNotes(establishment.moderation_notes);
+      if (!isModeratorSuspension(establishment.status, notes)) {
+        throw new AppError(ESTABLISHMENT_REFUSALS.submitFromOwnPause, 400, 'SELF_PAUSED_SUBMISSION');
+      }
+      if (isAccountTakeoverSuspension(establishment.status, notes)) {
+        throw new AppError(ESTABLISHMENT_REFUSALS.submitOwnershipDispute, 403, 'OWNERSHIP_DISPUTE');
+      }
+    }
+
     // Validate all required fields are complete
     const missingFields = [];
 
@@ -1476,7 +1500,15 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
     ? (() => { try { return JSON.parse(establishment.moderation_notes); } catch { return {}; } })()
     : (establishment.moderation_notes || {});
 
-  const adminSuspended = () => new AppError(ESTABLISHMENT_REFUSALS.moderatorSuspended, 403, 'ADMIN_SUSPENDED');
+  // A card parked by an account takeover answers with the dispute's own text
+  // (Coordinator, 01.11.2026): «send it to moderation again» would lead its
+  // new holder straight into the submit refusal. The code stays — clients
+  // key on it.
+  const adminSuspended = (current = notes, status = establishment.status) => (
+    isAccountTakeoverSuspension(status, current)
+      ? new AppError(ESTABLISHMENT_REFUSALS.submitOwnershipDispute, 403, 'ADMIN_SUSPENDED')
+      : new AppError(ESTABLISHMENT_REFUSALS.moderatorSuspended, 403, 'ADMIN_SUSPENDED')
+  );
 
   if (notes.suspend_reason) {
     throw adminSuspended();
@@ -1494,8 +1526,9 @@ export const resumeEstablishment = async (establishmentId, partnerId) => {
 
   if (!result) {
     const now = await EstablishmentModel.findEstablishmentById(establishmentId, true);
-    if (now && isModeratorSuspension(now.status, parseModerationNotes(now.moderation_notes))) {
-      throw adminSuspended();
+    const nowNotes = parseModerationNotes(now?.moderation_notes);
+    if (now && isModeratorSuspension(now.status, nowNotes)) {
+      throw adminSuspended(nowNotes, now.status);
     }
     throw new AppError(ESTABLISHMENT_REFUSALS.resumeNotPaused, 400, 'INVALID_STATUS_TRANSITION');
   }

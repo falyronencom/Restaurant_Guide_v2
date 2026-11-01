@@ -210,6 +210,47 @@ export const getLatestEntityAction = async ({ entityType, entityId, action }) =>
 };
 
 /**
+ * The latest suspension of an establishment in the journal, whoever made it:
+ * a moderator or the system (action 'suspend'; the system writes no user) or
+ * the partner's own pause ('partner_pause'). The moderation queue shows it as
+ * «Раньше приостановлена» (adminService.getEstablishmentForModeration).
+ *
+ * @param {Object} params
+ * @param {string} params.entityId - Establishment UUID
+ * @returns {Promise<Object|null>} { action, user_id, user_name, reason,
+ *   created_at } or null
+ */
+export const getLatestEstablishmentSuspension = async ({ entityId }) => {
+  const query = `
+    SELECT
+      al.action,
+      al.user_id,
+      u.name AS user_name,
+      al.new_data ->> 'reason' AS reason,
+      -- AT TIME ZONE 'UTC': as in getLatestEntityAction.
+      al.created_at AT TIME ZONE 'UTC' AS created_at
+    FROM audit_log al
+    LEFT JOIN users u ON al.user_id = u.id
+    WHERE al.entity_type = 'establishment'
+      AND al.entity_id = $1
+      AND al.action IN ('suspend', 'partner_pause')
+    ORDER BY al.created_at DESC, al.id DESC
+    LIMIT 1
+  `;
+
+  try {
+    const result = await pool.query(query, [entityId]);
+    return result.rows[0] || null;
+  } catch (error) {
+    logger.error('Error fetching latest establishment suspension from audit log', {
+      error: error.message,
+      entityId,
+    });
+    throw error;
+  }
+};
+
+/**
  * Get rejection history from audit log
  * Joins with establishments to show current state
  *

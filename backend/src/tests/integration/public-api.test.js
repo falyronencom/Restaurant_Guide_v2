@@ -761,6 +761,42 @@ describe('Public API — GET /api/v1/public/establishments/by-id/:id (deprecated
 });
 
 // ============================================================================
+// Ф1 — the card's e-mail stays off the open answers
+// ============================================================================
+
+// The card shows the site and the social link, not the mail (decision of
+// 20.10.2026), and a partner may have typed a personal address into it
+// (Coordinator, 01.11.2026). The card here carries one, so an answer without
+// it proves the projection drops it — on a card with no e-mail the key would
+// be missing from the data, not from the answer.
+describe('Public API — the card\'s e-mail is not in the open answers (Ф1)', () => {
+  const CARD_EMAIL = 'owner.personal@example.by';
+  let id;
+
+  beforeEach(async () => {
+    const result = await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, email, phone, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'Mail Est', 'mail-est', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, $3, '+375291112233', NOW(), NOW())
+      RETURNING id
+    `, [partnerId, defaultWorkingHours, CARD_EMAIL]);
+    id = result.rows[0].id;
+  });
+
+  test.each([
+    ['by-slug', () => '/api/v1/public/establishments/by-slug/mail-est', (body) => body.data.establishment],
+    ['by-id', () => `/api/v1/public/establishments/by-id/${id}`, (body) => body.data.establishment],
+    ['search detail (the app)', () => `/api/v1/search/establishments/${id}`, (body) => body.data],
+  ])('%s: no e-mail key, the address nowhere in the answer; the phone stays', async (_label, path, card) => {
+    const response = await request(app).get(path()).expect(200);
+
+    expect(card(response.body).id).toBe(id);
+    expect(card(response.body)).not.toHaveProperty('email');
+    expect(card(response.body).phone).toBe('+375291112233');
+    expect(JSON.stringify(response.body)).not.toContain(CARD_EMAIL);
+  });
+});
+
+// ============================================================================
 // /public/establishments/by-slug/:slug/menu-items
 // ============================================================================
 

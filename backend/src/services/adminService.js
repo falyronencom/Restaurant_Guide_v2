@@ -22,6 +22,7 @@ import { invalidateAccountStatus } from './accountStatus.js';
 import {
   isModeratorSuspension,
   parseModerationNotes,
+  TAKEOVER_SUSPEND_REASON,
   withoutModeratorSuspension,
 } from '../utils/moderationNotes.js';
 import { getClient, query as dbQuery } from '../config/database.js';
@@ -69,6 +70,57 @@ export const getPendingEstablishments = async ({ page = 1, perPage = 20 } = {}) 
       'PENDING_FETCH_FAILED',
     );
   }
+};
+
+/**
+ * The card's latest suspension as the queue shows it, «Раньше приостановлена»
+ * (Coordinator, 01.11.2026, «А+В»): who — a moderator, the system (an account
+ * takeover) or the partner's own pause —, why and when.
+ *
+ * Two carriers. The journal knows every suspension and its author, and
+ * outlives the moderator's decision, which replaces the card's notes — but
+ * its write is soft (createAuditLog swallows its errors). The card keeps the
+ * marks of a moderator's or the system's suspension until that decision:
+ * sending it to moderation does not touch them. Where the marks are, they are
+ * this very suspension and win; the journal then only names the moderator,
+ * and only if its latest entry is that suspension — the same reason, written
+ * within a minute of the marks (a template reason repeats; a lost entry
+ * would otherwise lend the name of an earlier suspension). The system
+ * is told by its reason, not by the empty author: a moderator's account
+ * removed later leaves an empty author too.
+ *
+ * @param {Object|null} entry - AuditLogModel.getLatestEstablishmentSuspension
+ * @param {Object} notes - parsed moderation_notes
+ * @returns {Object|null} { by, name, reason, at } or null
+ */
+const SAME_SUSPENSION_WINDOW_MS = 60 * 1000;
+
+const toPreviousSuspension = (entry, notes) => {
+  if (typeof notes.suspend_reason === 'string' && notes.suspend_reason.trim() !== '') {
+    const system = notes.suspend_reason === TAKEOVER_SUSPEND_REASON;
+    const marksAt = Date.parse(notes.suspended_at);
+    const entryAt = entry?.created_at ? new Date(entry.created_at).getTime() : NaN;
+    const sameSuspension = entry?.action === 'suspend'
+      && entry.reason === notes.suspend_reason
+      && Math.abs(entryAt - marksAt) <= SAME_SUSPENSION_WINDOW_MS;
+    return {
+      by: system ? 'system' : 'moderator',
+      name: !system && sameSuspension ? (entry.user_name ?? null) : null,
+      reason: notes.suspend_reason,
+      at: notes.suspended_at ?? null,
+    };
+  }
+  if (!entry) return null;
+
+  let by = 'moderator';
+  if (entry.action === 'partner_pause') by = 'partner';
+  else if (entry.reason === TAKEOVER_SUSPEND_REASON) by = 'system';
+  return {
+    by,
+    name: by === 'moderator' ? (entry.user_name ?? null) : null,
+    reason: by === 'partner' ? null : (entry.reason ?? null),
+    at: entry.created_at,
+  };
 };
 
 /**
@@ -141,6 +193,17 @@ export const getEstablishmentForModeration = async (
         entityId: establishmentId,
         action: 'suspend',
       })
+      : null;
+
+    // «Раньше приостановлена» (Coordinator, 01.11.2026, «А+В»): a card in
+    // the queue may come out of a suspension — the partner fixed it and sent
+    // it back. Only for a card in the queue: one extra query, and on the
+    // «Приостановленные» tab the current suspension has its own block.
+    const previousSuspension = establishment.status === 'pending'
+      ? toPreviousSuspension(
+        await AuditLogModel.getLatestEstablishmentSuspension({ entityId: establishmentId }),
+        parseModerationNotes(establishment.moderation_notes),
+      )
       : null;
 
     // Organize media by type
@@ -228,6 +291,11 @@ export const getEstablishmentForModeration = async (
           at: suspension.created_at,
         }
         : null,
+      // The card's latest suspension, for a card in the queue: by —
+      // 'moderator' | 'system' | 'partner'; name — the moderator's, when
+      // known; reason — none for the partner's pause. null — never suspended
+      // (as far as the journal and the card know) or not in the queue.
+      previous_suspension: previousSuspension,
 
       // Timestamps
       created_at: establishment.created_at,

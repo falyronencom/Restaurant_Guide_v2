@@ -203,7 +203,9 @@ describe('путь через приостановку: карточка был�
     .send(body);
   const reviewsLeft = (id) => count('SELECT count(*)::int AS n FROM reviews WHERE establishment_id = $1', [id]);
 
-  it('одобрение → отзыв и избранное гостя → своя приостановка → повторная отправка → отказ модератора: удалить нельзя, отзыв и избранное гостя на месте', async () => {
+  // Приостановка — модератором: из собственной паузы партнёр карточку на
+  // модерацию больше не отправит (Координатор, 01.11.2026, «А+В»).
+  it('одобрение → отзыв и избранное гостя → приостановка модератором → повторная отправка → отказ модератора: удалить нельзя, отзыв и избранное гостя на месте', async () => {
     const est = await createTestEstablishment(partner.user.id);
     const id = est.id;
     await query("UPDATE establishments SET status = 'draft', published_at = NULL WHERE id = $1", [id]);
@@ -227,7 +229,10 @@ describe('путь через приостановку: карточка был�
       .set('Authorization', `Bearer ${fan.accessToken}`)
       .send({ establishmentId: id }), 201);
 
-    await step('своя приостановка', asPartner('post', `/${id}/suspend`));
+    await step('приостановка модератором', request(app)
+      .post(`/api/v1/admin/establishments/${id}/suspend`)
+      .set('Authorization', `Bearer ${admin.accessToken}`)
+      .send({ reason: 'Уточните описание' }));
     await step('повторная отправка', asPartner('post', `/${id}/submit`));
     await step('отказ модератора', moderate(id, { action: 'reject', moderation_notes: { description: 'Уточните описание' } }));
     const { rows: [card] } = await query('SELECT status, published_at FROM establishments WHERE id = $1', [id]);
