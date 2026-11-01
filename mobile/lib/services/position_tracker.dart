@@ -82,7 +82,7 @@ abstract interface class PositionSource {
 /// Позиция телефона через Geolocator.
 ///
 /// Android не отличает «ещё не спрашивали» от «запрещено навсегда»: проверка
-/// разрешения отвечает `denied` в обоих случаях (geolocator_android 4.6.2,
+/// разрешения отвечает `denied` в обоих случаях (geolocator_android 5.0.4,
 /// `PermissionManager.checkPermissionStatus`), а `deniedForever` приходит
 /// только ответом на запрос. Этот ответ запоминается ([deniedForeverKey]) —
 /// иначе чип «Пешком» стоял бы у того, кого система больше не спросит, и
@@ -116,7 +116,7 @@ class DevicePositionSource implements PositionSource {
   }
 
   /// `getCurrentPosition`, а не `getLastKnownPosition`: на Android плагин
-  /// заводит обновления и отдаёт первое пришедшее (geolocator_android 4.6.2,
+  /// заводит обновления и отдаёт первое пришедшее (geolocator_android 5.0.4,
   /// `MethodCallHandlerImpl.onGetCurrentPosition`). Но на iOS запрос свежей
   /// позиции получает и то, что пришло потоку, без проверки возраста — то
   /// есть и сохранённую (geolocator_apple 2.3.13, `GeolocationHandler`,
@@ -126,8 +126,10 @@ class DevicePositionSource implements PositionSource {
   Future<GeoPoint> freshPosition() async {
     for (var attempt = 0; attempt < freshAttempts; attempt++) {
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: kFreshPositionTimeLimit,
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: kFreshPositionTimeLimit,
+        ),
       );
       if (isUsableFix(position, DateTime.now())) return _point(position);
     }
