@@ -330,11 +330,14 @@ step_test() {
   # временную папку копию установленного приложения (tmp….apk, ~190 МБ) и не
   # убирает её: 01.11.2026 за день прогонов набралось 34 копии, 6,1 ГБ, и диск C
   # кончился. Удаляются только копии этого прогона: моложе метки и ровно того
-  # же размера, что сборка стенда.
-  if [ -f "$E2E_APK" ]; then
-    find "$tmp_dir" -maxdepth 1 -name 'tmp*.apk' -newer "$marker" \
-      -size "$(stat -c %s "$E2E_APK")c" -delete
-  fi
+  # же размера, что приложение на эмуляторе, — его Maestro и копирует, из какой
+  # бы папки репозитория оно ни было собрано.
+  local apk_size
+  apk_size="$("$ADB" -s "$DEVICE" shell "stat -c %s \$(pm path $APP_ID | head -1 | cut -d: -f2)" 2>/dev/null | tr -d '\r')"
+  case "$apk_size" in
+    ''|*[!0-9]*) echo "Предупреждение: размер приложения на $DEVICE не прочитан — копии Maestro во временной папке не убраны" >&2 ;;
+    *) find "$tmp_dir" -maxdepth 1 -name 'tmp*.apk' -newer "$marker" -size "${apk_size}c" -delete ;;
+  esac
   rm -f "$marker"
   return "$code"
 }
