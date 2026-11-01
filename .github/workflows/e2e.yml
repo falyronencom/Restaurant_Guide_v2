@@ -206,7 +206,9 @@ jobs:
           # (исправлено в 5.0.2). Push, вход через Google и геолокацию
           # сценарии не проверяют, клавиатура в обоих образах одна (AOSP).
           api-level: 34
-          target: default
+          # ВРЕМЕННО (PR geolocator 10 → 14): проверка исправления на образе
+          # с сервисами Google. До слияния вернуть default.
+          target: google_apis
           arch: x86_64
           profile: pixel_6
           cores: 3
