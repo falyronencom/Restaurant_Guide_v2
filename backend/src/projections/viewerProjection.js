@@ -94,10 +94,12 @@ const isMenuItemRow = (row) => Object.prototype.hasOwnProperty.call(row, 'item_n
 /**
  * Keys whose value is an object describing a person: inside it the name and
  * contacts are withheld, the rest (an identifier, a time) is kept.
- * suspended_by — who suspended the card (adminService.getEstablishmentForModeration).
+ * suspended_by — who suspended the card (adminService.getEstablishmentForModeration);
+ * previous_suspension — who suspended a card now in the queue (the same).
  */
 export const VIEWER_PERSON_OBJECT_KEYS = Object.freeze(new Set([
   'suspended_by',
+  'previous_suspension',
   // The owner of the card on the moderation detail (A1-02, 2026-10-20).
   'partner',
 ]));

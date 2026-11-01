@@ -31,8 +31,13 @@ import { ESTABLISHMENT_REFUSALS } from '../../constants/establishmentRefusals.js
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SERVICE_FILE = resolve(__dirname, '../../services/establishmentService.js');
 
-/** Латиница, которой можно быть в тексте партнёра: названия форматов файлов. */
-const ALLOWED_LATIN = ['JPG', 'PNG', 'WebP', 'HEIC', 'PDF'];
+/**
+ * Латиница, которой можно быть в тексте партнёра: названия форматов файлов и
+ * адрес поддержки (отказы спорной карточки, решение Координатора 01.11.2026) —
+ * адрес целиком, не слова из него: чужой адрес или слово латиницей сторож
+ * по-прежнему ловит.
+ */
+const ALLOWED_LATIN = ['support@nirivio.by', 'JPG', 'PNG', 'WebP', 'HEIC', 'PDF'];
 
 /** Слова латиницей, оставшиеся в тексте после разрешённых. */
 const latinWords = (text) =>

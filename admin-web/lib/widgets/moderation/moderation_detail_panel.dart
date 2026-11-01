@@ -189,6 +189,13 @@ class _ModerationDetailPanelState extends State<ModerationDetailPanel>
             authorName: detail.suspendedByName,
           ),
 
+        // В очереди — прошлая приостановка (решение Координатора 01.11.2026,
+        // «А+В»): партнёр исправил и отправил снова, а модератору важно
+        // знать, за что, кем и когда карточку снимали с показа.
+        if (widget.mode == DetailPanelMode.moderation &&
+            detail.previousSuspension != null)
+          _PreviousSuspensionBlock(suspension: detail.previousSuspension!),
+
         // Заметки прошлой проверки — то, что обещает 💬 «для модераторов»
         // (пункт A1-12). На «Отклонённых» те же записи уже стоят блоком
         // причин отказа, второй раз их не показываем.
@@ -1154,6 +1161,108 @@ class _SuspensionBlock extends StatelessWidget {
   /// панели было три вида, и два из них собирались руками (F-09).
   static String _formatStamp(DateTime value) =>
       '${formatDateLocal(value)}, ${formatTimeLocal(value)}';
+}
+
+/// «Раньше приостановлена» у карточки в очереди: причина, кто и когда.
+/// Приходит с сервера (`previous_suspension`) — из меток самой карточки до
+/// решения модератора и из журнала действий после него.
+class _PreviousSuspensionBlock extends StatelessWidget {
+  final PreviousSuspension suspension;
+
+  const _PreviousSuspensionBlock({required this.suspension});
+
+  /// Строка «кто». Имя модератора — только когда журнал его знает
+  /// (у просмотрщика сервер его не отдаёт).
+  static String authorLine(PreviousSuspension suspension) {
+    switch (suspension.by) {
+      case SuspensionAuthor.moderator:
+        final name = suspension.name?.trim() ?? '';
+        return name.isEmpty ? 'Кто: модератор' : 'Кто: модератор $name';
+      case SuspensionAuthor.system:
+        return 'Кто: система, при переходе учётной записи';
+      case SuspensionAuthor.partner:
+        return 'Кто: партнёр, своя пауза';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = suspension.reason?.trim() ?? '';
+    // `.toLocal()` — по той же причине, что в блоке приостановки: сервер
+    // отдаёт время в UTC.
+    final stamp = suspension.at?.toLocal();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 18, 24, 0),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: AppTheme.disclaimerBg,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Перенос, а не ряд: на окне 1024 время иначе не помещается рядом
+          // с заголовком (как в блоке приостановки, замер 21.10.2026).
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.history,
+                    size: 18,
+                    color: AppTheme.disclaimerText,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Раньше приостановлена',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.disclaimerText,
+                    ),
+                  ),
+                ],
+              ),
+              if (stamp != null)
+                Text(
+                  _SuspensionBlock._formatStamp(stamp),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.disclaimerText,
+                  ),
+                ),
+            ],
+          ),
+          if (reason.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              reason,
+              style: const TextStyle(
+                fontSize: 15,
+                color: AppTheme.textDark,
+                height: 1.5,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            authorLine(suspension),
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppTheme.disclaimerText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Пауза, которую партнёр поставил сам. Объясняет модератору, почему в

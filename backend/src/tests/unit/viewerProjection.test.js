@@ -84,6 +84,17 @@ describe('projectForViewer', () => {
     expect(out.data.suspended_by.at).toBeInstanceOf(Date);
   });
 
+  // The queue's «Раньше приостановлена» names the moderator too (01.11.2026):
+  // a viewer keeps who-kind, reason and time, not the name.
+  test('the previous suspension of a queued card loses the moderator\'s name', () => {
+    const at = new Date('2026-10-20T08:00:00Z');
+    const out = projectForViewer({
+      data: { previous_suspension: { by: 'moderator', name: 'Сергей Админов', reason: 'Жалобы гостей', at } },
+    });
+
+    expect(out.data.previous_suspension).toEqual({ by: 'moderator', name: null, reason: 'Жалобы гостей', at });
+  });
+
   test('business contacts of the establishment stay: phone, e-mail, company', () => {
     const card = {
       phone: '+375 17 000-00-00',

@@ -17,7 +17,8 @@
  *   subscription_tier, subscription_started_at, subscription_expires_at,
  *   base_score, boost_score,
  *   is_seed, claimed_at, claimed_by,
- *   moderation_notes, moderated_by, moderated_at.
+ *   moderation_notes, moderated_by, moderated_at,
+ *   email (the card's own e-mail — Ф1, 01.11.2026).
  *
  * Idempotency: same input row → same output object. No side effects, no
  * I/O, no DB calls. Safe to call repeatedly.
@@ -58,7 +59,10 @@ export const toPublicEstablishment = (row) => {
       ? parseFloat(row.longitude)
       : null,
     phone: row.phone,
-    email: row.email,
+    // No e-mail: the card shows the site and the social link, not the mail
+    // (decision of 20.10.2026), no guest client reads it, and a partner may
+    // have typed a personal address there (Ф1, Coordinator, 01.11.2026). The
+    // partner's cabinet and the panel read it through their own routes.
     website: row.website,
     categories: row.categories || [],
     category_slug: categoryCyrillicToSlug(primaryCategory),

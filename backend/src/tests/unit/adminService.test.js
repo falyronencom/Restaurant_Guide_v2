@@ -16,6 +16,7 @@
 
 import { jest } from '@jest/globals';
 import { v4 as uuidv4 } from 'uuid';
+import { TAKEOVER_SUSPEND_REASON } from '../../utils/moderationNotes.js';
 
 // ============================================================================
 // Mocks (must be set up before service import)
@@ -71,6 +72,7 @@ jest.unstable_mockModule('../../models/auditLogModel.js', () => ({
   getRejectionHistory: jest.fn(),
   countRejections: jest.fn(),
   getLatestEntityAction: jest.fn(),
+  getLatestEstablishmentSuspension: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../services/notificationService.js', () => ({
@@ -1661,6 +1663,134 @@ describe('getEstablishmentForModeration', () => {
     const nullResult = await getEstablishmentForModeration(EST_ID);
     expect(nullResult.latitude).toBeNull();
     expect(nullResult.longitude).toBeNull();
+  });
+
+  // «Раньше приостановлена» (Coordinator, 01.11.2026, «А+В»): a card in the
+  // queue carries its latest suspension — who, why, when — from the card's
+  // own marks (until the moderator's decision) and the journal (after it).
+  describe('previous_suspension (the queue)', () => {
+    const AT_NOTES = '2026-10-20T08:00:00.000Z';
+    const AT_JOURNAL = new Date('2026-10-20T08:00:01.000Z');
+    const pendingWith = (notes) => baseEstablishment({
+      status: 'pending',
+      moderation_notes: notes === null ? null : JSON.stringify(notes),
+    });
+
+    test('a moderator\'s suspension sent back: the marks give reason and time, the journal the name', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(pendingWith({
+        suspend_reason: 'Жалобы гостей', suspended_at: AT_NOTES, suspended_from: 'active',
+      }));
+      AuditLogModel.getLatestEstablishmentSuspension.mockResolvedValue({
+        action: 'suspend', user_id: ADMIN_ID, user_name: 'Сергей Админов', reason: 'Жалобы гостей', created_at: AT_JOURNAL,
+      });
+
+      const result = await getEstablishmentForModeration(EST_ID);
+
+      expect(AuditLogModel.getLatestEstablishmentSuspension).toHaveBeenCalledWith({ entityId: EST_ID });
+      expect(result.previous_suspension).toEqual({
+        by: 'moderator', name: 'Сергей Админов', reason: 'Жалобы гостей', at: AT_NOTES,
+      });
+    });
+
+    test('the marks without their journal entry: still a moderator\'s, no name invented', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(pendingWith({
+        suspend_reason: 'Жалобы гостей', suspended_at: AT_NOTES,
+      }));
+      // The journal's latest is an older suspension with another reason.
+      AuditLogModel.getLatestEstablishmentSuspension.mockResolvedValue({
+        action: 'suspend', user_id: ADMIN_ID, user_name: 'Другой модератор', reason: 'Старая причина', created_at: AT_JOURNAL,
+      });
+
+      const result = await getEstablishmentForModeration(EST_ID);
+
+      expect(result.previous_suspension).toEqual({
+        by: 'moderator', name: null, reason: 'Жалобы гостей', at: AT_NOTES,
+      });
+    });
+
+    test('a template reason repeats: an older journal entry with the same words lends no name', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(pendingWith({
+        suspend_reason: 'Жалобы гостей', suspended_at: AT_NOTES,
+      }));
+      // This suspension's own entry was lost; the latest one is a month older.
+      AuditLogModel.getLatestEstablishmentSuspension.mockResolvedValue({
+        action: 'suspend', user_id: ADMIN_ID, user_name: 'Другой модератор', reason: 'Жалобы гостей',
+        created_at: new Date('2026-09-20T08:00:00.000Z'),
+      });
+
+      const result = await getEstablishmentForModeration(EST_ID);
+
+      expect(result.previous_suspension).toEqual({
+        by: 'moderator', name: null, reason: 'Жалобы гостей', at: AT_NOTES,
+      });
+    });
+
+    test('the system\'s takeover marks: by the system, whatever the journal says', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(pendingWith({
+        suspend_reason: TAKEOVER_SUSPEND_REASON, suspended_at: AT_NOTES, suspended_from: 'active',
+      }));
+      AuditLogModel.getLatestEstablishmentSuspension.mockResolvedValue({
+        action: 'suspend', user_id: null, user_name: null, reason: TAKEOVER_SUSPEND_REASON, created_at: AT_JOURNAL,
+      });
+
+      const result = await getEstablishmentForModeration(EST_ID);
+
+      expect(result.previous_suspension).toEqual({
+        by: 'system', name: null, reason: TAKEOVER_SUSPEND_REASON, at: AT_NOTES,
+      });
+    });
+
+    test.each([
+      [
+        'a moderator\'s',
+        { action: 'suspend', user_id: ADMIN_ID, user_name: 'Сергей Админов', reason: 'Жалобы гостей', created_at: AT_JOURNAL },
+        { by: 'moderator', name: 'Сергей Админов', reason: 'Жалобы гостей', at: AT_JOURNAL },
+      ],
+      [
+        'the system\'s',
+        { action: 'suspend', user_id: null, user_name: null, reason: TAKEOVER_SUSPEND_REASON, created_at: AT_JOURNAL },
+        { by: 'system', name: null, reason: TAKEOVER_SUSPEND_REASON, at: AT_JOURNAL },
+      ],
+      [
+        // A moderator whose account is gone leaves no author — still not the system.
+        'a removed moderator\'s',
+        { action: 'suspend', user_id: null, user_name: null, reason: 'Жалобы гостей', created_at: AT_JOURNAL },
+        { by: 'moderator', name: null, reason: 'Жалобы гостей', at: AT_JOURNAL },
+      ],
+      [
+        'the partner\'s own pause',
+        { action: 'partner_pause', user_id: PARTNER_ID, user_name: 'Партнёр Партнёров', reason: null, created_at: AT_JOURNAL },
+        { by: 'partner', name: null, reason: null, at: AT_JOURNAL },
+      ],
+    ])('after the decision wiped the marks, the journal tells it: %s', async (_label, entry, expected) => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(pendingWith({ name: 'Уточните название' }));
+      AuditLogModel.getLatestEstablishmentSuspension.mockResolvedValue(entry);
+
+      const result = await getEstablishmentForModeration(EST_ID);
+
+      expect(result.previous_suspension).toEqual(expected);
+    });
+
+    test('never suspended: null', async () => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(pendingWith(null));
+      AuditLogModel.getLatestEstablishmentSuspension.mockResolvedValue(null);
+
+      const result = await getEstablishmentForModeration(EST_ID);
+
+      expect(result.previous_suspension).toBeNull();
+    });
+
+    test.each(['active', 'rejected', 'suspended', 'draft'])(
+      'a card out of the queue (%s): no history, no journal query',
+      async (status) => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment({ status }));
+
+        const result = await getEstablishmentForModeration(EST_ID);
+
+        expect(result.previous_suspension).toBeNull();
+        expect(AuditLogModel.getLatestEstablishmentSuspension).not.toHaveBeenCalled();
+      },
+    );
   });
 });
 
