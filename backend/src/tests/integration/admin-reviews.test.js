@@ -25,7 +25,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, getClient, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { setReviewVisibility } from '../../models/adminReviewModel.js';
 import * as adminReviewService from '../../services/adminReviewService.js';
@@ -1058,5 +1058,93 @@ describe('setVisibility: the journal entry is part of the change', () => {
     expect(entry).toHaveLength(1);
     expect(entry[0].new_data).toEqual({ is_visible: false });
     expect(entry[0].ip).toBe('127.0.0.1/32');
+  });
+});
+
+// ============================================================================
+// setVisibility: the review changed between the read and the write
+// ============================================================================
+//
+// Решение модератора читается и пишется двумя запросами. Если между ними
+// отзыв изменил кто-то другой (второй модератор, повтор того же запроса
+// панелью после 5xx), запись не проходит охрану прежнего состояния, и сервис
+// перечитывает отзыв (замер Crapper 01.11.2026: эту ветку не проходил ни один
+// тест). Другую сторону изображает своя транзакция: она держит строку
+// отзыва, пока запрос модератора не встанет в ожидание её замка.
+
+describe('setVisibility: the review changed between the read and the write', () => {
+  const waitForLockWaiter = async () => {
+    for (let attempt = 0; attempt < 250; attempt += 1) {
+      const { rows } = await query(
+        `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+          WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      if (rows[0].n > 0) return;
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+    }
+    throw new Error('никто не ждёт блокировки строки');
+  };
+
+  /** The panel's request (admin-web admin_review_service.dart), sent while `change` holds the review row. */
+  const hideWhileAnotherChanges = async (reviewId, change) => {
+    const other = await getClient();
+    let hide;
+    try {
+      await other.query('BEGIN');
+      await other.query(change, [reviewId]);
+
+      hide = request(app)
+        .post(`/api/v1/admin/reviews/${reviewId}/visibility`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_visible: false })
+        .then((response) => response);
+      await waitForLockWaiter();
+      await other.query('COMMIT');
+    } catch (error) {
+      await other.query('ROLLBACK');
+      throw error;
+    } finally {
+      other.release();
+    }
+    return hide;
+  };
+
+  test('другой уже скрыл тот же отзыв — 200, changed: false, журнал пуст, рейтинг пересчитан без скрытого', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    await createTestReview(null, establishment.id, { rating: 5 });
+    const review = await createTestReview(null, establishment.id, { rating: 1 });
+
+    // Другая сторона только скрывает строку и рейтинг не пересчитывает —
+    // так оставляет его первая попытка, умершая до своего пересчёта.
+    const response = await hideWhileAnotherChanges(
+      review.id,
+      'UPDATE reviews SET is_visible = false WHERE id = $1',
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ id: review.id, is_visible: false, changed: false });
+    expect(await checkAuditLogExists(review.id, 'review_hide')).toBe(false);
+
+    // Видимой осталась одна пятёрка.
+    const { rows } = await query(
+      'SELECT average_rating::float AS average, review_count FROM establishments WHERE id = $1',
+      [establishment.id],
+    );
+    expect(rows[0]).toEqual({ average: 5, review_count: 1 });
+  });
+
+  test('другой удалил отзыв — 404 REVIEW_NOT_FOUND, видимость не тронута', async () => {
+    const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
+
+    const response = await hideWhileAnotherChanges(
+      review.id,
+      'UPDATE reviews SET is_deleted = true WHERE id = $1',
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('REVIEW_NOT_FOUND');
+    const stored = (await query('SELECT is_visible, is_deleted FROM reviews WHERE id = $1', [review.id])).rows[0];
+    expect(stored).toEqual({ is_visible: true, is_deleted: true });
+    expect(await checkAuditLogExists(review.id, 'review_hide')).toBe(false);
   });
 });
