@@ -43,7 +43,7 @@ backend/
   src/models/         SQL-запросы
   src/projections/    публичные формы ответов
   src/tests/          unit, integration и e2e (Jest; integration — на настоящей БД)
-  migrations/         миграции 001–035 и снимок схемы production_schema.sql
+  migrations/         миграции 001–038 и снимок схемы production_schema.sql
   scripts/            операторские скрипты (миграции на сервере, снимок данных, учётные записи панели)
 mobile/               приложение Flutter
 admin-web/            панель Flutter Web (Dockerfile + Caddyfile для хостинга)
@@ -78,11 +78,12 @@ docker compose up -d --wait
 
 Имена контейнеров и учётные данные те же, поэтому команды ниже не меняются. Данные базы compose хранит в именованном томе: `docker compose down` их сохраняет, `docker compose down -v` стирает.
 
-Схема разворачивается из снимка `production_schema.sql` (состав рабочего сервера) и миграций поверх него — так же, как в CI. Миграция 030 намеренно не применяется: причина записана в шапке снимка.
+Схема разворачивается из снимка `production_schema.sql` (состав рабочего сервера) и миграций поверх него — так же, как в CI. Миграция 030 намеренно не применяется: причина записана в шапке снимка. Миграция 036 — миграция данных, не схемы (на пустой таблице она намеренно отказывается), в рецепт не входит.
 
 ```bash
 for f in production_schema 031_seed_import_registry 032_password_reset_tokens \
-         033_menu_push_preference 034_viewer_role 035_sessions_revoked_at; do
+         033_menu_push_preference 034_viewer_role 035_sessions_revoked_at \
+         037_service_account_flag 038_menu_item_hidden_names; do
   docker exec -i rg-pg psql -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q \
     < backend/migrations/$f.sql
 done
@@ -139,7 +140,8 @@ cd ..
 ```bash
 docker exec rg-pg createdb -U postgres restaurant_guide_dev
 for f in production_schema 031_seed_import_registry 032_password_reset_tokens \
-         033_menu_push_preference 034_viewer_role 035_sessions_revoked_at; do
+         033_menu_push_preference 034_viewer_role 035_sessions_revoked_at \
+         037_service_account_flag 038_menu_item_hidden_names; do
   docker exec -i rg-pg psql -U postgres -d restaurant_guide_dev -v ON_ERROR_STOP=1 -q \
     < backend/migrations/$f.sql
 done
