@@ -79,6 +79,24 @@ describe('VerifyEmailForm — auth awareness', () => {
     expect(app).toContain("static const String spamHint = 'Не пришёл код? Проверьте папку «Спам».';");
   });
 
+  it('under the code field — the letter brings the code; it does not claim «Мы отправили», the same words as the app', () => {
+    // The page cannot know the letter arrived: from the profile it opens with
+    // no new letter, and a resend may fail (Coordinator, 30.10.2026).
+    render(<VerifyEmailForm />);
+
+    const field = screen.getByLabelText('Код из письма');
+    const hint = screen.getByText('Код подтверждения приходит письмом на вашу почту.');
+    expect(field).toHaveAttribute('aria-describedby', hint.id);
+    expect(screen.queryByText(/Мы отправили 6-значный/)).not.toBeInTheDocument();
+
+    const app = readFileSync(
+      join(__dirname, '..', '..', 'mobile', 'lib', 'screens', 'auth', 'email_verification_screen.dart'),
+      'utf8',
+    );
+    expect(app).toContain("'Код подтверждения приходит письмом на вашу почту.'");
+    expect(app).not.toContain('Мы прислали');
+  });
+
   it('renders the form optimistically while the context hydrates', () => {
     mockStatus = 'loading';
     render(<VerifyEmailForm />);

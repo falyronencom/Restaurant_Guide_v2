@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:restaurant_guide_mobile/config/environment.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/providers/auth_provider.dart';
 import 'package:restaurant_guide_mobile/utils/error_helpers.dart';
@@ -13,6 +15,16 @@ import 'package:restaurant_guide_mobile/widgets/forms/submit_button.dart';
 /// User enters email and password to sign in
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  /// Страница восстановления пароля на сайте. Своего экрана сброса в
+  /// приложении нет, а на сайте сброс работает целиком, и ссылка из письма
+  /// ведёт туда же; новый пароль подходит и в приложении.
+  static String forgotPasswordUrl({String? siteBaseUrl}) {
+    final base = siteBaseUrl ?? Environment.siteBaseUrl;
+    final trimmed =
+        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    return '$trimmed/forgot-password';
+  }
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -60,6 +72,30 @@ class _LoginScreenState extends State<LoginScreen> {
   /// и человек видел «Проверьте введённые данные.» (решение Координатора
   /// 19.10.2026: вход и регистрация по номеру — после появления СМС).
   String? _validateEmail(String? value) => validateEmail(value?.trim());
+
+  /// «Забыли пароль?» — страница восстановления на сайте, в браузере.
+  /// Браузер не открылся — плашка с адресом (текст — слово Координатора
+  /// 30.10.2026).
+  Future<void> _openForgotPassword() async {
+    final url = LoginScreen.forgotPasswordUrl();
+    final messenger = ScaffoldMessenger.of(context);
+    var opened = false;
+    try {
+      opened = await launchUrl(Uri.parse(url),
+          mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Не удалось открыть браузер. Восстановить пароль '
+              'можно на сайте: $url'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
 
   /// Handle form submission
   Future<void> _handleSubmit() async {
@@ -272,15 +308,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: TextButton(
                     onPressed: isAnyLoading
                         ? null
-                        : () {
-                            // TODO: Navigate to forgot password screen
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Восстановление пароля будет добавлено позже'),
-                              ),
-                            );
-                          },
+                        : _openForgotPassword,
                     style: TextButton.styleFrom(
                       padding: EdgeInsets.zero,
                       minimumSize: const Size(0, 0),

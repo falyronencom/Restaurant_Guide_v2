@@ -1298,30 +1298,15 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
     );
   }
 
-  /// Issue a verification code and navigate to the verification screen.
-  /// Shows a snackbar with provider error message on failure (e.g. rate limit).
-  Future<void> _onVerifyEmailTap(BuildContext context, String email) async {
-    final authProvider = context.read<AuthProvider>();
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context, rootNavigator: true);
-
-    final success = await authProvider.sendEmailVerificationCode();
-
-    if (!mounted) return;
-
-    if (!success) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            authProvider.errorMessage ?? 'Не удалось отправить код',
-          ),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    navigator.pushNamed(
+  /// Открыть экран ввода кода — без нового письма. Новое письмо уходит только
+  /// по «Прислать код повторно» на самом экране: раньше кнопка слала письмо
+  /// сама, и код письма регистрации гас — человек вводил его и видел
+  /// «Неверный код» (сводка находок, группа Б, 30.10). Запроса здесь больше
+  /// нет — нет и плашки неудачи, которая пропадала, если уйти из кабинета,
+  /// пока запрос шёл (Н36), и двух экранов кода от двойного нажатия: экран
+  /// открывается сразу, и второе касание навигатор уже не пропускает.
+  void _onVerifyEmailTap(BuildContext context, String email) {
+    Navigator.of(context, rootNavigator: true).pushNamed(
       '/auth/email-verification',
       arguments: {'email': email},
     );

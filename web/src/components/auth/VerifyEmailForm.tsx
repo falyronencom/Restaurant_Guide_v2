@@ -38,6 +38,14 @@ import { useAuth } from './AuthProvider';
  */
 export const SPAM_HINT = 'Не пришёл код? Проверьте папку «Спам».';
 
+/**
+ * Under the code field. The page cannot know the letter arrived: from the
+ * profile it opens without a new letter, and a resend may fail — so it does
+ * not say «Мы отправили» (Coordinator, 30.10.2026). The app says the same
+ * words (mobile EmailVerificationScreen.codeLetterHint).
+ */
+export const CODE_LETTER_HINT = 'Код подтверждения приходит письмом на вашу почту.';
+
 export function VerifyEmailForm({ returnTo = '/' }: { returnTo?: string }) {
   const [verifyState, verifyAction, verifyPending] = useActionState(
     verifyEmailCodeAction,
@@ -133,7 +141,7 @@ export function VerifyEmailForm({ returnTo = '/' }: { returnTo?: string }) {
             aria-describedby="verify-code-hint"
           />
           <p id="verify-code-hint" className="text-caption-l text-figma-text-dark">
-            Мы отправили 6-значный код на вашу почту.
+            {CODE_LETTER_HINT}
           </p>
         </div>
 
