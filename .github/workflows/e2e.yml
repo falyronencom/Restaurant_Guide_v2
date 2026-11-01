@@ -119,9 +119,12 @@ jobs:
 
       - uses: actions/setup-java@v6
         with:
-          # Gradle сборки Android (AGP 8.9) и сам Maestro — на Java 17.
+          # Java 21 — как у локальной сборки (JBR из Android Studio). Библиотека
+          # карт Яндекса (maps.mobile 4.22) собрана под Java 21, и javac 17 её
+          # классы не читает: «class file has wrong version 65.0, should be
+          # 61.0» (первый прогон 01.11.2026). Maestro на Java 21 тоже работает.
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
           cache: gradle
 
       - uses: subosito/flutter-action@v2
