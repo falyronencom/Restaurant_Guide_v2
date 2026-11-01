@@ -1,0 +1,28 @@
+# Общее начало: чистый запуск и вход тестовым пользователем по почте и паролю.
+# Почта и пароль приходят переменными Maestro (-e E2E_EMAIL=… -e E2E_PASSWORD=…,
+# их подставляет e2e.sh из .env.local); в репозитории их нет.
+# Вход через Google и Яндекс не автоматизируется: там чужие окна входа.
+appId: com.nirivio.app
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Регистрация"
+    timeout: 60000
+# Ссылка «Уже есть профиль? Войти» внизу экрана регистрации.
+- tapOn: "Войти"
+- extendedWaitUntil:
+    visible: "Вход в профиль"
+    timeout: 10000
+# Поля Maestro видит по подсказкам «Почта» и «Пароль».
+- tapOn: "Почта"
+- inputText: ${E2E_EMAIL}
+- tapOn: "Пароль"
+- inputText: ${E2E_PASSWORD}
+# На этом экране надпись «Войти» одна — кнопка входа. Клавиатуру не прячем:
+# hideKeyboard на Android жмёт «назад», а без открытой клавиатуры это увело
+# бы с экрана входа. Кнопка выше клавиатуры и так.
+- tapOn: "Войти"
+- extendedWaitUntil:
+    visible: "NIRIVIO.*"
+    timeout: 30000

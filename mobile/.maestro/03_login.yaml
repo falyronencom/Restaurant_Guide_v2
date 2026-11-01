@@ -1,0 +1,15 @@
+# Вход тестовым пользователем по почте и паролю; в профиле — его имя.
+# Пользователя заводит e2e.sh user (имя «Maestro Test»), почта и пароль
+# приходят переменными E2E_EMAIL и E2E_PASSWORD.
+appId: com.nirivio.app
+name: "Вход тестовым пользователем по почте"
+tags:
+  - smoke
+---
+- runFlow: subflows/login.yaml
+- tapOn: "Профиль.*"
+# Карточка профиля — одна надпись: буква-аватар, имя, «Показать профиль».
+- extendedWaitUntil:
+    visible: ".*Maestro Test.*"
+    timeout: 20000
+- assertVisible: ".*Показать профиль.*"

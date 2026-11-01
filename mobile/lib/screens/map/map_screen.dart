@@ -333,13 +333,20 @@ class _MapScreenState extends State<MapScreen> {
                         longitude: _selectedEstablishment!.longitude!,
                       ),
                     ),
-              locationButton: FloatingActionButton(
-                mini: true,
-                backgroundColor: AppTheme.backgroundPrimary,
-                onPressed: _goToMyLocation,
-                child: const Icon(
-                  Icons.my_location,
-                  color: _primaryOrange,
+              // Метка для сквозных сценариев Maestro (mobile/.maestro): саму
+              // карту (нативный слой) Maestro не видит, а эта кнопка — Flutter
+              // поверх неё: есть кнопка — экран карты собрался.
+              locationButton: Semantics(
+                container: true,
+                identifier: 'e2e-map-my-location',
+                child: FloatingActionButton(
+                  mini: true,
+                  backgroundColor: AppTheme.backgroundPrimary,
+                  onPressed: _goToMyLocation,
+                  child: const Icon(
+                    Icons.my_location,
+                    color: _primaryOrange,
+                  ),
                 ),
               ),
             ),

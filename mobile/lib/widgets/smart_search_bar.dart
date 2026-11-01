@@ -105,66 +105,77 @@ class _SmartSearchBarState extends State<SmartSearchBar> {
                 bottomLeft: Radius.circular(9),
               ),
             ),
-            child: TextField(
-              controller: widget.controller,
-              focusNode: _focusNode,
-              style: const TextStyle(
-                fontSize: 18,
-                color: AppTheme.textPrimary,
-              ),
-              decoration: InputDecoration(
-                hintText: hintText,
-                hintStyle: const TextStyle(
+            // Метка для сквозных сценариев Maestro (mobile/.maestro): подсказка
+            // в поле сменяется каждые 3 с, по тексту поле не найти.
+            child: Semantics(
+              container: true,
+              identifier: 'e2e-home-search-field',
+              child: TextField(
+                controller: widget.controller,
+                focusNode: _focusNode,
+                style: const TextStyle(
                   fontSize: 18,
-                  color: _greyText,
-                  fontWeight: FontWeight.w400,
+                  color: AppTheme.textPrimary,
                 ),
-                border: InputBorder.none,
-                // Поле само рисует свою форму (Container). Гасим рамку и заливку
-                // из глобальной inputDecorationTheme — иначе на фокусе всплывает
-                // оранжевая обводка со скруглением всех углов и зазоры у кнопки.
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                errorBorder: InputBorder.none,
-                focusedErrorBorder: InputBorder.none,
-                filled: false,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 20,
+                decoration: InputDecoration(
+                  hintText: hintText,
+                  hintStyle: const TextStyle(
+                    fontSize: 18,
+                    color: _greyText,
+                    fontWeight: FontWeight.w400,
+                  ),
+                  border: InputBorder.none,
+                  // Поле само рисует свою форму (Container). Гасим рамку и заливку
+                  // из глобальной inputDecorationTheme — иначе на фокусе всплывает
+                  // оранжевая обводка со скруглением всех углов и зазоры у кнопки.
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                  filled: false,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 20,
+                  ),
                 ),
+                // Клавиша клавиатуры и оранжевая кнопка — одно действие.
+                // Раньше клавиша только прятала клавиатуру: пользователь нажимал
+                // «Найти» и не получал ничего. / The keyboard key and the button
+                // do the same thing; the key used to only dismiss the keyboard.
+                textInputAction: TextInputAction.search,
+                onSubmitted: (_) {
+                  _focusNode.unfocus();
+                  _handleSubmit();
+                },
+                onChanged: (_) => setState(() {}),
               ),
-              // Клавиша клавиатуры и оранжевая кнопка — одно действие.
-              // Раньше клавиша только прятала клавиатуру: пользователь нажимал
-              // «Найти» и не получал ничего. / The keyboard key and the button
-              // do the same thing; the key used to only dismiss the keyboard.
-              textInputAction: TextInputAction.search,
-              onSubmitted: (_) {
-                _focusNode.unfocus();
-                _handleSubmit();
-              },
-              onChanged: (_) => setState(() {}),
             ),
           ),
         ),
-        // Search/chevron button
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _handleSubmit,
-          child: Container(
-            width: 64,
-            height: 64,
-            decoration: const BoxDecoration(
-              color: _primaryOrange,
-              borderRadius: BorderRadius.only(
-                topRight: Radius.circular(9),
-                bottomRight: Radius.circular(9),
+        // Search/chevron button. Метка — для сценариев Maestro: у кнопки
+        // одна иконка, текста нет.
+        Semantics(
+          container: true,
+          identifier: 'e2e-home-search-button',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _handleSubmit,
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                color: _primaryOrange,
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(9),
+                  bottomRight: Radius.circular(9),
+                ),
               ),
-            ),
-            child: Center(
-              child: Icon(
-                hasText ? Icons.search : Icons.chevron_right,
-                color: AppTheme.textOnPrimary,
-                size: 30,
+              child: Center(
+                child: Icon(
+                  hasText ? Icons.search : Icons.chevron_right,
+                  color: AppTheme.textOnPrimary,
+                  size: 30,
+                ),
               ),
             ),
           ),
