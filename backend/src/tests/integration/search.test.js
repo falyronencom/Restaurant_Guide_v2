@@ -402,6 +402,112 @@ describe('Search System - Bounds-Based Search (Map View)', () => {
   });
 });
 
+// Фильтры карты внутри видимой области (searchService.searchByBounds; замер
+// Crapper 01.11.2026: пройдено 64 % развилок, фильтры с границами не проходил
+// ни один тест). Запрос — как его шлёт карта телефона
+// (mobile/lib/services/establishments_service.dart, searchByMapBounds):
+// углы neLat/swLat/neLon/swLon, списки — повторяющимся ключом без скобок
+// (Dio, ListFormat.multiCompatible: categories=a&categories=b). Порог рейтинга
+// карта телефона не шлёт — его шлёт карта сайта в
+// /public/establishments/map вместе с углами.
+describe('Search System - Bounds-Based Search: фильтры внутри области', () => {
+  const corners = { neLat: 53.95, swLat: 53.85, neLon: 27.6, swLon: 27.4 };
+
+  /** Query string as Dio builds it: every list value under the same key. */
+  const mobileMapQuery = (params) => Object.entries({ ...corners, ...params })
+    .flatMap(([key, value]) => (Array.isArray(value) ? value : [value])
+      .map((item) => `${key}=${encodeURIComponent(item)}`))
+    .join('&');
+
+  const mapNames = async (params) => {
+    const response = await request(app)
+      .get(`/api/v1/search/map?${mobileMapQuery(params)}`)
+      .expect(200);
+    return response.body.data.establishments.map((e) => e.name).sort();
+  };
+
+  const hours = (open, close) => JSON.stringify(Object.fromEntries(
+    ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      .map((day) => [day, { open, close }]),
+  ));
+
+  beforeEach(async () => {
+    const insert = (name, lat, lon, category, cuisine, price, rating, workingHours) => query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, average_rating, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Карта', 'Минск', 'Адрес', $3, $4, ARRAY[$5]::varchar[], ARRAY[$6]::varchar[], 'active', $7::jsonb, $8, $9, NOW(), NOW())
+    `, [partnerId, name, lat, lon, category, cuisine, workingHours, price, rating]);
+
+    // До 22:00, рейтинг 4.5
+    await insert('Жаворонок', 53.90, 27.50, 'Ресторан', 'Европейская', '$$', 4.5, hours('10:00', '22:00'));
+    // До утра (до 02:00), рейтинг 3.0
+    await insert('Сова', 53.91, 27.52, 'Кофейня', 'Итальянская', '$', 3.0, hours('08:00', '02:00'));
+    // Круглосуточно, рейтинг 4.8
+    await insert('Круглые сутки', 53.89, 27.48, 'Бар', 'Народная', '$$$', 4.8, hours('00:00', '23:59'));
+    // Вне области (Гомель) — подходит под любой фильтр, но не в рамке
+    await insert('За рамкой', 52.40, 31.00, 'Бар', 'Народная', '$$$', 4.9, hours('00:00', '23:59'));
+  });
+
+  test('без фильтров — все три в рамке, Гомеля нет', async () => {
+    expect(await mapNames({})).toEqual(['Жаворонок', 'Круглые сутки', 'Сова']);
+  });
+
+  test('категории двумя значениями — заведения обеих', async () => {
+    expect(await mapNames({ categories: ['Кофейня', 'Бар'] })).toEqual(['Круглые сутки', 'Сова']);
+  });
+
+  test('кухня — только с этой кухней', async () => {
+    expect(await mapNames({ cuisines: ['Народная'] })).toEqual(['Круглые сутки']);
+  });
+
+  test('средний чек двумя значениями — заведения с любым из них', async () => {
+    expect(await mapNames({ priceRange: ['$', '$$$'] })).toEqual(['Круглые сутки', 'Сова']);
+  });
+
+  test.each([
+    ['until_22', ['Жаворонок']],
+    ['until_morning', ['Сова']],
+    ['24_hours', ['Круглые сутки']],
+  ])('часы работы %s', async (hoursFilter, expected) => {
+    expect(await mapNames({ hours_filter: hoursFilter })).toEqual(expected);
+  });
+
+  // Фраза с рамкой сейчас не приходит ни от одного клиента: карта телефона
+  // фразу на /search/map не шлёт (map_screen.dart), сайт с фразой убирает
+  // рамку (web/src/app/api/map/route.ts). Охраняется параметр API как есть.
+  test('фраза — по названию', async () => {
+    expect(await mapNames({ search: 'жаворон' })).toEqual(['Жаворонок']);
+  });
+
+  // Порог ровно на рейтинге заведения: «не ниже» его включает.
+  test('карта сайта: порог рейтинга с углами — только не ниже порога', async () => {
+    const response = await request(app)
+      .get('/api/v1/public/establishments/map')
+      .query({ ...corners, minRating: 4.8 })
+      .expect(200);
+
+    expect(response.body.data.establishments.map((e) => e.name)).toEqual(['Круглые сутки']);
+  });
+
+  test.each(['0', '501'])('лимит вне 1–500 — 422: %s', async (limit) => {
+    const response = await request(app)
+      .get(`/api/v1/search/map?${mobileMapQuery({ limit })}`)
+      .expect(422);
+
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  test.each([
+    ['юг севернее севера', { swLat: 53.96 }],
+    ['запад восточнее востока', { swLon: 27.61 }],
+  ])('перевёрнутая рамка — 422: %s', async (_label, flipped) => {
+    const response = await request(app)
+      .get(`/api/v1/search/map?${mobileMapQuery(flipped)}`)
+      .expect(422);
+
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
+});
+
 describe('Search System - Validation', () => {
   test('should reject missing latitude', async () => {
     const response = await request(app)

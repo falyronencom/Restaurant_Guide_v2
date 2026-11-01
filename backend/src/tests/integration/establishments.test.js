@@ -15,7 +15,7 @@
 
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, getClient, query } from '../utils/database.js';
 import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 import { createTestUser, createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
@@ -1732,6 +1732,323 @@ describe('Establishments System - Slug Lifecycle', () => {
         .expect(409);
 
       expect(response.body.error.code).toBe('SLUG_ALREADY_TAKEN');
+    });
+
+    // Остальное в смене адреса страницы модератором (замер Crapper 01.11.2026:
+    // пройдена половина развилок). Требования к адресу — из описания
+    // adminService.updateEstablishmentSlug: строчные латинские буквы, цифры,
+    // одиночные дефисы между группами, длина 1–150 после обрезки пробелов.
+    describe('format, journal and the race for a taken address', () => {
+      const createActive = async (name) => {
+        const created = await request(app)
+          .post('/api/v1/partner/establishments')
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send({ ...testEstablishments[0], name })
+          .expect(201);
+        const { id, slug } = created.body.data.establishment;
+        await query('UPDATE establishments SET status = $1 WHERE id = $2', ['active', id]);
+        return { id, slug };
+      };
+
+      const patchSlug = (id, body) => request(app)
+        .patch(`/api/v1/admin/establishments/${id}/slug`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(body);
+
+      const slugInDb = async (id) =>
+        (await query('SELECT slug FROM establishments WHERE id = $1', [id])).rows[0].slug;
+
+      test.each([
+        ['заглавные буквы', 'Custom-Slug', 'INVALID_SLUG_FORMAT'],
+        ['кириллица', 'novyi-адрес', 'INVALID_SLUG_FORMAT'],
+        ['дефис в начале', '-custom', 'INVALID_SLUG_FORMAT'],
+        ['дефис в конце', 'custom-', 'INVALID_SLUG_FORMAT'],
+        ['два дефиса подряд', 'custom--slug', 'INVALID_SLUG_FORMAT'],
+        ['пробел внутри', 'custom slug', 'INVALID_SLUG_FORMAT'],
+        ['подчёркивание', 'custom_slug', 'INVALID_SLUG_FORMAT'],
+        ['пустая строка', '', 'INVALID_SLUG_LENGTH'],
+        ['одни пробелы', '   ', 'INVALID_SLUG_LENGTH'],
+        ['151 знак', 'a'.repeat(151), 'INVALID_SLUG_LENGTH'],
+        ['число', 123, 'INVALID_SLUG_TYPE'],
+        ['null', null, 'INVALID_SLUG_TYPE'],
+      ])('неверный адрес — 422, адрес не тронут: %s', async (_label, slug, code) => {
+        const { id, slug: before } = await createActive('Адрес не меняется');
+
+        const response = await patchSlug(id, { slug }).expect(422);
+
+        expect(response.body.success).toBe(false);
+        expect(response.body.error.code).toBe(code);
+        expect(await slugInDb(id)).toBe(before);
+      });
+
+      test('ровно 150 знаков с пробелами по краям — адрес принят обрезанным', async () => {
+        const { id } = await createActive('Длинный адрес');
+        const longest = `${'a'.repeat(149)}1`;
+
+        const response = await patchSlug(id, { slug: `  ${longest}  ` }).expect(200);
+
+        expect(response.body.data.slug).toBe(longest);
+        expect(await slugInDb(id)).toBe(longest);
+      });
+
+      test('свой же адрес ещё раз — 200, адрес прежний', async () => {
+        const { id, slug } = await createActive('Свой адрес');
+
+        const response = await patchSlug(id, { slug }).expect(200);
+
+        expect(response.body.data.slug).toBe(slug);
+        expect(await slugInDb(id)).toBe(slug);
+      });
+
+      test('несуществующее заведение — 404 ESTABLISHMENT_NOT_FOUND', async () => {
+        const response = await patchSlug('00000000-0000-0000-0000-000000000000', { slug: 'nichei-adres' })
+          .expect(404);
+
+        expect(response.body.error.code).toBe('ESTABLISHMENT_NOT_FOUND');
+      });
+
+      // Прежний адрес сервер не хранит и не перенаправляет: он остаётся только
+      // в журнале действий (панель показывает «Адрес страницы: было → стало»,
+      // admin-web/lib/config/audit_change_text.dart). Страница открывается
+      // по новому адресу.
+      test('журнал хранит прежний и новый адрес; страница открывается по новому', async () => {
+        const { id, slug: oldSlug } = await createActive('Переезд адреса');
+
+        await patchSlug(id, { slug: 'pereezd-adresa-2026' }).expect(200);
+
+        const journal = await query(
+          `SELECT old_data, new_data FROM audit_log
+            WHERE entity_id = $1 AND action = 'admin_update_slug'`,
+          [id],
+        );
+        expect(journal.rows).toEqual([{
+          old_data: { slug: oldSlug },
+          new_data: { slug: 'pereezd-adresa-2026' },
+        }]);
+
+        const page = await request(app)
+          .get('/api/v1/public/establishments/by-slug/pereezd-adresa-2026')
+          .expect(200);
+        expect(page.body.data.establishment.id).toBe(id);
+      });
+
+      // Проверка занятости и запись — два разных запроса. Если адрес заняли
+      // между ними, отвечает ограничение уникальности базы — модератор видит
+      // тот же отказ «адрес занят», а не «не удалось».
+      test('адрес заняли между проверкой и записью — 409 SLUG_ALREADY_TAKEN, адрес не тронут', async () => {
+        const first = await createActive('Первый в гонке');
+        const second = await createActive('Второй в гонке');
+
+        // Ждать именно того, кто ждёт эту транзакцию: без привязки ранний
+        // COMMIT молча увёл бы запрос в обычную проверку занятости.
+        const waitForWaiterOn = async (blockerPid) => {
+          for (let attempt = 0; attempt < 250; attempt += 1) {
+            const { rows } = await query(
+              `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+                WHERE $1 = ANY(pg_blocking_pids(pid))`,
+              [blockerPid],
+            );
+            if (rows[0].n > 0) return;
+            await new Promise((resolve) => { setTimeout(resolve, 20); });
+          }
+          throw new Error('никто не ждёт блокировки');
+        };
+
+        // Другой модератор уже записывает этот адрес второму заведению,
+        // но ещё не закончил.
+        const other = await getClient();
+        let patch;
+        try {
+          await other.query('BEGIN');
+          const { rows: [{ pid }] } = await other.query('SELECT pg_backend_pid() AS pid');
+          await other.query('UPDATE establishments SET slug = $1 WHERE id = $2', ['zanyatyi-adres', second.id]);
+
+          patch = patchSlug(first.id, { slug: 'zanyatyi-adres' }).then((response) => response);
+          await waitForWaiterOn(pid);
+          await other.query('COMMIT');
+        } catch (error) {
+          await other.query('ROLLBACK');
+          throw error;
+        } finally {
+          other.release();
+        }
+
+        const response = await patch;
+        expect(response.status).toBe(409);
+        expect(response.body.error.code).toBe('SLUG_ALREADY_TAKEN');
+        expect(await slugInDb(first.id)).toBe(first.slug);
+        expect(await slugInDb(second.id)).toBe('zanyatyi-adres');
+      });
+    });
+  });
+});
+
+// ============================================================================
+// Юридические реквизиты партнёра (partner_documents)
+// ============================================================================
+//
+// Реквизиты — шаг «Юридическая информация» регистрации заведения в приложении.
+// Тело запроса — в той форме, в какой его собирает телефон
+// (mobile/lib/models/partner_registration.dart, toJson): реквизиты лежат в корне
+// под legal_name, unp, contact_person, contact_email, поле уходит, только если
+// оно не null; правка (PUT) шлёт то же тело целиком. contact_person в
+// приложении — номер контактного лица (mobile/lib/screens/partner/steps/
+// legal_info_step.dart), отсюда номера в тестах. Приложение не пускает дальше
+// без всех четырёх полей, так что «часть реквизитов» — защита от других
+// клиентов API, а не путь телефона. Партнёр видит реквизиты
+// в своей карточке (GET /partner/establishments/:id — их читает
+// mobile/lib/models/partner_establishment.dart). До 01.11.2026 запись
+// реквизитов (partnerDocumentsModel.createPartnerDocument) не выполнял ни один
+// тест: в модульных модель подменена заглушкой (замер Crapper 01.11.2026).
+
+describe('Establishments System - Юридические реквизиты партнёра', () => {
+  // Часы — как их шлёт телефон, когда партнёр не трогал расписание.
+  const mobileWorkingHours = {
+    monday: { is_open: true, open: '09:00', close: '21:00' },
+    tuesday: { is_open: true, open: '09:00', close: '21:00' },
+    wednesday: { is_open: true, open: '09:00', close: '21:00' },
+    thursday: { is_open: true, open: '09:00', close: '21:00' },
+    friday: { is_open: true, open: '09:00', close: '21:00' },
+    saturday: { is_open: true, open: '10:00', close: '22:00' },
+    sunday: { is_open: true, open: '10:00', close: '22:00' },
+  };
+
+  const mobileBody = (overrides = {}) => ({
+    name: 'Реквизиты и точка',
+    description: 'Кафе для проверки юридических реквизитов',
+    categories: ['Кафе'],
+    cuisines: ['Народная'],
+    city: 'Минск',
+    address: 'ул. Немига, 5',
+    latitude: 53.9045,
+    longitude: 27.556,
+    working_hours: mobileWorkingHours,
+    phone: '+375291112233',
+    price_range: '$$',
+    ...overrides,
+  });
+
+  const legal = {
+    legal_name: 'ООО «Васильковый двор»',
+    unp: '191234567',
+    contact_person: '+375291112244',
+    contact_email: 'buh@vasilki.by',
+  };
+
+  const legalRows = async (establishmentId) => (await query(
+    `SELECT partner_id, company_name, tax_id, contact_person, contact_email
+       FROM partner_documents WHERE establishment_id = $1`,
+    [establishmentId],
+  )).rows;
+
+  const partnerCard = async (establishmentId) => (await request(app)
+    .get(`/api/v1/partner/establishments/${establishmentId}`)
+    .set('Authorization', `Bearer ${partnerToken}`)
+    .expect(200)).body.data.establishment;
+
+  test('карточка с реквизитами: в базе ровно присланное, партнёр видит его в карточке', async () => {
+    const created = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(mobileBody(legal))
+      .expect(201);
+    const id = created.body.data.establishment.id;
+
+    expect(await legalRows(id)).toEqual([{
+      partner_id: partnerId,
+      company_name: 'ООО «Васильковый двор»',
+      tax_id: '191234567',
+      contact_person: '+375291112244',
+      contact_email: 'buh@vasilki.by',
+    }]);
+    expect(await partnerCard(id)).toMatchObject({
+      legal_name: 'ООО «Васильковый двор»',
+      unp: '191234567',
+      contact_person: '+375291112244',
+      contact_email: 'buh@vasilki.by',
+    });
+  });
+
+  // Клиент может не прислать поле или прислать его пустой строкой. При
+  // создании карточки ни то, ни другое не пишется в базу пустой строкой
+  // (правка пустую строку пишет как есть — её здесь не проверяем).
+  test.each([
+    [
+      'без названия, лицо очищено',
+      { unp: '191234567', contact_person: '', contact_email: 'buh@vasilki.by' },
+      { company_name: null, tax_id: '191234567', contact_person: null, contact_email: 'buh@vasilki.by' },
+    ],
+    [
+      'без УНП, почта очищена',
+      { legal_name: 'ООО «Васильковый двор»', contact_person: '+375291112244', contact_email: '' },
+      { company_name: 'ООО «Васильковый двор»', tax_id: null, contact_person: '+375291112244', contact_email: null },
+    ],
+  ])('часть реквизитов: присланное записано, неприсланное и пустое — пусто (%s)', async (_label, sent, stored) => {
+    const created = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(mobileBody(sent))
+      .expect(201);
+    const id = created.body.data.establishment.id;
+
+    expect(await legalRows(id)).toEqual([{ partner_id: partnerId, ...stored }]);
+  });
+
+  test('карточка без реквизитов: записи нет; правка с реквизитами её создаёт', async () => {
+    const created = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(mobileBody())
+      .expect(201);
+    const id = created.body.data.establishment.id;
+    expect(await legalRows(id)).toEqual([]);
+
+    await request(app)
+      .put(`/api/v1/partner/establishments/${id}`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(mobileBody(legal))
+      .expect(200);
+
+    expect(await legalRows(id)).toEqual([{
+      partner_id: partnerId,
+      company_name: 'ООО «Васильковый двор»',
+      tax_id: '191234567',
+      contact_person: '+375291112244',
+      contact_email: 'buh@vasilki.by',
+    }]);
+  });
+
+  test('правка реквизитов: в базе новые значения, запись по-прежнему одна', async () => {
+    const created = await request(app)
+      .post('/api/v1/partner/establishments')
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(mobileBody(legal))
+      .expect(201);
+    const id = created.body.data.establishment.id;
+
+    await request(app)
+      .put(`/api/v1/partner/establishments/${id}`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send(mobileBody({
+        legal_name: 'ОДО «Новый двор»',
+        unp: '192345678',
+        contact_person: '+375447778899',
+        contact_email: 'office@newdvor.by',
+      }))
+      .expect(200);
+
+    expect(await legalRows(id)).toEqual([{
+      partner_id: partnerId,
+      company_name: 'ОДО «Новый двор»',
+      tax_id: '192345678',
+      contact_person: '+375447778899',
+      contact_email: 'office@newdvor.by',
+    }]);
+    expect(await partnerCard(id)).toMatchObject({
+      legal_name: 'ОДО «Новый двор»',
+      unp: '192345678',
+      contact_person: '+375447778899',
+      contact_email: 'office@newdvor.by',
     });
   });
 });
