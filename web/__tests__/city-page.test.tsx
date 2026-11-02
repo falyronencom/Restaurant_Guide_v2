@@ -100,6 +100,18 @@ const P = () => Promise.resolve({ city: 'minsk' });
 const SP = (o: Record<string, string | string[] | undefined>) =>
   Promise.resolve(o);
 
+// The page's own robots as after launch (NOINDEX_MODE=false). The tag the page
+// ends up with in both modes, merged with the root layout's, is locked in
+// catalog-robots-gate.test.ts.
+const NOINDEX_MODE_BEFORE = process.env.NOINDEX_MODE;
+beforeAll(() => {
+  process.env.NOINDEX_MODE = 'false';
+});
+afterAll(() => {
+  if (NOINDEX_MODE_BEFORE === undefined) delete process.env.NOINDEX_MODE;
+  else process.env.NOINDEX_MODE = NOINDEX_MODE_BEFORE;
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   (getMetadata as jest.Mock).mockResolvedValue(META);

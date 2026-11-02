@@ -259,6 +259,43 @@ void main() {
     });
   });
 
+  // Сверка документов с продуктом 01.11.2026 (П2): гость жал «Написать
+  // отзыв», а окно входа говорило про избранное — общий текст по умолчанию.
+  group('просьба войти у гостя', () {
+    const reviewText = 'Чтобы написать отзыв, войдите в учётную запись.';
+    const favoriteText =
+        'Для добавления в избранное необходимо войти в учётную запись.';
+
+    testWidgets('«Написать отзыв» — окно про отзыв, не про избранное',
+        (tester) async {
+      await pumpDetail(tester);
+      final cta = find.text('Написать отзыв');
+      await tester.ensureVisible(cta);
+      await tester.pumpAndSettle();
+      await tester.tap(cta);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Требуется авторизация'), findsOneWidget);
+      expect(find.text(reviewText), findsOneWidget);
+      expect(find.text(favoriteText), findsNothing);
+      expect(find.text('Отмена'), findsOneWidget);
+
+      await tester.tap(find.text('Войти'));
+      await tester.pumpAndSettle();
+      expect(find.text('Экран входа'), findsOneWidget);
+    });
+
+    testWidgets('сердце избранного — прежний текст про избранное',
+        (tester) async {
+      await pumpDetail(tester);
+      await tester.tap(find.byIcon(Icons.favorite_border).first);
+      await tester.pumpAndSettle();
+
+      expect(find.text(favoriteText), findsOneWidget);
+      expect(find.text(reviewText), findsNothing);
+    });
+  });
+
   // Этап 3 (17.10.2026): выбор навигатора вынесен в общий код (его зовёт и
   // кнопка «Маршрут» на картах) — адресная шторка карточки прежняя.
   group('адресная шторка', () {

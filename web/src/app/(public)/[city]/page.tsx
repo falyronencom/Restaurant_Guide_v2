@@ -22,6 +22,7 @@ import {
   type SearchParams,
 } from '@/lib/catalog-params';
 import { currentVisitor } from '@/lib/api/visitor';
+import { catalogRobots } from '@/lib/seo-gate';
 import { getCatalogResults } from '@/lib/smart-search';
 
 /*
@@ -88,8 +89,9 @@ export async function generateMetadata({
     // the clean URL itself stays indexable (mirrors /[city]/[category]).
     // A city without cards (valid slug, empty catalog) is a thin page — also
     // noindex; it leaves the sitemap the same way (getLiveCities).
-    robots:
-      hasAnyFilter(sp) || !live ? { index: false, follow: true } : undefined,
+    // While gated, noindex+nofollow on every URL — this field replaces the
+    // root layout's, so the gate is re-applied (catalogRobots).
+    robots: catalogRobots(hasAnyFilter(sp) || !live),
     alternates: {
       canonical: `/${city}`,
     },

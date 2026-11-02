@@ -27,6 +27,7 @@ import {
   type SearchParams,
 } from '@/lib/catalog-params';
 import { currentVisitor } from '@/lib/api/visitor';
+import { catalogRobots } from '@/lib/seo-gate';
 import { getCatalogResults } from '@/lib/smart-search';
 
 /*
@@ -105,8 +106,9 @@ export async function generateMetadata({
     // the noindex'd variant onto the clean URL (CAT-C-2.3 core); for the
     // clean URL itself it explicitly anchors the canonical signal.
     // metadataBase in root layout auto-promotes the relative path → absolute.
-    // A city without cards is a thin page — noindex (see /[city]).
-    robots: hasFilters || !live ? { index: false, follow: true } : undefined,
+    // A city without cards is a thin page — noindex (see /[city]). While
+    // gated, noindex+nofollow on every URL (catalogRobots).
+    robots: catalogRobots(hasFilters || !live),
     alternates: {
       canonical: `/${city}/${category}`,
     },
