@@ -100,7 +100,9 @@ export function PopularCard({
                 </span>
               )}
               {primaryCuisine && (
-                <span className="text-figma-text-grey">{`{${primaryCuisine}}`}</span>
+                <span className="text-figma-text-grey">
+                  · {primaryCuisine.toLowerCase()}
+                </span>
               )}
             </div>
 

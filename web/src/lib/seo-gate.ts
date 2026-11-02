@@ -37,6 +37,24 @@ export function isNoIndexMode(): boolean {
   return raw.toLowerCase() !== 'false';
 }
 
+/** Gate layer 3 value — the meta robots tag every page carries while gated. */
+export const GATED_ROBOTS = { index: false, follow: false } as const;
+
+/**
+ * `robots` for a catalog page (`/[city]`, `/[city]/[category]`) whose own
+ * metadata carries the field. Next merges metadata key by key and a page's
+ * `robots` REPLACES the root layout's — `undefined` included, which drops
+ * the tag — so the gate is re-applied here: while gated, noindex+nofollow
+ * like every other page. Open: a thin URL (facets in the query, a city
+ * without cards) is noindex+follow; the clean URL is indexable.
+ */
+export function catalogRobots(
+  thin: boolean,
+): typeof GATED_ROBOTS | { index: false; follow: true } | undefined {
+  if (isNoIndexMode()) return GATED_ROBOTS;
+  return thin ? { index: false, follow: true } : undefined;
+}
+
 /**
  * Returns the canonical site base URL without trailing slash.
  *

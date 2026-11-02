@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Unbounded, Nunito_Sans, Josefin_Sans } from 'next/font/google';
 import './globals.css';
-import { getSiteUrl, isNoIndexMode } from '@/lib/seo-gate';
+import { GATED_ROBOTS, getSiteUrl, isNoIndexMode } from '@/lib/seo-gate';
 import { AuthProvider } from '@/components/auth/AuthProvider';
 
 /*
@@ -72,10 +72,10 @@ export const metadata: Metadata = {
   // that exists only in TestFlight). To restore on publication:
   //   itunes: { appId: '6759831819' },
   // together with <AppBanner /> on the home page (Android).
-  // Gate layer 3 (defense-in-depth). CAT-C-2.3 page-level filter-aware
-  // robots overrides on /[city]/[category] remain compatible — child
-  // metadata wins.
-  robots: NOINDEX ? { index: false, follow: false } : undefined,
+  // Gate layer 3 (defense-in-depth). A page that returns its own `robots`
+  // replaces this one (child metadata wins, even with `undefined`), so the
+  // catalog pages re-apply the gate via catalogRobots().
+  robots: NOINDEX ? GATED_ROBOTS : undefined,
 };
 
 export default function RootLayout({
