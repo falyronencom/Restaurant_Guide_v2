@@ -378,8 +378,9 @@ export const findExistingReview = async (userId, establishmentId) => {
  * @param {Object} updates - Fields to update
  * @param {number} [updates.rating] - New rating (optional)
  * @param {string} [updates.content] - New content (optional)
- * @returns {Promise<Object>} The updated review object
- * @throws {Error} If review not found or database operation fails
+ * @returns {Promise<Object|null>} The updated review object, or null if the
+ *   review is not found or already deleted (as softDeleteReview answers false)
+ * @throws {Error} If the database operation fails
  */
 export const updateReview = async (reviewId, updates) => {
   const fields = [];
@@ -430,9 +431,9 @@ export const updateReview = async (reviewId, updates) => {
 
   try {
     const result = await pool.query(query, values);
-    
+
     if (result.rows.length === 0) {
-      throw new Error('Review not found or already deleted');
+      return null; // Review not found or already deleted
     }
 
     logger.info('Review updated', {

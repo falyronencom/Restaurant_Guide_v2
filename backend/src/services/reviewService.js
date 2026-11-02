@@ -502,8 +502,14 @@ export const updateReview = async (reviewId, userId, updates) => {
   const ratingChanged = updates.rating !== undefined && updates.rating !== currentReview.rating;
 
   try {
-    // Update the review
+    // Update the review. A deleted one is not updated — deleted before the
+    // read above (by its author elsewhere, or by a moderator) or between the
+    // read and this write — and answers as deleting it again does: 404.
+    // Until 2026-11-02 it was 500 «Сбой на сервере» (minor defects П4).
     const updatedReview = await ReviewModel.updateReview(reviewId, updates);
+    if (!updatedReview) {
+      throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
+    }
 
     // Recount on every update, not only when the rating changed: the UPDATE
     // fired the rating trigger, which counts hidden reviews too, and a
@@ -530,6 +536,11 @@ export const updateReview = async (reviewId, userId, updates) => {
 
     return reviewWithAuthor;
   } catch (error) {
+    // Re-throw if it's already an AppError (the 404 above is not unexpected)
+    if (error instanceof AppError) {
+      throw error;
+    }
+
     // Handle specific database errors
     if (error.code === '23514') {
       // Check constraint violation
@@ -547,11 +558,6 @@ export const updateReview = async (reviewId, userId, updates) => {
       reviewId,
       userId,
     });
-
-    // Re-throw if it's already an AppError
-    if (error instanceof AppError) {
-      throw error;
-    }
 
     // Otherwise wrap as generic error
     throw new AppError(

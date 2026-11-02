@@ -359,12 +359,14 @@ describe('reviewModel', () => {
       expect(values).toContain('Changed');
     });
 
-    test('should throw when review not found or already deleted', async () => {
+    // As softDeleteReview answers false: the service turns it into 404 (П4).
+    test('should return null when review not found or already deleted', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
 
-      await expect(
-        ReviewModel.updateReview('nonexistent', { rating: 1 })
-      ).rejects.toThrow('Review not found or already deleted');
+      const result = await ReviewModel.updateReview('nonexistent', { rating: 1 });
+
+      expect(result).toBeNull();
+      expect(mockQuery.mock.calls[0][0]).toContain('is_deleted = false');
     });
 
     test('should throw on database error', async () => {

@@ -535,6 +535,17 @@ export const createEstablishment = async (partnerId, establishmentData) => {
     // refused here, not lost after the card is created.
     assertValidLegalFields(establishmentData, null);
 
+    // The first card makes a user a partner (no change for a partner). The
+    // role comes first, before anything is written: if it cannot be changed,
+    // the request is refused (500 «Не удалось создать заведение…») and no card
+    // is left behind. Until 2026-11-02 the role came after the card and its
+    // failure was only logged — the person was told «created», stayed a user,
+    // and every partner route refused them, the list of their cards among
+    // them, while the same name answered 409 (minor defects П3). Before the
+    // duplicate check, so an account already left that way gets its role back
+    // by sending the card again: its 409 then points to a list it can open.
+    await upgradeUserToPartner(partnerId);
+
     // Check for duplicate name
     const isDuplicate = await EstablishmentModel.checkDuplicateName(partnerId, name);
     if (isDuplicate) {
@@ -701,19 +712,6 @@ export const createEstablishment = async (partnerId, establishmentData) => {
           partnerId,
         });
       }
-    }
-
-    // Auto-upgrade user to partner role if this is their first establishment
-    // This enables the partner registration flow where regular users can become partners
-    try {
-      await upgradeUserToPartner(partnerId);
-    } catch (upgradeError) {
-      // Log but don't fail the establishment creation
-      // User might already be a partner or admin
-      logger.warn('Could not upgrade user role', {
-        partnerId,
-        error: upgradeError.message,
-      });
     }
 
     // Calculate and save completeness score (non-blocking)

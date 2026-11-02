@@ -464,8 +464,9 @@ describe('GET /api/v1/admin/reviews — проекция просмотрщик�
 //
 // Состояние задаётся явно, а не переключается: панель повторяет запрос при
 // 5xx, и повтор «скрыть» обязан оставить отзыв скрытым (пакет 1 находок
-// критиков, пункт 2 — Codex C-10). Прежний путь /toggle-visibility — псевдоним
-// с тем же договором.
+// критиков, пункт 2 — Codex C-10). Прежний путь /toggle-visibility был
+// псевдонимом с тем же договором; снят 02.11.2026 (решено 11.10, панель ходит
+// на /visibility с PR #18, 12.10).
 
 describe('POST /api/v1/admin/reviews/:id/visibility (#15)', () => {
   const setVisibility = (reviewId, body, path = 'visibility') => request(app)
@@ -515,13 +516,19 @@ describe('POST /api/v1/admin/reviews/:id/visibility (#15)', () => {
     expect(rows).toEqual([{ action: 'review_hide' }]);
   });
 
-  test('тот же договор по прежнему пути /toggle-visibility', async () => {
+  test('прежний путь /toggle-visibility снят: 404, как любой неизвестный адрес, отзыв не меняется', async () => {
     const review = await createTestReview(reviewerUserId, testEstablishmentId, { is_visible: true });
 
-    await setVisibility(review.id, { is_visible: false }, 'toggle-visibility').expect(200);
-    await setVisibility(review.id, { is_visible: false }, 'toggle-visibility').expect(200);
+    const response = await setVisibility(review.id, { is_visible: false }, 'toggle-visibility');
 
-    expect(await visibilityInDb(review.id)).toBe(false);
+    expect(response.status).toBe(404);
+    expect(response.body.error.code).toBe('NOT_FOUND');
+    expect(await visibilityInDb(review.id)).toBe(true);
+    const { rows } = await query(
+      "SELECT action FROM audit_log WHERE entity_id = $1 AND action IN ('review_hide', 'review_show')",
+      [review.id],
+    );
+    expect(rows).toEqual([]);
   });
 
   test.each([

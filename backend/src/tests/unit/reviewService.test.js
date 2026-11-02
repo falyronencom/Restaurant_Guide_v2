@@ -436,6 +436,22 @@ describe('reviewService', () => {
       expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(mockReview.establishment_id);
     });
 
+    // Deleted between the read and the write (the read found it live): the
+    // write changes nothing and the answer is the delete path's 404 (П4).
+    test('a review deleted between the read and the write answers 404', async () => {
+      ReviewModel.findReviewById.mockReset();
+      ReviewModel.findReviewById.mockResolvedValue(mockReview);
+      ReviewModel.updateReview.mockResolvedValue(null);
+
+      await expect(updateReview(reviewId, userId, updates)).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'REVIEW_NOT_FOUND',
+        message: 'Отзыв не найден — возможно, его уже удалили',
+      });
+      expect(ReviewModel.updateEstablishmentAggregates).not.toHaveBeenCalled();
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
     test('should map constraint violation to app error', async () => {
       const dbError = new Error('constraint');
       dbError.code = '23514';
