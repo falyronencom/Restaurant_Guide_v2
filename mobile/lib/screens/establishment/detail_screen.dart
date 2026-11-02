@@ -275,7 +275,9 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   void _onWriteReviewTap() {
     final authProvider = context.read<AuthProvider>();
     if (!authProvider.isAuthenticated) {
-      _showLoginPrompt();
+      _showLoginPrompt(
+        message: 'Чтобы написать отзыв, войдите в учётную запись.',
+      );
       return;
     }
     Navigator.of(context)

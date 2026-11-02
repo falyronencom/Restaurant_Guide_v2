@@ -19,6 +19,12 @@ import 'package:restaurant_guide_mobile/screens/profile/notification_preferences
 import 'package:restaurant_guide_mobile/services/push_notification_service.dart';
 import 'package:restaurant_guide_mobile/providers/booking_provider.dart';
 
+/// Строка «Мои бронирования» на экране «Показать профиль». Скрыта, пока
+/// брони гостей не включены (решение Координатора В6, 17.10.2026; сверка
+/// 01.11.2026, П6). Экран броней и его код на месте: когда брони заработают,
+/// строку возвращает `true` здесь — других мест нет.
+const bool showUserBookingsEntry = false;
+
 /// Profile screen - main profile tab with settings
 /// Figma design: Profile/Log In (first frame)
 /// Updated Phase 5.2: Partner establishments section
@@ -718,10 +724,11 @@ class _ProfileDetailScreenState extends State<_ProfileDetailScreen> {
                           // и «Удалить учётку» (бриф В1, 18.10.2026)
                           _buildMyDataEntry(),
 
-                          const SizedBox(height: 12),
-
-                          // Bookings section
-                          _buildBookingsEntry(),
+                          // Bookings section — за флагом [showUserBookingsEntry]
+                          if (showUserBookingsEntry) ...[
+                            const SizedBox(height: 12),
+                            _buildBookingsEntry(),
+                          ],
 
                           const SizedBox(height: 24),
 
