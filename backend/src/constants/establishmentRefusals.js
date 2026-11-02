@@ -81,6 +81,19 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   editOwnershipDispute:
     `Карточка приостановлена до решения модератора: кому она принадлежит. До этого решения изменить её нельзя. Если заведение ваше, напишите в поддержку: ${SUPPORT_EMAIL}`,
 
+  // The legal details of the step «Ваши данные» (create and edit), checked
+  // before anything is written: a value longer than its column had been lost
+  // at create and failed the whole edit with a 500 (Crapper measurement,
+  // 01.11.2026). The field names are the step's own. Approved by the
+  // Coordinator, 01.11.2026.
+  legalNameTooLong:
+    'Полное название заведения длиннее 255 знаков. Сократите его на шаге «Ваши данные» — например, «Общество с ограниченной ответственностью» замените на «ООО».',
+  unpInvalid: 'УНП — это 9 цифр. Проверьте номер на шаге «Ваши данные».',
+  contactPersonTooLong:
+    'Номер контактного лица длиннее 100 знаков. Проверьте номер на шаге «Ваши данные».',
+  contactEmailInvalid:
+    'Адрес электронной почты указан неверно. Проверьте его на шаге «Ваши данные».',
+
   // The app's form does not let these happen: they come from a version
   // mismatch between the app and the server, or a stale screen. Mostly the
   // site's wording; approved by the Coordinator, 15.10.2026.

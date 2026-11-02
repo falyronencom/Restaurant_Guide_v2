@@ -1800,6 +1800,33 @@ describe('Establishments System - Slug Lifecycle', () => {
         expect(await slugInDb(id)).toBe(slug);
       });
 
+      // До 01.11.2026 повтор писал в журнал пустую запись «X → X» (замер
+      // Crapper, находка 7).
+      test('свой же адрес ещё раз — в журнале ничего, время правки карточки прежнее', async () => {
+        const { id, slug } = await createActive('Свой адрес без журнала');
+        const updatedAt = async () =>
+          (await query('SELECT updated_at FROM establishments WHERE id = $1', [id])).rows[0].updated_at;
+        const before = await updatedAt();
+
+        await patchSlug(id, { slug: `  ${slug} ` }).expect(200);
+
+        const journal = await query(
+          `SELECT COUNT(*)::int AS n FROM audit_log
+            WHERE entity_id = $1 AND action = 'admin_update_slug'`,
+          [id],
+        );
+        expect(journal.rows[0].n).toBe(0);
+        expect(await updatedAt()).toEqual(before);
+      });
+
+      // Партнёрские маршруты отвечают на такой номер 404 с 20.10.2026; здесь
+      // до 01.11.2026 был 500 SLUG_UPDATE_FAILED (замер Crapper, находка 4).
+      test('номер заведения не UUID — 404 ESTABLISHMENT_NOT_FOUND', async () => {
+        const response = await patchSlug('not-a-uuid', { slug: 'nichei-adres' }).expect(404);
+
+        expect(response.body.error.code).toBe('ESTABLISHMENT_NOT_FOUND');
+      });
+
       test('несуществующее заведение — 404 ESTABLISHMENT_NOT_FOUND', async () => {
         const response = await patchSlug('00000000-0000-0000-0000-000000000000', { slug: 'nichei-adres' })
           .expect(404);
@@ -2049,6 +2076,223 @@ describe('Establishments System - Юридические реквизиты па
       unp: '192345678',
       contact_person: '+375447778899',
       contact_email: 'office@newdvor.by',
+    });
+  });
+
+  // Реквизит, который запись не вместит или который не похож на УНП и почту,
+  // сервер отказывает до первой записи. До 01.11.2026 слишком длинный реквизит
+  // при создании пропадал молча (201, записи нет), а при правке давал 500
+  // после того, как фото уже были изменены (замер Crapper 01.11.2026, находки
+  // 1 и 2). Пределы — длины колонок partner_documents
+  // (migrations/production_schema.sql): 255, 50, 100, 255. Тексты утверждены
+  // Координатором 01.11.2026; телефон показывает их на красной плашке как есть.
+  describe('проверка реквизитов до записи', () => {
+    const LEGAL_NAME_TOO_LONG = 'Полное название заведения длиннее 255 знаков. Сократите его на шаге «Ваши данные» — например, «Общество с ограниченной ответственностью» замените на «ООО».';
+    const UNP_INVALID = 'УНП — это 9 цифр. Проверьте номер на шаге «Ваши данные».';
+    const CONTACT_PERSON_TOO_LONG = 'Номер контактного лица длиннее 100 знаков. Проверьте номер на шаге «Ваши данные».';
+    const CONTACT_EMAIL_INVALID = 'Адрес электронной почты указан неверно. Проверьте его на шаге «Ваши данные».';
+    // Уже утверждённый текст (15.10.2026) — на реквизит не строкой: так шлёт
+    // только чужой клиент API.
+    const CONSTRAINT_VIOLATION = 'Не удалось сохранить: часть данных заполнена неверно. Проверьте карточку и попробуйте ещё раз.';
+
+    // Почта ровно в 255 знаков: 244 «x» и «@vasilki.by» (11).
+    const email255 = `${'x'.repeat(244)}@vasilki.by`;
+
+    const refused = [
+      ['название юрлица в 256 знаков', { legal_name: 'Ж'.repeat(256) }, 'INVALID_LEGAL_NAME', LEGAL_NAME_TOO_LONG],
+      ['УНП из букв', { unp: 'abc' }, 'INVALID_UNP', UNP_INVALID],
+      ['УНП из 8 цифр', { unp: '19123456' }, 'INVALID_UNP', UNP_INVALID],
+      ['УНП из 10 цифр', { unp: '1912345678' }, 'INVALID_UNP', UNP_INVALID],
+      ['УНП в 51 знак', { unp: '1'.repeat(51) }, 'INVALID_UNP', UNP_INVALID],
+      ['номер контактного лица в 101 знак', { contact_person: '1'.repeat(101) }, 'INVALID_CONTACT_PERSON', CONTACT_PERSON_TOO_LONG],
+      ['почта без @', { contact_email: 'not-an-email' }, 'INVALID_CONTACT_EMAIL', CONTACT_EMAIL_INVALID],
+      ['почта в 256 знаков', { contact_email: `x${email255}` }, 'INVALID_CONTACT_EMAIL', CONTACT_EMAIL_INVALID],
+      ['УНП числом', { unp: 191234567 }, 'INVALID_UNP', CONSTRAINT_VIOLATION],
+    ];
+
+    const tempPhotos = (count, prefix) => Array.from(
+      { length: count },
+      (_, i) => `https://res.cloudinary.com/test/image/upload/c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/${partnerId}/${prefix}/p${i}?_a=BAMAMiRg0`,
+    );
+
+    /** Всё, что правка могла бы тронуть: карточка, её фото, её реквизиты. */
+    const cardState = async (id) => ({
+      card: (await query(
+        'SELECT name, description, phone, slug, primary_image_url, updated_at FROM establishments WHERE id = $1',
+        [id],
+      )).rows,
+      media: (await query(
+        'SELECT url, type, is_primary FROM establishment_media WHERE establishment_id = $1 ORDER BY url',
+        [id],
+      )).rows,
+      legal: await legalRows(id),
+    });
+
+    test.each(refused)('создание: %s — 422 с текстом, ни карточки, ни реквизитов', async (_label, bad, code, text) => {
+      const response = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(mobileBody({ ...legal, ...bad, interior_photos: tempPhotos(2, 'refused') }))
+        .expect(422);
+
+      expect({ code: response.body.error.code, message: response.body.message }).toEqual({ code, message: text });
+      const { rows } = await query(
+        `SELECT
+           (SELECT COUNT(*)::int FROM establishments WHERE partner_id = $1) AS cards,
+           (SELECT COUNT(*)::int FROM partner_documents WHERE partner_id = $1) AS records`,
+        [partnerId],
+      );
+      expect(rows[0]).toEqual({ cards: 0, records: 0 });
+    });
+
+    // Граница N / N+1: на пределе колонки — принято и записано целиком.
+    // Название — из знаков вне основной плоскости: в JS-строке каждый из них
+    // занимает две единицы, а база считает его одним знаком.
+    test('ровно на пределе колонок — 201, записано как прислано', async () => {
+      const sent = {
+        legal_name: '🍽'.repeat(255),
+        unp: '191234567',
+        contact_person: '7'.repeat(100),
+        contact_email: email255,
+      };
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(mobileBody(sent))
+        .expect(201);
+
+      expect(await legalRows(created.body.data.establishment.id)).toEqual([{
+        partner_id: partnerId,
+        company_name: sent.legal_name,
+        tax_id: '191234567',
+        contact_person: sent.contact_person,
+        contact_email: email255,
+      }]);
+    });
+
+    test.each(refused)('правка: %s — 422 с текстом, карточка, фото и реквизиты не тронуты', async (_label, bad, code, text) => {
+      const created = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(mobileBody({ ...legal, interior_photos: tempPhotos(2, 'before') }))
+        .expect(201);
+      const id = created.body.data.establishment.id;
+      const before = await cardState(id);
+      expect(before.media).toHaveLength(2);
+      expect(before.legal).toHaveLength(1);
+
+      // Тело целиком, как шлёт телефон: другие фото, другое описание — и
+      // неверный реквизит.
+      const response = await request(app)
+        .put(`/api/v1/partner/establishments/${id}`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .send(mobileBody({
+          ...legal,
+          ...bad,
+          description: 'Описание, которое не должно сохраниться',
+          interior_photos: tempPhotos(3, 'after'),
+        }))
+        .expect(422);
+
+      expect({ code: response.body.error.code, message: response.body.message }).toEqual({ code, message: text });
+      expect(await cardState(id)).toEqual(before);
+    });
+
+    // Старые реквизиты, которые формату не отвечают (записаны до проверки):
+    // правка, которая их не меняет, сохраняется, а смена на неверное —
+    // нет. Телефон шлёт реквизиты при каждом сохранении.
+    describe('старые реквизиты не по формату', () => {
+      const cardWithOldLegal = async () => {
+        const created = await request(app)
+          .post('/api/v1/partner/establishments')
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send(mobileBody())
+          .expect(201);
+        const id = created.body.data.establishment.id;
+        await query(
+          `INSERT INTO partner_documents
+             (partner_id, establishment_id, document_type, document_url, company_name, tax_id, contact_person, contact_email)
+           VALUES ($1, $2, 'registration_certificate', '', 'ИП Старые данные', 'abc', '+375291112244', 'not-an-email')`,
+          [partnerId, id],
+        );
+        return id;
+      };
+      const oldLegal = {
+        legal_name: 'ИП Старые данные',
+        unp: 'abc',
+        contact_person: '+375291112244',
+        contact_email: 'not-an-email',
+      };
+
+      test('правка описания с теми же реквизитами — 200, описание сохранено', async () => {
+        const id = await cardWithOldLegal();
+
+        await request(app)
+          .put(`/api/v1/partner/establishments/${id}`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send(mobileBody({ ...oldLegal, description: 'Новое описание' }))
+          .expect(200);
+
+        const { rows } = await query('SELECT description FROM establishments WHERE id = $1', [id]);
+        expect(rows[0].description).toBe('Новое описание');
+        expect(await legalRows(id)).toEqual([{
+          partner_id: partnerId,
+          company_name: 'ИП Старые данные',
+          tax_id: 'abc',
+          contact_person: '+375291112244',
+          contact_email: 'not-an-email',
+        }]);
+      });
+
+      test.each([
+        ['УНП сменили на другой неверный', { unp: 'abd' }, 'INVALID_UNP', UNP_INVALID],
+        ['почту сменили на другую неверную', { contact_email: 'still-not-an-email' }, 'INVALID_CONTACT_EMAIL', CONTACT_EMAIL_INVALID],
+      ])('%s — 422, ничего не сохранено', async (_label, changed, code, text) => {
+        const id = await cardWithOldLegal();
+        const before = await cardState(id);
+
+        const response = await request(app)
+          .put(`/api/v1/partner/establishments/${id}`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send(mobileBody({ ...oldLegal, ...changed, description: 'Новое описание' }))
+          .expect(422);
+
+        expect({ code: response.body.error.code, message: response.body.message }).toEqual({ code, message: text });
+        expect(await cardState(id)).toEqual(before);
+      });
+
+      // Приложение обрезает пробелы по краям всех полей шага, когда партнёр
+      // его открывает (legal_info_step.dart), — сохранённое с пробелами
+      // возвращается обрезанным, хотя партнёр его не трогал.
+      test('старые УНП и почта с пробелами по краям приходят обрезанными — 200', async () => {
+        const id = await cardWithOldLegal();
+        await query(
+          `UPDATE partner_documents SET tax_id = 'abc ', contact_email = ' not-an-email'
+            WHERE establishment_id = $1`,
+          [id],
+        );
+
+        await request(app)
+          .put(`/api/v1/partner/establishments/${id}`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send(mobileBody({ ...oldLegal, description: 'Новое описание' }))
+          .expect(200);
+
+        const { rows } = await query('SELECT description FROM establishments WHERE id = $1', [id]);
+        expect(rows[0].description).toBe('Новое описание');
+      });
+
+      test('УНП исправили на 9 цифр — 200, записан новый', async () => {
+        const id = await cardWithOldLegal();
+
+        await request(app)
+          .put(`/api/v1/partner/establishments/${id}`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .send(mobileBody({ ...oldLegal, unp: '191234567' }))
+          .expect(200);
+
+        expect((await legalRows(id))[0].tax_id).toBe('191234567');
+      });
     });
   });
 });
