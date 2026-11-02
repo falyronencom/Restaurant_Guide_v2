@@ -19,6 +19,7 @@ import { clearAllData, getClient, query } from '../utils/database.js';
 import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 import { createTestUser, createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
+import { createPartnerWithEstablishment } from '../utils/adminTestHelpers.js';
 import {
   testEstablishments,
   invalidEstablishments,
@@ -193,6 +194,80 @@ describe('Establishments System - Create Establishment', () => {
 
       // The chosen contract: no pair in the answer, the app keeps its own.
       expect(created.body.data.tokens).toBeUndefined();
+    });
+
+    // The role change fails — here the database refuses it, by a trigger on
+    // this one account. Until 2026-11-02 the failure was only logged: the
+    // answer was 201, the card stayed, the role stayed «user», and the
+    // person's own list answered 403 (minor defects П3). Now the request is
+    // refused and nothing is written.
+    test('a role change that fails refuses the card and leaves none', async () => {
+      const { user, accessToken } = await createUserAndGetTokens({
+        email: 'role-refused@test.com',
+        password: 'RoleRefused123!@#',
+        name: 'Роль Не Сменилась',
+        role: 'user',
+      });
+      await query(`
+        CREATE OR REPLACE FUNCTION test_refuse_role_change() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'role change refused by the test';
+        END
+        $$ LANGUAGE plpgsql
+      `);
+      await query(`
+        CREATE TRIGGER test_refuse_role_change BEFORE UPDATE OF role ON users
+        FOR EACH ROW WHEN (OLD.email = 'role-refused@test.com')
+        EXECUTE FUNCTION test_refuse_role_change()
+      `);
+
+      let response;
+      try {
+        response = await request(app)
+          .post('/api/v1/partner/establishments')
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({ ...testEstablishments[0], name: 'Карточка без роли' });
+      } finally {
+        await query('DROP TRIGGER IF EXISTS test_refuse_role_change ON users');
+        await query('DROP FUNCTION IF EXISTS test_refuse_role_change()');
+      }
+
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe('ESTABLISHMENT_CREATE_FAILED');
+      expect(response.body.message).toBe('Не удалось создать заведение. Попробуйте ещё раз позже.');
+
+      const { rows: [account] } = await query('SELECT role FROM users WHERE id = $1', [user.id]);
+      expect(account.role).toBe('user');
+      const { rows: cards } = await query(
+        'SELECT id FROM establishments WHERE partner_id = $1',
+        [user.id],
+      );
+      expect(cards).toEqual([]);
+    });
+
+    // An account already left that way before 2026-11-02 — a card of its
+    // own, the role «user». Sending the same card again gives the role back:
+    // the answer is still 409 «…оно в списке ваших заведений», and the list
+    // now opens.
+    test('an account left with a card and the role «user» gets its role back on sending the card again', async () => {
+      const { partner, establishment } = await createPartnerWithEstablishment('draft');
+      await query("UPDATE users SET role = 'user' WHERE id = $1", [partner.user.id]);
+
+      const again = await request(app)
+        .post('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partner.accessToken}`)
+        .send({ ...testEstablishments[0], name: establishment.name })
+        .expect(409);
+      expect(again.body.error.code).toBe('DUPLICATE_ESTABLISHMENT');
+
+      const { rows: [account] } = await query('SELECT role FROM users WHERE id = $1', [partner.user.id]);
+      expect(account.role).toBe('partner');
+
+      const own = await request(app)
+        .get('/api/v1/partner/establishments')
+        .set('Authorization', `Bearer ${partner.accessToken}`)
+        .expect(200);
+      expect(own.body.data.establishments.map((e) => e.id)).toEqual([establishment.id]);
     });
   });
 

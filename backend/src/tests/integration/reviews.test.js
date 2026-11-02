@@ -661,6 +661,66 @@ describe('Reviews System - Update Review', () => {
     }
     expect(JSON.stringify(response.body)).not.toContain(partnerId);
   });
+
+  // Deleted by its author elsewhere (another tab, another phone) — or by a
+  // moderator, which sets the same mark. Editing it answers what deleting it
+  // again answers. Until 2026-11-02 it was 500 «Сбой на сервере» (П4).
+  test('editing an own review that is already deleted answers 404, as deleting it again does', async () => {
+    await request(app)
+      .delete(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(200);
+
+    const edit = await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ rating: 2, content: `${longContent} after deletion` });
+
+    expect(edit.status).toBe(404);
+    expect(edit.body.error.code).toBe('REVIEW_NOT_FOUND');
+    expect(edit.body.message).toBe('Отзыв не найден — возможно, его уже удалили');
+
+    const deleteAgain = await request(app)
+      .delete(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(404);
+    expect(edit.body.error.code).toBe(deleteAgain.body.error.code);
+    expect(edit.body.message).toBe(deleteAgain.body.message);
+
+    const { rows: [stored] } = await query(
+      'SELECT rating, content, is_edited FROM reviews WHERE id = $1',
+      [reviewId]
+    );
+    expect(stored).toEqual({ rating: 5, content: `${longContent} original`, is_edited: false });
+  });
+
+  test('editing another user\'s deleted review is still refused as not own (403)', async () => {
+    await query('UPDATE reviews SET is_deleted = true WHERE id = $1', [reviewId]);
+
+    const response = await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${user2Token}`)
+      .send({ rating: 1, content: `${longContent} other` })
+      .expect(403);
+
+    expect(response.body.error.code).toBe('UNAUTHORIZED_REVIEW_MODIFICATION');
+  });
+
+  test('a review hidden by a moderator (not deleted) is still edited by its author', async () => {
+    await query('UPDATE reviews SET is_visible = false WHERE id = $1', [reviewId]);
+
+    await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ rating: 3, content: `${longContent} while hidden` })
+      .expect(200);
+
+    const { rows: [stored] } = await query(
+      'SELECT rating, is_visible, is_deleted FROM reviews WHERE id = $1',
+      [reviewId]
+    );
+    expect(stored).toEqual({ rating: 3, is_visible: false, is_deleted: false });
+  });
 });
 
 describe('Reviews System - Delete Review', () => {

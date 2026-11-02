@@ -458,10 +458,10 @@ router.get(
  * mean the same thing when repeated (critics' pack 1, point 2 — Codex C-10).
  * Writes audit_log entry when the state changed.
  *
- * The former path /toggle-visibility is kept as an alias with the SAME
- * contract — a panel build from before this change gets a loud 422 rather
- * than a silent flip. Remove the alias once every deployed panel sends
- * is_visible.
+ * The former path /toggle-visibility was kept as an alias with the same
+ * contract until every deployed panel sent is_visible; removed 2026-11-02
+ * (decided 11.10; the panel has sent /visibility since PR #18, 12.10). It
+ * now answers as any unknown path: 404.
  */
 // Field texts in Russian, and the summary is the first of them
 // (validatePersonText): the panel shows the server's text as it is
@@ -479,15 +479,6 @@ const validateVisibility = [
 
 router.post(
   '/reviews/:id/visibility',
-  authenticate,
-  writeAccess,
-  validateVisibility,
-  validatePersonText,
-  adminReviewController.setVisibility,
-);
-
-router.post(
-  '/reviews/:id/toggle-visibility',
   authenticate,
   writeAccess,
   validateVisibility,

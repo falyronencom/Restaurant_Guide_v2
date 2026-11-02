@@ -101,15 +101,16 @@ router.get(
  *
  * Request body: Complete establishment data (see validation for schema)
  *
- * Flow: Authentication → Validation → Controller → Service → Model → Role Upgrade
+ * Flow: Authentication → Validation → Controller → Service → Role Upgrade → Model
  *
  * Returns: Created establishment with 201 status
  *
  * Protected: Yes (user or partner role - user auto-upgrades to partner on first creation)
  * Rate Limited: Yes (100 requests/minute per user)
  *
- * Note: Regular users creating their first establishment will automatically
- * be upgraded to 'partner' role upon successful creation.
+ * Note: Regular users creating their first establishment are upgraded to the
+ * 'partner' role before the card is written; if the role cannot be changed,
+ * the request is refused and no card is created (establishmentService).
  */
 router.post(
   '/',

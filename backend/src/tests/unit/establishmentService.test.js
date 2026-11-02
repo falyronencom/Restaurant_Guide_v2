@@ -51,8 +51,13 @@ jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   getRatingDistribution: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../services/authService.js', () => ({
+  upgradeUserToPartner: jest.fn().mockResolvedValue({ role: 'partner' }),
+}));
+
 // Import after mocking — import all mocked modules to get references
 const EstablishmentModel = await import('../../models/establishmentModel.js');
+const { upgradeUserToPartner } = await import('../../services/authService.js');
 const logger = (await import('../../utils/logger.js')).default;
 const MediaModel = await import('../../models/mediaModel.js');
 const PartnerDocumentsModel = await import('../../models/partnerDocumentsModel.js');
@@ -130,6 +135,22 @@ describe('establishmentService', () => {
         'Establishment created successfully',
         expect.objectContaining({ partnerId })
       );
+    });
+
+    // The role change comes before the card, and its failure is the request's
+    // failure: no card is written for an account that stays «user» (П3).
+    test('a failed role change refuses the request before any card is written', async () => {
+      EstablishmentModel.checkDuplicateName.mockResolvedValue(false);
+      EstablishmentModel.createEstablishment.mockResolvedValue(mockEstablishment);
+      upgradeUserToPartner.mockRejectedValueOnce(new Error('connection terminated'));
+
+      await expect(createEstablishment(partnerId, validEstablishmentData)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'ESTABLISHMENT_CREATE_FAILED',
+        message: ESTABLISHMENT_REFUSALS.createFailed,
+      });
+      expect(upgradeUserToPartner).toHaveBeenCalledWith(partnerId);
+      expect(EstablishmentModel.createEstablishment).not.toHaveBeenCalled();
     });
 
     // The owner is the authenticated partner even when the data names another:
