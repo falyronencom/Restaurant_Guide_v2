@@ -98,3 +98,13 @@ it('the title may break inside a long word', () => {
     screen.getByRole('heading', { name: 'Кафе у Рождественской' }),
   ).toHaveClass('wrap-anywhere');
 });
+
+it('the cuisine reads like the catalog card — «· европейская», no curly braces', () => {
+  // The card wrapped the name in «{…}» itself (01.11 сверка: «{Европейская}»
+  // on every home card). The catalog card shows «· европейская».
+  const { container } = renderCard(listing({ cuisines: ['Европейская'] }));
+
+  const text = container.textContent ?? '';
+  expect(text).not.toMatch(/[{}]/);
+  expect(screen.getByText('· европейская')).toBeInTheDocument();
+});
