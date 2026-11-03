@@ -60,6 +60,22 @@ describe('images.remotePatterns — Cloudinary только нашего акк�
     expect(nextConfig.images?.domains ?? []).toEqual([]);
   });
 
+  // Нитка «Расходы посторонних», п. 8 (03.11.2026): заглушки ранней базы
+  // больше не нужны, а из нашего облака — только загруженные картинки.
+  it('заглушки fastly.picsum.photos — нет', () => {
+    expect(allowed('https://fastly.picsum.photos/id/1/600/400.jpg')).toBe(false);
+  });
+
+  it('другие типы выдачи нашего облака (видео, raw, fetch) — нет', () => {
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/video/upload/v1/clip.mp4`)).toBe(false);
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/raw/upload/v1/file.bin`)).toBe(false);
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/fetch/https://example.com/a.jpg`)).toBe(false);
+  });
+
+  it('оптимизатор качает не больше 5 МБ одного файла (PDF-меню лежат рядом с фото)', () => {
+    expect(nextConfig.images?.maximumResponseBody).toBe(5_000_000);
+  });
+
   it('наше облако — только по https', () => {
     expect(allowed(`http://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
   });

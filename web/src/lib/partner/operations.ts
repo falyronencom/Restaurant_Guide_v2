@@ -17,6 +17,7 @@ import {
 } from '@/lib/api/types';
 import { getSessionUser, refreshSession } from '@/lib/auth/session';
 import { personText } from '@/lib/api/person-text';
+import { uploadLimitOf } from '@/lib/partner/errors';
 import type { FieldRefusal } from '@/lib/partner/errors';
 import type {
   CreateResult,
@@ -74,11 +75,11 @@ function failureFrom(err: unknown): Failure {
     if (typeof role === 'string') failure.role = role;
   }
   if (failure.code === 'RATE_LIMIT_EXCEEDED' && err.details && typeof err.details === 'object') {
-    const d = err.details as { retry_after?: unknown; files_limit?: unknown };
+    const d = err.details as { retry_after?: unknown; files_limit?: unknown; unconfirmed?: unknown };
     if (typeof d.retry_after === 'number' && d.retry_after > 0) {
       failure.retryAfter = Math.ceil(d.retry_after);
     }
-    failure.limit = d.files_limit !== undefined ? 'daily_uploads' : 'requests';
+    failure.limit = uploadLimitOf(d);
   }
   return failure;
 }
