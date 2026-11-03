@@ -190,6 +190,21 @@ describe('refusal envelope — what the cabinet words a refusal from', () => {
     });
   });
 
+  it('the shared ceiling of unconfirmed accounts: its own kind (details.unconfirmed)', async () => {
+    updateMock.mockRejectedValue(
+      new ApiError(429, 'Загрузки для учётных записей без подтверждённой почты на сегодня закончились.', 'RATE_LIMIT_EXCEEDED', {
+        files_limit: 100,
+        retry_after: 3600,
+        reset_at: '2026-10-18T21:00:00.000Z',
+        unconfirmed: true,
+      }),
+    );
+    await expect(updateEstablishmentAction('e1', {})).resolves.toMatchObject({
+      ok: false,
+      limit: 'unconfirmed_uploads',
+    });
+  });
+
   it('the role gate\'s 403 carries the role; the ownership 403 does not', async () => {
     updateMock.mockRejectedValueOnce(
       new ApiError(403, 'Недостаточно прав для этого действия.', 'FORBIDDEN', {

@@ -1,5 +1,5 @@
 import type { TempMediaResponse } from '@/lib/api/types';
-import { refusalMessage } from '@/lib/partner/errors';
+import { refusalMessage, uploadLimitOf } from '@/lib/partner/errors';
 
 /** When a refused upload may be tried again, as the backend names it. */
 type RetryTerm = { retryAfter?: number; resetAt?: string };
@@ -34,7 +34,7 @@ function retryTermOf(
 type UploadErrorBody = {
   message?: string;
   code?: string;
-  details?: { retry_after?: unknown; reset_at?: unknown; files_limit?: unknown };
+  details?: { retry_after?: unknown; reset_at?: unknown; files_limit?: unknown; unconfirmed?: unknown };
 };
 
 /**
@@ -59,9 +59,7 @@ function uploadFailure(
       retryAfter: term.retryAfter,
       limit:
         code === 'RATE_LIMIT_EXCEEDED'
-          ? error?.details?.files_limit !== undefined
-            ? 'daily_uploads'
-            : 'requests'
+          ? uploadLimitOf(error?.details)
           : undefined,
     }),
     ...term,
