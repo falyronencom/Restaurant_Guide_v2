@@ -185,6 +185,46 @@ describe('предел 10 МБ — русский отказ 413 PAYLOAD_TOO_LAR
   });
 });
 
+describe('умный поиск — свой предел тела 32 КБ (нитка «Расходы посторонних», п. 7)', () => {
+  // До 03.11.2026 тело умного поиска разбиралось до общих 10 МБ, и один такой
+  // запрос держал сервер секунды. Разобранное тело доходит до стража NUL —
+  // он отвечает раньше маршрута, так «разобрано» видно без базы и модели.
+  const SMART = '/api/v1/search/smart';
+  const SMART_LIMIT = 32 * 1024;
+  const SMART_TOO_LARGE = { ...TOO_LARGE, message: 'Запрос слишком большой — не больше 32 КБ.' };
+
+  test('JSON ровно 32 КБ разобран; на байт больше — 413 с пределом маршрута', async () => {
+    expect(await send({ body: jsonOfSize(SMART_LIMIT), path: SMART })).toEqual(PARSED);
+    expect(await send({ body: jsonOfSize(SMART_LIMIT + 1), path: SMART })).toEqual(SMART_TOO_LARGE);
+  });
+
+  test('форма — тот же предел', async () => {
+    expect(await send({ body: formOfSize(SMART_LIMIT), type: FORM_TYPE, path: SMART })).toEqual(PARSED);
+    expect(await send({ body: formOfSize(SMART_LIMIT + 1), type: FORM_TYPE, path: SMART }))
+      .toEqual(SMART_TOO_LARGE);
+  });
+
+  test('без Content-Length (кусками) — тот же отказ', async () => {
+    expect(await send({ body: jsonOfSize(SMART_LIMIT + 1), chunked: true, path: SMART }))
+      .toEqual(SMART_TOO_LARGE);
+  });
+
+  test.each([
+    '/api/v1/search//smart',
+    '/api//v1/search/smart',
+    '/API/V1/SEARCH/SMART/',
+    // Остальной поиск — GET без тела: тот же предел (ревью по линзе, 03.11).
+    '/api/v1/search/establishments',
+    '/api/v1/search/map',
+  ])('то же написание пути иначе и остальной поиск (%s) — тот же предел', async (path) => {
+    expect(await send({ body: jsonOfSize(SMART_LIMIT + 1), path })).toEqual(SMART_TOO_LARGE);
+  });
+
+  test('другие маршруты — прежние 10 МБ', async () => {
+    expect(await send({ body: jsonOfSize(SMART_LIMIT + 1) })).toEqual(PARSED);
+  });
+});
+
 describe('сжатое тело не распаковывается — 415 UNSUPPORTED_ENCODING', () => {
   test.each([
     ['gzip', zlib.gzipSync],

@@ -7,6 +7,7 @@ import logger from './utils/logger.js';
 import { testConnection, closePool } from './config/database.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
+import { SEARCH_BODY_LIMIT, isSearchPath } from './routes/v1/searchRoutes.js';
 import { rateLimiter, globalRateLimitTiers } from './middleware/rateLimiter.js';
 import { siteVisitor, MIN_SECRET_LENGTH } from './middleware/siteVisitor.js';
 import { AppError, BODY_LIMIT_MB, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -158,7 +159,20 @@ app.use(rateLimiter);
  * Their refusals of a body too large, compressed, in a foreign charset or
  * unreadable as a form answer in Russian with codes of their own
  * (errorHandler.js BODY_PARSER_REFUSALS); invalid JSON keeps INVALID_JSON.
+ *
+ * A search request's body is parsed first, with the search's own limit
+ * (routes/v1/searchRoutes.js SEARCH_BODY_LIMIT), on every spelling of its
+ * path (isSearchPath); a parsed body is skipped by the general parsers below.
  */
+const searchJson = express.json({ limit: SEARCH_BODY_LIMIT, inflate: false });
+const searchForm = express.urlencoded({ extended: true, limit: SEARCH_BODY_LIMIT, inflate: false });
+app.use((req, res, next) => {
+  if (!isSearchPath(req.path)) {
+    next();
+    return;
+  }
+  searchJson(req, res, (error) => (error ? next(error) : searchForm(req, res, next)));
+});
 app.use(express.json({ limit: `${BODY_LIMIT_MB}mb`, inflate: false }));
 app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb`, inflate: false }));
 

@@ -14,6 +14,13 @@ import { parseSearchFilterParams, presentFilters } from '../utils/searchFilterPa
 const MAX_QUERY_LENGTH = 150;
 
 /**
+ * Longest city name taken. A card's city is one of eight single words of at
+ * most eight letters (establishmentService VALID_CITIES); until 03.11.2026
+ * a city of any length went on to SQL.
+ */
+const MAX_CITY_LENGTH = 100;
+
+/**
  * Sanitize user query: trim, collapse whitespace, remove control characters.
  * @param {string} raw
  * @returns {string}
@@ -102,6 +109,16 @@ export async function smartSearch(req, res, next) {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'longitude must be between -180 and 180',
+        },
+      });
+    }
+
+    if (typeof city === 'string' && city.length > MAX_CITY_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `city must be at most ${MAX_CITY_LENGTH} characters`,
         },
       });
     }
