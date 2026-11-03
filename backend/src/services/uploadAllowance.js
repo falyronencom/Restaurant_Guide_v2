@@ -202,7 +202,11 @@ export const reserveDailyUpload = async (userId, bytes) => {
 export class DailyUploadLimitError extends AppError {
   /**
    * @param {string} message - The sentence the uploader's clients read
-   * @param {{ limits: { files: number, bytes: number }, retryAfter: number, resetAt: string }} refusal
+   * @param {{ limits: { files: number, bytes: number }, retryAfter: number, resetAt: string,
+   *   unconfirmed?: true }} refusal - `unconfirmed`: the shared ceiling of the
+   *   accounts without a confirmed e-mail (services/unconfirmedAllowance.js) —
+   *   its details say so, as clients that word the refusal themselves need
+   *   to tell it from the account's own allowance
    */
   constructor(message, refusal) {
     super(message, 429, 'RATE_LIMIT_EXCEEDED', {
@@ -210,6 +214,7 @@ export class DailyUploadLimitError extends AppError {
       bytes_limit: refusal.limits.bytes,
       retry_after: refusal.retryAfter,
       reset_at: refusal.resetAt,
+      ...(refusal.unconfirmed ? { unconfirmed: true } : {}),
     });
     this.retryAfter = refusal.retryAfter;
   }
@@ -240,7 +245,7 @@ export const sendWithinDailyAllowance = async ({ userId, bytes, message }, send)
   const shared = await reserveSharedUpload(userId, bytes);
   if (!shared.granted) {
     await allowance.giveBack();
-    throw new DailyUploadLimitError(UPLOAD_REFUSALS.unconfirmedDailyLimit, shared);
+    throw new DailyUploadLimitError(UPLOAD_REFUSALS.unconfirmedDailyLimit, { ...shared, unconfirmed: true });
   }
 
   try {

@@ -19,9 +19,10 @@
  *
  * How: one counter in Redis per kind and Minsk day, reserved first and
  * checked after (INCR is atomic, as in services/uploadAllowance.js). Over the
- * allowance the reservation is given back at once and the letter is not sent;
- * the first refusal of the day is logged as an error — the operator sees the
- * day's allowance spent — the next ones as warnings. A letter the provider
+ * allowance the letter is not sent and the reservation stays — the day is
+ * spent anyway, and the count past the allowance tells the first refusal of
+ * the day, logged as an error (the operator sees the day's allowance spent),
+ * from the next ones, logged as warnings. A letter the provider
  * refused gives its reservation back; one whose outcome is unknown (no answer
  * in time) keeps it. The counter carries the date in its name and expires at
  * Minsk midnight (utils/minskDay.js).
@@ -81,7 +82,7 @@ export const dailyMailKey = (kind, now) => `mail:daily:${kind}:${minskDate(now)}
  * Reserve one letter of a kind from today's allowance.
  *
  * Granted: the letter may go; `giveBack` returns the reservation (once is
- * enough, more is a no-op). Refused: the reservation is already given back.
+ * enough, more is a no-op). Refused: nothing to give back.
  *
  * @param {'code'|'reset'} kind
  * @param {{ userId?: string }} [context] - Named in the refusal's log line
@@ -102,7 +103,6 @@ export const reserveDailyMail = async (kind, { userId } = {}) => {
 
   const limit = dailyMailLimit(kind);
   if (count > limit) {
-    await giveBack();
     const level = count === limit + 1 ? 'error' : 'warn';
     logger[level]('Daily mail allowance spent: letter not sent', {
       kind,

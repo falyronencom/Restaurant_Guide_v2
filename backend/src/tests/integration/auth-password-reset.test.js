@@ -143,7 +143,7 @@ const getTokenRowsForUser = async (userId) => {
 /** Public endpoints key rate limits by IP — constant in tests, so clear
  *  between tests (and runs within the same hour window). */
 const clearRateLimitKeys = async () => {
-  const prefixes = ['forgot-password', 'reset-password', 'login', 'register'];
+  const prefixes = ['forgot-password', 'forgot-password-day', 'reset-password', 'login', 'register', 'register-day'];
   for (const prefix of prefixes) {
     const keys = await redisClient.keys(`ratelimit:${prefix}:*`);
     if (keys.length > 0) {

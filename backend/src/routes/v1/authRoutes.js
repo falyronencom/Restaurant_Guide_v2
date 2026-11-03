@@ -37,12 +37,20 @@ const router = express.Router();
  * Accounts one address may register in a day (thread «Расходы посторонних»,
  * point 6, 03.11.2026). Every account holds its own budgets — 100 requests a
  * minute on the global limiter and its own daily allowances — so until then
- * 20 registrations a minute from one address multiplied them without end. 30
+ * 20 registrations a minute from one address multiplied them without end. 20
  * a day leaves room for a family, an office or a café behind one address; the
- * site's visitors count by the address the site vouches for. Counted per UTC
- * day (the limiter's buckets start at the epoch).
+ * site's visitors count by the address the site vouches for. Every
+ * registration by e-mail sends a code: with the resends below, one address
+ * spends at most 30 of the day's 50 codes (services/mailAllowance.js). Counted
+ * per UTC day (the limiter's buckets start at the epoch).
  */
-export const REGISTRATIONS_PER_DAY = 30;
+export const REGISTRATIONS_PER_DAY = 20;
+
+/** Resends of the confirmation code one address may ask in a day, whatever the account. */
+export const CODE_RESENDS_PER_ADDRESS_DAY = 10;
+
+/** Password-reset requests one address may make in a day (as above). */
+export const RESET_REQUESTS_PER_ADDRESS_DAY = 10;
 
 /**
  * POST /api/v1/auth/register
@@ -258,7 +266,9 @@ router.post(
  *   2. Rate limiter: 10 per hour per account — it stands after authenticate
  *      (defense-in-depth; service layer also enforces 5/hour per user via DB
  *      count, and the project's daily allowance of codes holds the mail —
- *      services/mailAllowance.js)
+ *      services/mailAllowance.js); and CODE_RESENDS_PER_ADDRESS_DAY a day per
+ *      address, whatever the account, so that one address does not spend the
+ *      day's codes of everyone
  *   3. Controller: orchestrate code generation + email send
  */
 router.post(
@@ -268,6 +278,12 @@ router.post(
     limit: 10,
     windowSeconds: 3600,
     keyPrefix: 'verify-send',
+  }),
+  createRateLimiter({
+    limit: CODE_RESENDS_PER_ADDRESS_DAY,
+    windowSeconds: 86400,
+    keyPrefix: 'verify-send-address',
+    byAddress: true,
   }),
   authController.sendVerificationCode,
 );
@@ -306,9 +322,10 @@ router.post(
  * (mobile/lib/services/auth_service.dart requestPasswordReset).
  *
  * Middleware chain:
- *   1. Rate limiter: 10 per hour per IP (defense-in-depth; service layer
- *      also throttles 5/hour per target user via DB count, so rotating IPs
- *      cannot bomb one inbox)
+ *   1. Rate limiter: 10 per hour per IP and RESET_REQUESTS_PER_ADDRESS_DAY a
+ *      day (defense-in-depth; service layer also throttles 5/hour per target
+ *      user via DB count, so rotating IPs cannot bomb one inbox; the project's
+ *      daily allowance of reset letters — services/mailAllowance.js)
  *   2. Validation: email format only — existence is deliberately unchecked
  *   3. Controller: issue token + send email, uniform 200
  */
@@ -318,6 +335,11 @@ router.post(
     limit: 10,
     windowSeconds: 3600,
     keyPrefix: 'forgot-password',
+  }),
+  createRateLimiter({
+    limit: RESET_REQUESTS_PER_ADDRESS_DAY,
+    windowSeconds: 86400,
+    keyPrefix: 'forgot-password-day',
   }),
   validateForgotPassword,
   authController.forgotPassword,

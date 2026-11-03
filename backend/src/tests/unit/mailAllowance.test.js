@@ -68,18 +68,18 @@ describe('резерв', () => {
     ]);
   });
 
-  test('50-й код — разрешено; 51-й — отказ, резерв возвращён, ошибка в журнал (первый отказ дня)', async () => {
+  test('50-й код — разрешено; 51-й — отказ, резерв остаётся (счёт за пределом), ошибка в журнал (первый отказ дня)', async () => {
     incrementWithExpiry.mockResolvedValueOnce(50).mockResolvedValueOnce(51);
 
     expect((await reserveDailyMail('code')).granted).toBe(true);
     expect(await reserveDailyMail('code', { userId: 'u-1' })).toEqual({ granted: false, limit: 50 });
-    expect(decrement.mock.calls).toEqual([['mail:daily:code:2026-11-03']]);
+    expect(decrement).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith('Daily mail allowance spent: letter not sent', {
       kind: 'code', limit: 50, userId: 'u-1', reason: 'DAILY_LIMIT',
     });
   });
 
-  test('следующие отказы дня — предупреждения, не ошибки', async () => {
+  test('следующий отказ дня (счёт 52) — предупреждение, не ошибка', async () => {
     incrementWithExpiry.mockResolvedValueOnce(52);
 
     await reserveDailyMail('code');

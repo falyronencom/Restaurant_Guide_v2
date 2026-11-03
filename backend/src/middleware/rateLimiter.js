@@ -174,12 +174,16 @@ export const SITE_IDENTIFIER = 'site';
  * password reset: there a genuine token of any throwaway account would open
  * a fresh budget of attempts on top of the address's one.
  *
+ * `byAddress` — the address (or the site's visitor) even when the request is
+ * signed in: for a limit that must hold across the accounts of one address,
+ * such as the day's resends of the confirmation code (routes/v1/authRoutes.js).
+ *
  * @param {Object} req - Express request
- * @param {{ byToken?: boolean }} [options]
+ * @param {{ byToken?: boolean, byAddress?: boolean }} [options]
  * @returns {{ tier: 'user'|'ip'|'site', identifier: string, viaSite?: true }}
  */
-export const requesterOf = (req, { byToken = false } = {}) => {
-  const userId = req.user?.userId;
+export const requesterOf = (req, { byToken = false, byAddress = false } = {}) => {
+  const userId = byAddress ? undefined : req.user?.userId;
   if (typeof userId === 'string' && userId !== '') {
     return { tier: 'user', identifier: userId };
   }
@@ -335,9 +339,8 @@ export const createGlobalRateLimiter = (tiers) => async (req, res, next) => {
     // Request is within limits - proceed
     next();
   } catch (error) {
-    // CRITICAL: If rate limiting fails (Redis down), we fail open and allow the request.
-    // This prevents Redis outages from DOSing our own API. However, we log this as
-    // an error because it means we're temporarily vulnerable to abuse.
+    // Redis unavailable: the request is allowed, as every limit here does
+    // (config/redis.js), and the failure is logged as an error.
     logger.error('Rate limiting check failed - allowing request', {
       error: error.message,
       path: req.path,
@@ -388,14 +391,15 @@ export const rateLimiter = createGlobalRateLimiter(globalRateLimitTiers.tiers);
  * @param {number} options.windowSeconds - Time window in seconds
  * @param {string} options.keyPrefix - Redis key prefix for this limiter
  * @param {boolean} [options.byToken] - Count a genuine token's account (requesterOf)
+ * @param {boolean} [options.byAddress] - Count the address even when signed in (requesterOf)
  * @returns {Function} Express middleware function
  */
 export const createRateLimiter = ({
-  limit, windowSeconds, keyPrefix = 'custom', byToken = false,
+  limit, windowSeconds, keyPrefix = 'custom', byToken = false, byAddress = false,
 }) => {
   return async (req, res, next) => {
     try {
-      const requester = requesterOf(req, { byToken });
+      const requester = requesterOf(req, { byToken, byAddress });
       const { identifier } = requester;
       // The counter of the current bucket expires when the bucket ends, as the
       // global limiter's does: its time to live is what retry_after and
@@ -460,7 +464,7 @@ export const createRateLimiter = ({
  * request — for a handler that did nothing for the caller and refused it as
  * a server failure, so that the failure does not spend the caller's day: the
  * partner's restart of menu recognition whose every file failed to queue
- * (controllers/partnerMenuItemController.js; finding Н40 of 25.10.2026).
+ * (controllers/partnerMenuItemController.js).
  * Once per request; Redis unavailable — nothing is given back
  * (config/redis.js decrement). Accepted: an increment that fell back
  * (Redis not ready, or past its deadline — incrementWithExpiry answers «first

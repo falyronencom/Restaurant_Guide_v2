@@ -114,7 +114,7 @@ const getLatestCodeForUser = async (userId) => {
 };
 
 const clearRateLimitKeys = async () => {
-  for (const prefix of ['verify-send', 'verify-code', 'register', 'register-day']) {
+  for (const prefix of ['verify-send', 'verify-send-address', 'verify-code', 'register', 'register-day']) {
     const keys = await redisClient.keys(`ratelimit:${prefix}:*`);
     if (keys.length > 0) {
       await redisClient.del(keys);

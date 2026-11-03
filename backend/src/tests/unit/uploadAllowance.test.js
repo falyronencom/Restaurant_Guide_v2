@@ -261,27 +261,38 @@ describe('sendWithinDailyAllowance — учётка без подтверждё�
   const upload = { userId: USER, bytes: 2048, message: TEXT };
   const SHARED_FILES = 'unconfirmed:daily:2026-10-17:files';
   const SHARED_BYTES = 'unconfirmed:daily:2026-10-17:bytes';
+  const OWN_FILES = `unconfirmed:daily:2026-10-17:account:${USER}:files`;
+  const OWN_BYTES = `unconfirmed:daily:2026-10-17:account:${USER}:bytes`;
+
+  /** After the account's own counters: the shared ones, then the account's share. */
+  const sharedAfter = (files, bytes, ownFiles, ownBytes) => {
+    incrementWithExpiry
+      .mockResolvedValueOnce(files).mockResolvedValueOnce(bytes)
+      .mockResolvedValueOnce(ownFiles).mockResolvedValueOnce(ownBytes);
+  };
 
   beforeEach(() => {
     pool.query.mockResolvedValue({ rows: [{ confirmed: false }] });
   });
 
-  test('ниже общего потолка — загрузка идёт, тратятся и свои, и общие счётчики', async () => {
+  test('ниже потолка и доли — загрузка идёт; тратятся свои, общие и долевые счётчики', async () => {
     countersAfter(5, 4096);
-    incrementWithExpiry.mockResolvedValueOnce(100).mockResolvedValueOnce(300 * MB);
+    sharedAfter(100, 300 * MB, 40, 120 * MB);
     const stored = { public_id: 'x' };
 
     await expect(sendWithinDailyAllowance(upload, async () => stored)).resolves.toBe(stored);
     expect(incrementWithExpiry.mock.calls.slice(2)).toEqual([
       [SHARED_FILES, 43200],
       [SHARED_BYTES, 43200, 2048],
+      [OWN_FILES, 43200],
+      [OWN_BYTES, 43200, 2048],
     ]);
     expect(decrement).not.toHaveBeenCalled();
   });
 
-  test('101-й файл на всех неподтверждённых — отказ со своим текстом; оба резерва возвращены; облако не зовётся', async () => {
+  test('101-й файл на всех неподтверждённых — отказ со своим текстом и общими пределами; все резервы возвращены', async () => {
     countersAfter(5, 4096);
-    incrementWithExpiry.mockResolvedValueOnce(101).mockResolvedValueOnce(MB);
+    sharedAfter(101, MB, 3, MB);
     const send = jest.fn();
 
     const refusal = await sendWithinDailyAllowance(upload, send).catch((error) => error);
@@ -293,35 +304,53 @@ describe('sendWithinDailyAllowance — учётка без подтверждё�
       bytes_limit: 300 * MB,
       retry_after: 43200,
       reset_at: '2026-10-17T21:00:00.000Z',
+      unconfirmed: true,
     });
     expect(send).not.toHaveBeenCalled();
     expect(decrement.mock.calls).toEqual([
-      [SHARED_FILES], [SHARED_BYTES, 2048], [FILES_KEY], [BYTES_KEY, 2048],
+      [SHARED_FILES], [OWN_FILES], [SHARED_BYTES, 2048], [OWN_BYTES, 2048], [FILES_KEY], [BYTES_KEY, 2048],
     ]);
   });
 
   test('300 МБ и один байт на всех — тоже отказ', async () => {
     countersAfter(5, 4096);
-    incrementWithExpiry.mockResolvedValueOnce(3).mockResolvedValueOnce(300 * MB + 1);
+    sharedAfter(3, 300 * MB + 1, 3, MB);
 
     await expect(sendWithinDailyAllowance(upload, jest.fn())).rejects.toBeInstanceOf(DailyUploadLimitError);
   });
 
-  test('облако отказало явно — возвращаются и свой, и общий резерв', async () => {
+  test('41-й файл одной учётки — отказ с её долей, хотя общий потолок не выбран', async () => {
+    countersAfter(41, 4096);
+    sharedAfter(41, MB, 41, MB);
+
+    const refusal = await sendWithinDailyAllowance(upload, jest.fn()).catch((error) => error);
+
+    expect(refusal.message).toBe(UNCONFIRMED_TEXT);
+    expect(refusal.details).toEqual(expect.objectContaining({ files_limit: 40, bytes_limit: 120 * MB }));
+  });
+
+  test('120 МБ и один байт одной учётки — отказ', async () => {
+    countersAfter(3, 4096);
+    sharedAfter(3, MB, 3, 120 * MB + 1);
+
+    await expect(sendWithinDailyAllowance(upload, jest.fn())).rejects.toBeInstanceOf(DailyUploadLimitError);
+  });
+
+  test('облако отказало явно — возвращаются свой, общий и долевой резервы', async () => {
     countersAfter(5, 4096);
-    incrementWithExpiry.mockResolvedValueOnce(7).mockResolvedValueOnce(MB);
+    sharedAfter(7, MB, 7, MB);
     const refused = Object.assign(new Error('Invalid image file'), { httpCode: 400 });
 
     await expect(sendWithinDailyAllowance(upload, async () => { throw refused; })).rejects.toBe(refused);
     expect(decrement.mock.calls).toEqual([
-      [FILES_KEY], [BYTES_KEY, 2048], [SHARED_FILES], [SHARED_BYTES, 2048],
+      [FILES_KEY], [BYTES_KEY, 2048], [SHARED_FILES], [OWN_FILES], [SHARED_BYTES, 2048], [OWN_BYTES, 2048],
     ]);
   });
 
   test('сбой поиска учётки — считается неподтверждённой (строже), строка в журнал', async () => {
     pool.query.mockRejectedValue(new Error('connection terminated'));
     countersAfter(5, 4096);
-    incrementWithExpiry.mockResolvedValueOnce(101).mockResolvedValueOnce(MB);
+    sharedAfter(101, MB, 3, MB);
 
     await expect(sendWithinDailyAllowance(upload, jest.fn())).rejects.toBeInstanceOf(DailyUploadLimitError);
     expect(logger.error).toHaveBeenCalledWith(

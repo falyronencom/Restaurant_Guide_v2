@@ -41,14 +41,34 @@ const MEGABYTE = 1024 * 1024;
  * the thread's executor (delegated by the Coordinator), 03.11.2026:
  * - files and bytes — one regular account's daily upload allowance (100 files,
  *   300 MB): a full card and more, at most about 0.7 cloud credits a day;
- * - recognition jobs — 10: a new card's menu is a few photos or one PDF; at
- *   about a cent a photo or a page, ten jobs cost cents to about two dollars
- *   a day at most (PDFs of twenty pages), against a model key of five
- *   dollars a month.
+ * - recognition jobs — 20: a job is a menu photo or a whole PDF (up to 20
+ *   pages read). At about a cent a photo and one to five cents a page,
+ *   twenty jobs cost about 20 cents a day in photos and up to about $20 in
+ *   dense PDFs, against a model key of five dollars a month shared with the
+ *   smart search — the ceiling slows the spending down, it does not hold it
+ *   within the key; counting pages is a later change. A full card's menu is
+ *   up to 32 jobs, so a new partner may see part of the menu recognised
+ *   only after confirming the e-mail or after the card's approval (the
+ *   moderator's approval queues what was not recognised —
+ *   services/adminService.js).
  */
 export const UNCONFIRMED_DAILY_LIMITS = Object.freeze({
   files: 100,
   bytes: 300 * MEGABYTE,
+  ocrJobs: 20,
+});
+
+/**
+ * The share of one unconfirmed account inside the shared ceiling, per Minsk
+ * day, so that one account cannot spend the day of all the others (review of
+ * the thread, 03.11.2026): 40 files and 120 MB fill an ordinary card twice
+ * (the seed house averaged 16 files a card); 10 recognition jobs are a
+ * menu of ten photos or ten PDFs. Past it the refusal asks to confirm the
+ * e-mail, which lifts both.
+ */
+export const UNCONFIRMED_ACCOUNT_DAILY_LIMITS = Object.freeze({
+  files: 40,
+  bytes: 120 * MEGABYTE,
   ocrJobs: 10,
 });
 
@@ -64,6 +84,22 @@ export const unconfirmedKeys = (now) => {
     files: `unconfirmed:daily:${day}:files`,
     bytes: `unconfirmed:daily:${day}:bytes`,
     ocrJobs: `unconfirmed:daily:${day}:ocr_jobs`,
+  };
+};
+
+/**
+ * One unconfirmed account's counters of its share, for the Minsk day of `now`.
+ *
+ * @param {string} userId
+ * @param {Date} now
+ * @returns {{ files: string, bytes: string, ocrJobs: string }}
+ */
+export const unconfirmedAccountKeys = (userId, now) => {
+  const day = minskDate(now);
+  return {
+    files: `unconfirmed:daily:${day}:account:${userId}:files`,
+    bytes: `unconfirmed:daily:${day}:account:${userId}:bytes`,
+    ocrJobs: `unconfirmed:daily:${day}:account:${userId}:ocr_jobs`,
   };
 };
 
@@ -117,28 +153,37 @@ export const reserveUnconfirmedUpload = async (userId, bytes) => {
   const keys = unconfirmedKeys(now);
   const secondsLeft = secondsUntilMinskMidnight(now);
 
+  const own = unconfirmedAccountKeys(userId, now);
+
   const files = await incrementWithExpiry(keys.files, secondsLeft);
   const total = await incrementWithExpiry(keys.bytes, secondsLeft, bytes);
+  const ownFiles = await incrementWithExpiry(own.files, secondsLeft);
+  const ownTotal = await incrementWithExpiry(own.bytes, secondsLeft, bytes);
 
   let given = false;
   const giveBack = async () => {
     if (given) return;
     given = true;
     await decrement(keys.files);
+    await decrement(own.files);
     if (bytes > 0) {
       await decrement(keys.bytes, bytes);
+      await decrement(own.bytes, bytes);
     }
   };
 
-  const { files: filesLimit, bytes: bytesLimit } = UNCONFIRMED_DAILY_LIMITS;
-  if (files > filesLimit || total > bytesLimit) {
+  const shared = UNCONFIRMED_DAILY_LIMITS;
+  const share = UNCONFIRMED_ACCOUNT_DAILY_LIMITS;
+  const overShared = files > shared.files || total > shared.bytes;
+  if (overShared || ownFiles > share.files || ownTotal > share.bytes) {
     await giveBack();
+    const limits = overShared ? shared : share;
     logger.warn('Unconfirmed accounts\' daily upload ceiling spent', {
-      userId, files, bytes: total, filesLimit, bytesLimit,
+      userId, files, bytes: total, ownFiles, ownBytes: ownTotal, shared: overShared,
     });
     return {
       granted: false,
-      limits: { files: filesLimit, bytes: bytesLimit },
+      limits: { files: limits.files, bytes: limits.bytes },
       ...renewal(nowMs, secondsLeft),
     };
   }
@@ -157,22 +202,33 @@ export const reserveUnconfirmedOcrJob = async (userId) => {
   const nowMs = Date.now();
   const now = new Date(nowMs);
   const key = unconfirmedKeys(now).ocrJobs;
+  const ownKey = unconfirmedAccountKeys(userId, now).ocrJobs;
   const secondsLeft = secondsUntilMinskMidnight(now);
 
   const jobs = await incrementWithExpiry(key, secondsLeft);
+  const ownJobs = await incrementWithExpiry(ownKey, secondsLeft);
 
   let given = false;
   const giveBack = async () => {
     if (given) return;
     given = true;
     await decrement(key);
+    await decrement(ownKey);
   };
 
-  const limit = UNCONFIRMED_DAILY_LIMITS.ocrJobs;
-  if (jobs > limit) {
+  const overShared = jobs > UNCONFIRMED_DAILY_LIMITS.ocrJobs;
+  if (overShared || ownJobs > UNCONFIRMED_ACCOUNT_DAILY_LIMITS.ocrJobs) {
     await giveBack();
-    logger.warn('Unconfirmed accounts\' daily recognition ceiling spent', { userId, jobs, limit });
-    return { granted: false, jobs, limit, ...renewal(nowMs, secondsLeft) };
+    const limit = overShared ? UNCONFIRMED_DAILY_LIMITS.ocrJobs : UNCONFIRMED_ACCOUNT_DAILY_LIMITS.ocrJobs;
+    logger.warn('Unconfirmed accounts\' daily recognition ceiling spent', {
+      userId, jobs, ownJobs, limit, shared: overShared,
+    });
+    return {
+      granted: false,
+      jobs: overShared ? jobs : ownJobs,
+      limit,
+      ...renewal(nowMs, secondsLeft),
+    };
   }
 
   return { granted: true, giveBack };
