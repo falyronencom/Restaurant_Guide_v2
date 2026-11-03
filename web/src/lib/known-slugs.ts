@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { getCatalog } from '@/lib/api/endpoints/establishments';
+import { establishmentAddress } from '@/lib/establishment-path';
 
 /*
  * Whether the detail page may ask the API for a card by its slug (thread
@@ -8,17 +9,21 @@ import { getCatalog } from '@/lib/api/endpoints/establishments';
  *
  * The detail page is ISR: its calls to the API carry no visitor and spend the
  * site's own budget there (lib/api/visitor.ts). A path never rendered before
- * is rendered on demand, so until now every made-up slug cost one call from
- * that budget — and once it was spent, the cards that were not cached yet
- * failed to open for everyone. Now a slug is asked about only when:
- *   - it has the form the API gives slugs (utils/slugGenerator.js: lowercase
- *     Latin letters and digits joined by single hyphens, at most 150);
- *   - and it is a card of the catalogue — the list of the catalogue's slugs,
- *     read in pages like the sitemap, kept for LIST_TTL_MS and read anew on a
- *     miss at most once per REFRESH_MIN_MS;
- *   - or, not in the list, while the hour's allowance of such asks lasts
- *     (MISSES_PER_HOUR): a card approved since the last read opens at once,
- *     and only a flood of made-up slugs is answered «not found» unasked.
+ * is rendered on demand, so until now every made-up slug — and every card
+ * under each of the other cities and categories — cost one call from that
+ * budget, and once it was spent, the cards not cached yet failed to open for
+ * everyone. Now the page asks the API only when:
+ *   - the slug has the form the API gives slugs (utils/slugGenerator.js:
+ *     lowercase Latin letters and digits joined by single hyphens, at most
+ *     150) — otherwise «not found»;
+ *   - and the path is the card's own address in the catalogue — the list of
+ *     the catalogue's cards, read in pages like the sitemap, kept for
+ *     LIST_TTL_MS and read anew on a miss at most once per REFRESH_MIN_MS;
+ *   - or, otherwise, while the hour's allowance of such asks lasts
+ *     (MISSES_PER_HOUR): a card approved or moved since the last read is
+ *     answered by the API itself, as before. Past the allowance a slug not in
+ *     the list is «not found» unasked, and a card's foreign address
+ *     redirects to its own from the list.
  * The list could not be read — every well-formed slug is asked about, as
  * before. Per instance; the list costs a few calls at most once a minute.
  */
@@ -32,7 +37,13 @@ export const MISSES_PER_HOUR = 120;
 const PAGE_LIMIT = 100;
 const MAX_PAGES = 50;
 
-let list: { slugs: Set<string>; at: number } | null = null;
+export type SlugVerdict =
+  | { kind: 'ask' }
+  | { kind: 'not-found' }
+  | { kind: 'redirect'; path: string };
+
+/** slug → the card's own address, from the catalogue. */
+let list: { paths: Map<string, string>; at: number } | null = null;
 let lastReadAt = 0;
 let reading: Promise<void> | null = null;
 let misses = { start: 0, count: 0 };
@@ -40,13 +51,13 @@ let misses = { start: 0, count: 0 };
 async function readList(): Promise<void> {
   lastReadAt = Date.now();
   try {
-    const slugs = new Set<string>();
+    const paths = new Map<string, string>();
     for (let page = 1; page <= MAX_PAGES; page += 1) {
       const { establishments, pagination } = await getCatalog({ limit: PAGE_LIMIT, page });
-      for (const est of establishments) slugs.add(est.slug);
+      for (const est of establishments) paths.set(est.slug, establishmentAddress(est).path);
       if (!pagination.hasNext) break;
     }
-    list = { slugs, at: Date.now() };
+    list = { paths, at: Date.now() };
   } catch {
     // Keep the list we had; without one, every well-formed slug is asked.
   }
@@ -68,19 +79,25 @@ export function hasSlugForm(slug: string): boolean {
   return slug.length <= MAX_SLUG_LENGTH && SLUG_FORM.test(slug);
 }
 
-export async function mayAskForSlug(slug: string): Promise<boolean> {
-  if (!hasSlugForm(slug)) return false;
+/**
+ * What the detail page does with a request for `slug` under `path`
+ * (/{city}/{category}/{slug}): ask the API, answer «not found», or redirect to
+ * the card's own address — the last two without a call.
+ */
+export async function slugVerdict(slug: string, path: string): Promise<SlugVerdict> {
+  if (!hasSlugForm(slug)) return { kind: 'not-found' };
   const now = Date.now();
   if (!list || now - list.at >= LIST_TTL_MS) {
     if (now - lastReadAt >= REFRESH_MIN_MS) await readListOnce();
   }
-  if (!list) return true;
-  if (list.slugs.has(slug)) return true;
-  if (Date.now() - lastReadAt >= REFRESH_MIN_MS) {
+  if (!list) return { kind: 'ask' };
+  if (!list.paths.has(slug) && Date.now() - lastReadAt >= REFRESH_MIN_MS) {
     await readListOnce();
-    if (list.slugs.has(slug)) return true;
   }
-  return takeMiss();
+  const own = list.paths.get(slug);
+  if (own === path) return { kind: 'ask' };
+  if (takeMiss()) return { kind: 'ask' };
+  return own ? { kind: 'redirect', path: own } : { kind: 'not-found' };
 }
 
 /** Test-only: forget the list and the allowance. */

@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 
 import { serverFetch } from '@/lib/api/client';
 import { visitorAddressFrom } from '@/lib/api/visitor';
-import { getAccessToken } from '@/lib/auth/session';
+import { getAccessToken, refreshSession } from '@/lib/auth/session';
 import { assertSameOrigin } from '@/lib/partner/same-origin';
 
 /*
@@ -180,9 +180,15 @@ async function lookUp(q: string, key: string): Promise<GeocodeHit | null | undef
   return hit;
 }
 
+/**
+ * The query from the body, or null when the body is not read: without a
+ * Content-Length (a browser's fetch with a string body always sends one —
+ * as api/client-error reads it) or longer than MAX_BODY_BYTES, so the body is
+ * never buffered past the bound.
+ */
 async function readQuery(request: Request): Promise<string | null> {
   const length = request.headers.get('content-length');
-  if (length !== null && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) {
+  if (length === null || !/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES) {
     return null;
   }
   try {
@@ -193,12 +199,26 @@ async function readQuery(request: Request): Promise<string | null> {
   }
 }
 
+/**
+ * The signed-in account, or null. The access cookie lives four hours; when it
+ * is gone or the API refuses it, the session is refreshed once — as
+ * authedFetch does for the cabinet's other calls — so a partner back at the
+ * wizard after a pause is not told the session ended. Throws when the API
+ * could not be asked.
+ */
+async function signedInAccount(request: Request): Promise<string | null> {
+  const token = await getAccessToken();
+  if (token) {
+    const userId = await accountOf(token, request);
+    if (userId) return userId;
+  }
+  const fresh = await refreshSession();
+  return fresh ? accountOf(fresh, request) : null;
+}
+
 export async function POST(request: Request): Promise<Response> {
   const blocked = assertSameOrigin(request);
   if (blocked) return blocked;
-
-  const token = await getAccessToken();
-  if (!token) return refuse('NO_SESSION');
 
   const q = await readQuery(request);
   if (q === null || q.length > MAX_QUERY_LEN) return refuse('TOO_LONG');
@@ -206,7 +226,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let userId: string | null;
   try {
-    userId = await accountOf(token, request);
+    userId = await signedInAccount(request);
   } catch {
     return refuse('UNAVAILABLE');
   }

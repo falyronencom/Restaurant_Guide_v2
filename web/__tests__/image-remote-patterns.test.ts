@@ -72,6 +72,10 @@ describe('images.remotePatterns — Cloudinary только нашего акк�
     expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/fetch/https://example.com/a.jpg`)).toBe(false);
   });
 
+  it('оптимизатор качает не больше 5 МБ одного файла (PDF-меню лежат рядом с фото)', () => {
+    expect(nextConfig.images?.maximumResponseBody).toBe(5_000_000);
+  });
+
   it('наше облако — только по https', () => {
     expect(allowed(`http://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1/photo.jpg`)).toBe(false);
   });

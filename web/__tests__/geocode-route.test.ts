@@ -18,19 +18,21 @@ jest.mock('next/server', () => ({
     }),
   },
 }));
-jest.mock('@/lib/auth/session', () => ({ getAccessToken: jest.fn() }));
+jest.mock('@/lib/auth/session', () => ({ getAccessToken: jest.fn(), refreshSession: jest.fn() }));
 jest.mock('@/lib/api/client', () => ({ serverFetch: jest.fn() }));
 
 import { POST, _resetForTests } from '@/app/api/geocode/route';
 import { serverFetch } from '@/lib/api/client';
-import { getAccessToken } from '@/lib/auth/session';
+import { getAccessToken, refreshSession } from '@/lib/auth/session';
 
 const mockToken = getAccessToken as jest.Mock;
+const mockRefresh = refreshSession as jest.Mock;
 const mockApi = serverFetch as jest.Mock;
 const realFetch = global.fetch;
 let nominatim: jest.Mock;
 
-const SAME = { origin: 'http://localhost:3000', host: 'localhost:3000' };
+// A browser's fetch with a string body always sends Content-Length.
+const SAME = { origin: 'http://localhost:3000', host: 'localhost:3000', 'content-length': '64' };
 
 function req(
   q: unknown,
@@ -50,6 +52,7 @@ beforeEach(() => {
   _resetForTests();
   jest.clearAllMocks();
   mockToken.mockResolvedValue('token-a');
+  mockRefresh.mockResolvedValue(null);
   mockApi.mockResolvedValue({ user: { id: 'user-a' } });
   nominatim = jest.fn().mockResolvedValue(okRows(HIT));
   global.fetch = nominatim as unknown as typeof fetch;
@@ -69,7 +72,7 @@ describe('who may ask', () => {
     expect(nominatim).not.toHaveBeenCalled();
   });
 
-  it('no session cookie — 401 NO_SESSION, nothing asked', async () => {
+  it('no session at all (no cookie, nothing to refresh) — 401 NO_SESSION, nothing asked', async () => {
     mockToken.mockResolvedValue(null);
 
     const res = await POST(req('Минск Независимости 1'));
@@ -80,13 +83,46 @@ describe('who may ask', () => {
     expect(nominatim).not.toHaveBeenCalled();
   });
 
-  it('a token the API refuses — 401 NO_SESSION, Nominatim not asked', async () => {
+  it('a token the API refuses and no refresh — 401 NO_SESSION, Nominatim not asked', async () => {
     mockApi.mockRejectedValue(Object.assign(new Error('401'), { statusCode: 401 }));
 
     const res = await POST(req('Минск Независимости 1'));
 
     expect(res.status).toBe(401);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
     expect(nominatim).not.toHaveBeenCalled();
+  });
+
+  it('the access cookie gone after four hours — the session is refreshed once, the lookup goes on', async () => {
+    mockToken.mockResolvedValue(null);
+    mockRefresh.mockResolvedValue('token-fresh');
+
+    const res = await POST(req('Минск Независимости 1'));
+
+    expect(res.status).toBe(200);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockApi).toHaveBeenCalledWith(
+      '/api/v1/auth/me',
+      { headers: { Authorization: 'Bearer token-fresh' } },
+      expect.anything(),
+    );
+  });
+
+  it('the access token refused — refreshed once, then accepted', async () => {
+    mockApi
+      .mockRejectedValueOnce(Object.assign(new Error('401'), { statusCode: 401 }))
+      .mockResolvedValueOnce({ user: { id: 'user-a' } });
+    mockRefresh.mockResolvedValue('token-fresh');
+
+    expect((await POST(req('Минск Независимости 1'))).status).toBe(200);
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a body without Content-Length is not read — 400, nothing asked', async () => {
+    const res = await POST(req('Минск Независимости 1', { headers: { origin: SAME.origin, host: SAME.host } }));
+
+    expect([res.status, (await res.json()).code]).toEqual([400, 'TOO_LONG']);
+    expect(mockApi).not.toHaveBeenCalled();
   });
 
   it('the API unreachable — 503 UNAVAILABLE, Nominatim not asked', async () => {
@@ -192,7 +228,7 @@ describe('how much', () => {
     expect(nominatim).toHaveBeenCalledTimes(30);
   });
 
-  it('the wait line holds 10; past it — 503 BUSY, and only the line is asked', async () => {
+  it('the wait line holds 10; past it — 503 BUSY, and only those in line are asked', async () => {
     jest.useFakeTimers();
     const pending = Array.from({ length: 15 }, (_, i) => POST(req(`Гродно улица ${i}`)));
     await jest.advanceTimersByTimeAsync(20 * 1100);

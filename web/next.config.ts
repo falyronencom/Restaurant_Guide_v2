@@ -24,6 +24,15 @@ const nextConfig: NextConfig = {
    * and every path of the account (thread «Расходы посторонних», point 8).
    */
   images: {
+    /*
+     * The most the optimizer downloads of one remote file before it checks
+     * it is an image: 5 MB, not Next's 50. Our photos are kept at most 1920 px
+     * wide (backend config/cloudinary.js, incoming transformation) — well
+     * under a megabyte; the menu PDFs share the folder of the photos and run
+     * up to 10 MB, and the optimizer never needs them (review of the thread
+     * «Расходы посторонних», 03.11.2026).
+     */
+    maximumResponseBody: 5_000_000,
     remotePatterns: [
       {
         protocol: 'https',
