@@ -96,6 +96,8 @@ const sweepKeys = async () => {
   const keys = [
     ...await redisClient.keys('ocr:daily:*'),
     ...await redisClient.keys('uploads:daily:*'),
+    // The shared ceiling of unconfirmed accounts (services/unconfirmedAllowance.js)
+    ...await redisClient.keys('unconfirmed:daily:*'),
   ];
   if (keys.length > 0) {
     await redisClient.del(keys);

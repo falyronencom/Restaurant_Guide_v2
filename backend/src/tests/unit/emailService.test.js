@@ -34,8 +34,20 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   },
 }));
 
+// The project's daily mail allowance (services/mailAllowance.js) — granted
+// unless a test says otherwise; its own decisions are mailAllowance.test.js.
+const mockGiveBack = jest.fn();
+jest.unstable_mockModule('../../services/mailAllowance.js', () => ({
+  reserveDailyMail: jest.fn(),
+}));
+
 const emailService = await import('../../services/emailService.js');
 const { default: logger } = await import('../../utils/logger.js');
+const { reserveDailyMail } = await import('../../services/mailAllowance.js');
+
+beforeEach(() => {
+  reserveDailyMail.mockImplementation(async () => ({ granted: true, giveBack: mockGiveBack }));
+});
 
 describe('emailService.sendVerificationCodeEmail', () => {
   const originalEnv = { ...process.env };
@@ -438,5 +450,64 @@ describe.each([
     await send(undefined);
 
     expect(JSON.stringify(logged()).toLowerCase()).not.toContain('anna.petrova');
+  });
+});
+
+describe.each([
+  ['sendVerificationCodeEmail', 'code', (ctx) => emailService.sendVerificationCodeEmail('user@test.com', '123456', 'Иван', ctx)],
+  ['sendPasswordResetEmail', 'reset', (ctx) => emailService.sendPasswordResetEmail('user@test.com', 'a1b2c3', 'Иван', ctx)],
+])('emailService.%s — the project\'s daily allowance of letters (thread «Расходы посторонних», point 2)', (_name, kind, send) => {
+  const originalEnv = { ...process.env };
+  const USER = { userId: 'user-9' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    emailService._resetForTests();
+    mockResendCtor.mockImplementation(() => ({
+      emails: { send: mockSend },
+    }));
+    process.env.RESEND_API_KEY = 're_test_key';
+    delete process.env.EMAIL_SEND_TIMEOUT_MS;
+  });
+
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  test(`the letter spends its own kind («${kind}»), naming the account`, async () => {
+    mockSend.mockResolvedValue({ data: { id: 'msg-1' }, error: null });
+
+    expect(await send(USER)).toEqual({ sent: true });
+    expect(reserveDailyMail).toHaveBeenCalledWith(kind, { userId: 'user-9' });
+    expect(mockGiveBack).not.toHaveBeenCalled();
+  });
+
+  test('the allowance spent — nothing sent: sent:false, reason DAILY_LIMIT', async () => {
+    reserveDailyMail.mockResolvedValue({ granted: false, limit: 50 });
+
+    expect(await send(USER)).toEqual({ sent: false, reason: 'DAILY_LIMIT' });
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  test('the provider refused — the reservation goes back', async () => {
+    mockSend.mockResolvedValue({ data: null, error: { name: 'application_error' } });
+
+    expect((await send(USER)).reason).toBe('RESEND_ERROR');
+    expect(mockGiveBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('no answer in time — the letter may still arrive: the reservation stays', async () => {
+    process.env.EMAIL_SEND_TIMEOUT_MS = '20';
+    mockSend.mockReturnValue(new Promise(() => {}));
+
+    expect((await send(USER)).reason).toBe('RESEND_TIMEOUT');
+    expect(mockGiveBack).not.toHaveBeenCalled();
+  });
+
+  test('no mail provider configured — the allowance is not touched', async () => {
+    delete process.env.RESEND_API_KEY;
+
+    expect((await send(USER)).reason).toBe('RESEND_NOT_CONFIGURED');
+    expect(reserveDailyMail).not.toHaveBeenCalled();
   });
 });

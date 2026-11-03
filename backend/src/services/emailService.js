@@ -21,6 +21,7 @@
  */
 
 import { Resend } from 'resend';
+import { reserveDailyMail } from './mailAllowance.js';
 import logger from '../utils/logger.js';
 
 let resendClient = null;
@@ -40,7 +41,7 @@ const ensureConfigured = () => {
  * endpoint answers only after the provider does, and the clients give up
  * after 10 s (site) and 30 s (app) — past this bound the answer is
  * sent:false, by the same path as a refusal, instead of a request the client
- * has already dropped (Н35). 8 s is the bound proposed by Trunk on 24.10;
+ * has already dropped. 8 s is the bound proposed by Trunk on 24.10;
  * EMAIL_SEND_TIMEOUT_MS overrides it (tests).
  */
 const DEFAULT_SEND_TIMEOUT_MS = 8000;
@@ -60,7 +61,7 @@ const TIMED_OUT = Symbol('timed out');
  * the letter: its outcome is unknown, and the log line says so.
  *
  * Every failure is logged here, as one error line that carries the account
- * (when the caller names it) next to the reason (Н33): during the mail
+ * (when the caller names it) next to the reason: during the mail
  * incident of 22–23.10 the reason and the account sat in different lines.
  * No line carries the recipient's address: the account names the person, and
  * the log holds no e-mail (30.10.2026).
@@ -103,9 +104,33 @@ const deliver = async (msg, { userId, failureMessage, sentMessage }) => {
 };
 
 /**
+ * Hand a letter of a kind to the provider within the project's daily
+ * allowance of that kind (services/mailAllowance.js). A spent allowance sends
+ * nothing and answers sent:false with reason DAILY_LIMIT — the callers treat
+ * it as any letter that did not go out. A letter the provider refused gives
+ * its reservation back; one whose outcome is unknown (RESEND_TIMEOUT) keeps it.
+ *
+ * @param {'code'|'reset'} kind
+ * @param {Object} msg - Resend payload
+ * @param {Object} log - As deliver's
+ * @returns {Promise<{sent: boolean, reason?: string}>}
+ */
+const deliverWithinAllowance = async (kind, msg, log) => {
+  const allowance = await reserveDailyMail(kind, { userId: log.userId });
+  if (!allowance.granted) {
+    return { sent: false, reason: 'DAILY_LIMIT' };
+  }
+  const result = await deliver(msg, log);
+  if (!result.sent && result.reason !== 'RESEND_TIMEOUT') {
+    await allowance.giveBack();
+  }
+  return result;
+};
+
+/**
  * Log a send skipped for want of RESEND_API_KEY. Outside production that is
  * the expected dev / test setup — a warning; in production no email can go
- * out at all — an error, with the account (Н33), not the address.
+ * out at all — an error, with the account, not the address.
  */
 const logNotConfigured = (message, userId) => {
   const level = process.env.NODE_ENV === 'production' ? 'error' : 'warn';
@@ -173,7 +198,9 @@ const buildTextBody = (code, userName, expiryMinutes) =>
  *   - thrown exception (network / SDK bug)
  *   - no answer within sendTimeoutMs()
  * All are handled, returning { sent: false, reason: 'RESEND_ERROR' } — or
- * 'RESEND_TIMEOUT' for the last — and one error line (see deliver).
+ * 'RESEND_TIMEOUT' for the last — and one error line (see deliver). A spent
+ * daily allowance of codes sends nothing: { sent: false, reason: 'DAILY_LIMIT' }
+ * (deliverWithinAllowance).
  *
  * @param {string} toEmail
  * @param {string} code - 6-digit numeric
@@ -199,7 +226,7 @@ export const sendVerificationCodeEmail = async (toEmail, code, userName, { userI
     html: buildHtmlBody(code, userName, expiryMinutes),
   };
 
-  return deliver(msg, {
+  return deliverWithinAllowance('code', msg, {
     userId,
     failureMessage: 'Failed to send verification email via Resend',
     sentMessage: 'Verification email sent',
@@ -293,7 +320,7 @@ export const sendPasswordResetEmail = async (toEmail, rawToken, userName, { user
     html: buildResetHtmlBody(resetUrl, userName, expiryMinutes),
   };
 
-  return deliver(msg, {
+  return deliverWithinAllowance('reset', msg, {
     userId,
     failureMessage: 'Failed to send password reset email via Resend',
     sentMessage: 'Password reset email sent',

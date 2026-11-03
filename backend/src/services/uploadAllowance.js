@@ -3,12 +3,19 @@
  * one account may send to the cloud in a Minsk calendar day.
  *
  * Why (decision of the Coordinator, 17.10.2026 — «по твоей рекомендации»):
- * every upload is stored in Cloudinary for good, as sent (no incoming
- * transformation), and the plan is the free one — 25 credits over a sliding
- * 30 days, one credit about a gigabyte stored, with no alert on spending
- * (panel check 16.10.2026: 5.48 of 25 used). Until then nothing but the
- * global limiter (100 requests a minute per account) stood between one
- * account and the whole month's quota: a hundred 60 MB menus a minute.
+ * every upload is stored in Cloudinary for good, and the plan is the free
+ * one — 25 credits over a sliding 30 days, one credit about a gigabyte
+ * stored (panel check 16.10.2026: 5.48 of 25 used). A photo is kept reduced
+ * (config/cloudinary.js, incoming transformation) and the spending is
+ * watched weekly (.github/workflows/cloudinary-usage.yml), but neither holds
+ * the number of uploads. Until 17.10.2026 nothing but the global limiter
+ * (100 requests a minute per account) stood between one account and the
+ * whole month's quota.
+ *
+ * The accounts that have not confirmed their e-mail also share one ceiling
+ * for the day (services/unconfirmedAllowance.js; thread «Расходы
+ * посторонних», 03.11.2026): an account is made in a minute, and each new
+ * one had a fresh allowance of its own.
  *
  * Who counts: every upload of a file to the cloud, through one allowance per
  * account — the wizard's upload (routes/v1/tempMediaRoutes.js, PR #54), the
@@ -26,7 +33,7 @@
  *
  * How: two counters in Redis per account and Minsk day — files and bytes. The
  * reservation is taken first and checked after, as the review quota does
- * (reviewService, critics' pack 1, point 5): INCR is atomic, so parallel
+ * (reviewService): INCR is atomic, so parallel
  * uploads at the edge cannot all read «one left» and all pass. A reservation
  * over the limit is given back at once. The day is Minsk's (utils/minskDay.js,
  * the review quota's day): the counters carry the date in their name and
@@ -54,9 +61,11 @@ import { cloudRefusedUpload } from '../config/cloudinary.js';
 import pool from '../config/database.js';
 import { decrement, incrementWithExpiry } from '../config/redis.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
+import { UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { minskDate, secondsUntilMinskMidnight } from '../utils/minskDay.js';
 import logger from '../utils/logger.js';
+import { reserveSharedUpload } from './unconfirmedAllowance.js';
 
 const MEGABYTE = 1024 * 1024;
 
@@ -193,7 +202,11 @@ export const reserveDailyUpload = async (userId, bytes) => {
 export class DailyUploadLimitError extends AppError {
   /**
    * @param {string} message - The sentence the uploader's clients read
-   * @param {{ limits: { files: number, bytes: number }, retryAfter: number, resetAt: string }} refusal
+   * @param {{ limits: { files: number, bytes: number }, retryAfter: number, resetAt: string,
+   *   unconfirmed?: true }} refusal - `unconfirmed`: the shared ceiling of the
+   *   accounts without a confirmed e-mail (services/unconfirmedAllowance.js) —
+   *   its details say so, as clients that word the refusal themselves need
+   *   to tell it from the account's own allowance
    */
   constructor(message, refusal) {
     super(message, 429, 'RATE_LIMIT_EXCEEDED', {
@@ -201,6 +214,7 @@ export class DailyUploadLimitError extends AppError {
       bytes_limit: refusal.limits.bytes,
       retry_after: refusal.retryAfter,
       reset_at: refusal.resetAt,
+      ...(refusal.unconfirmed ? { unconfirmed: true } : {}),
     });
     this.retryAfter = refusal.retryAfter;
   }
@@ -226,11 +240,20 @@ export const sendWithinDailyAllowance = async ({ userId, bytes, message }, send)
     throw new DailyUploadLimitError(message, allowance);
   }
 
+  // An unconfirmed account spends the shared ceiling of the day too
+  // (services/unconfirmedAllowance.js); its refusal names what lifts it.
+  const shared = await reserveSharedUpload(userId, bytes);
+  if (!shared.granted) {
+    await allowance.giveBack();
+    throw new DailyUploadLimitError(UPLOAD_REFUSALS.unconfirmedDailyLimit, { ...shared, unconfirmed: true });
+  }
+
   try {
     return await send();
   } catch (error) {
     if (cloudRefusedUpload(error)) {
       await allowance.giveBack();
+      await shared.giveBack();
     }
     throw error;
   }

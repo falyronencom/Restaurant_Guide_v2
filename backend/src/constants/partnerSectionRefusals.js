@@ -141,6 +141,12 @@ export const UPLOAD_REFUSALS = Object.freeze({
   // The account's daily allowance is spent — the same sentence answers the
   // card's media and the avatar (DAILY_UPLOAD_LIMIT above).
   dailyLimit: DAILY_UPLOAD_LIMIT,
+  // The shared ceiling of the accounts without a confirmed e-mail is spent
+  // (services/unconfirmedAllowance.js) — every uploader. Proposed by the
+  // thread «Расходы посторонних», 03.11.2026; new text, to be approved.
+  unconfirmedDailyLimit:
+    'Загрузки для учётных записей без подтверждённой почты на сегодня закончились. '
+    + 'Подтвердите почту в профиле — и продолжите.',
   // multer's other refusals on the card's media (FORM_NOT_READ above).
   formNotRead: FORM_NOT_READ,
 });
