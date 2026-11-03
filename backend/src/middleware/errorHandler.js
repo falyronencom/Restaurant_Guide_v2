@@ -90,6 +90,26 @@ export const BODY_PARSER_REFUSALS = Object.freeze({
   }),
 });
 
+/**
+ * The refusal of a body too large, naming the limit of the parser that
+ * refused it (body-parser puts it on the error, in bytes): the general
+ * 10 MB, or a route's own — the smart search's 32 KB
+ * (routes/v1/searchRoutes.js). Without a limit on the error, the general one.
+ *
+ * @param {number} [limitBytes]
+ * @returns {string}
+ */
+const tooLargeMessage = (limitBytes) => {
+  const MB = 1024 * 1024;
+  if (!Number.isFinite(limitBytes) || limitBytes <= 0) {
+    return BODY_PARSER_REFUSALS['entity.too.large'].message;
+  }
+  const limit = limitBytes >= MB
+    ? `${Math.floor(limitBytes / MB)} МБ`
+    : `${Math.floor(limitBytes / 1024)} КБ`;
+  return `Запрос слишком большой — не больше ${limit}.`;
+};
+
 /** How much of a client's header value a body refusal's log entry keeps. */
 const LOGGED_HEADER_TEXT_MAX = 100;
 
@@ -139,6 +159,9 @@ export const errorHandler = (err, req, res, _next) => {
     : null;
   if (bodyRefusal) {
     ({ statusCode, code: errorCode, message } = bodyRefusal);
+    if (err.type === 'entity.too.large') {
+      message = tooLargeMessage(err.limit);
+    }
   }
 
   // multer's own refusals — the limits in middleware/upload.js

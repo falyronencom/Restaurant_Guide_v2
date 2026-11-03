@@ -12,6 +12,7 @@
  * here shows up to the user as a filter that works only half the time.
  */
 
+import { jest } from '@jest/globals';
 import { parseSearchFilterParams, presentFilters } from '../../utils/searchFilterParams.js';
 
 describe('parseSearchFilterParams — списки', () => {
@@ -44,6 +45,58 @@ describe('parseSearchFilterParams — списки', () => {
     expect(parsed.cuisines).toEqual(['Японская', 'Итальянская']);
     expect(parsed.priceRange).toEqual(['$', '$$']);
     expect(parsed.features).toEqual(['wifi', 'terrace']);
+  });
+});
+
+describe('parseSearchFilterParams — пределы списков (нитка «Расходы посторонних», п. 7)', () => {
+  // Каждое удобство — отдельное условие и параметр запроса к базе: до
+  // 03.11.2026 список во всё тело держал сервер и базу десятки секунд.
+  // Пределы — литералы здесь, не импорт: тест сторожит число, а не константу.
+  const refusal = (name) => expect.objectContaining({
+    statusCode: 422,
+    code: 'VALIDATION_ERROR',
+    message: `${name} takes at most 30 values of at most 64 characters`,
+  });
+  const values = (n) => Array.from({ length: n }, (_, i) => `v${i}`);
+
+  test.each(['categories', 'cuisines', 'priceRange', 'features'])(
+    '%s: 30 значений массивом и строкой — приняты; 31 — 422',
+    (name) => {
+      expect(parseSearchFilterParams({ [name]: values(30) })[name]).toHaveLength(30);
+      expect(parseSearchFilterParams({ [name]: values(30).join(',') })[name]).toHaveLength(30);
+      expect(() => parseSearchFilterParams({ [name]: values(31) })).toThrow(refusal(name));
+      expect(() => parseSearchFilterParams({ [name]: values(31).join(',') })).toThrow(refusal(name));
+    },
+  );
+
+  test('значение в 64 знака принято, в 65 — 422', () => {
+    expect(parseSearchFilterParams({ features: ['a'.repeat(64)] }).features).toEqual(['a'.repeat(64)]);
+    expect(() => parseSearchFilterParams({ features: ['a'.repeat(65)] })).toThrow(refusal('features'));
+    expect(() => parseSearchFilterParams({ features: `wifi,${'a'.repeat(65)}` })).toThrow(refusal('features'));
+  });
+
+  test('длинная строка отвергается до разбора — без обхода всего списка', () => {
+    // 30 × 65 знаков — самая длинная строка, которую ещё стоит разбирать.
+    const longest = `${'a'.repeat(64)},`.repeat(30).slice(0, -1);
+    expect(parseSearchFilterParams({ features: longest }).features).toEqual(['a'.repeat(64)]);
+    const split = jest.spyOn(String.prototype, 'split');
+    try {
+      expect(() => parseSearchFilterParams({ features: ','.repeat(30 * 65 + 1) })).toThrow(refusal('features'));
+      expect(split).not.toHaveBeenCalled();
+    } finally {
+      split.mockRestore();
+    }
+  });
+
+  test('значение не строка и не число — 422, а не сбой разбора', () => {
+    expect(parseSearchFilterParams({ priceRange: [1, '$$'] }).priceRange).toEqual(['1', '$$']);
+    expect(() => parseSearchFilterParams({ features: { toString: 1 } })).toThrow(refusal('features'));
+    expect(() => parseSearchFilterParams({ features: [{ toString: 1 }] })).toThrow(refusal('features'));
+    expect(() => parseSearchFilterParams({ categories: [['Бар']] })).toThrow(refusal('categories'));
+  });
+
+  test('повторы снимаются: 40 одинаковых значений строкой — одно значение', () => {
+    expect(parseSearchFilterParams({ features: 'wifi,'.repeat(40) }).features).toEqual(['wifi']);
   });
 });
 
