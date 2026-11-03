@@ -209,6 +209,17 @@ describe('умный поиск — свой предел тела 32 КБ (ни
       .toEqual(SMART_TOO_LARGE);
   });
 
+  test.each([
+    '/api/v1/search//smart',
+    '/api//v1/search/smart',
+    '/API/V1/SEARCH/SMART/',
+    // Остальной поиск — GET без тела: тот же предел (ревью по линзе, 03.11).
+    '/api/v1/search/establishments',
+    '/api/v1/search/map',
+  ])('то же написание пути иначе и остальной поиск (%s) — тот же предел', async (path) => {
+    expect(await send({ body: jsonOfSize(SMART_LIMIT + 1), path })).toEqual(SMART_TOO_LARGE);
+  });
+
   test('другие маршруты — прежние 10 МБ', async () => {
     expect(await send({ body: jsonOfSize(SMART_LIMIT + 1) })).toEqual(PARSED);
   });

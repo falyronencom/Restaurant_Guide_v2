@@ -88,6 +88,13 @@ describe('parseSearchFilterParams — пределы списков (нитка 
     }
   });
 
+  test('значение не строка и не число — 422, а не сбой разбора', () => {
+    expect(parseSearchFilterParams({ priceRange: [1, '$$'] }).priceRange).toEqual(['1', '$$']);
+    expect(() => parseSearchFilterParams({ features: { toString: 1 } })).toThrow(refusal('features'));
+    expect(() => parseSearchFilterParams({ features: [{ toString: 1 }] })).toThrow(refusal('features'));
+    expect(() => parseSearchFilterParams({ categories: [['Бар']] })).toThrow(refusal('categories'));
+  });
+
   test('повторы снимаются: 40 одинаковых значений строкой — одно значение', () => {
     expect(parseSearchFilterParams({ features: 'wifi,'.repeat(40) }).features).toEqual(['wifi']);
   });

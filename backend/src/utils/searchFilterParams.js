@@ -63,9 +63,13 @@ function parseList(value, name) {
     422,
     'VALIDATION_ERROR',
   );
+  // Значение — строка или число (строкой его делает query-строка, числом —
+  // JSON); объект с чужим toString ронял разбор в 500. / Strings and numbers
+  // only: an object's own toString could throw here.
+  const scalar = (v) => typeof v === 'string' || typeof v === 'number';
   if (Array.isArray(value)
-    ? value.length > MAX_LIST_VALUES
-    : String(value).length > MAX_LIST_VALUES * (MAX_LIST_VALUE_LENGTH + 1)) {
+    ? value.length > MAX_LIST_VALUES || !value.every(scalar)
+    : !scalar(value) || String(value).length > MAX_LIST_VALUES * (MAX_LIST_VALUE_LENGTH + 1)) {
     throw refusal();
   }
   const items = [...new Set((Array.isArray(value) ? value : String(value).split(','))

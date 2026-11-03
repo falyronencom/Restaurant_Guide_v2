@@ -27,16 +27,31 @@ const router = express.Router();
 export const SMART_SEARCH_REQUESTS_PER_MINUTE = 120;
 
 /**
- * The most the smart search's body may weigh. Its body is a phrase of up to
- * 150 characters, coordinates, a city and the screen's filters — under 2 KB
- * from the app and the site; 32 KB leaves room for any of them. server.js
- * parses this route's body with it, ahead of the general 10 MB parsers: until
- * 03.11.2026 a body of up to 10 MB was parsed and walked here, and one such
- * request held the server for seconds (measurement of the thread «Расходы
- * посторонних», point 7).
+ * The most a search request's body may weigh. Only the smart search has a
+ * body — a phrase of up to 150 characters, coordinates, a city and the
+ * screen's filters, under 2 KB from the app and the site; 32 KB leaves room
+ * for any of them. The other search routes are GETs and need none. server.js
+ * parses the bodies of every path under SEARCH_PATH with it, ahead of the
+ * general 10 MB parsers: until 03.11.2026 a body of up to 10 MB was parsed
+ * and walked here, and one such smart-search request held the server for
+ * seconds (measurement of the thread «Расходы посторонних», point 7).
  */
-export const SMART_SEARCH_PATH = '/api/v1/search/smart';
-export const SMART_SEARCH_BODY_LIMIT = '32kb';
+export const SEARCH_PATH = '/api/v1/search';
+export const SEARCH_BODY_LIMIT = '32kb';
+
+/**
+ * Whether a request's path is under SEARCH_PATH as the router reads it:
+ * case aside and with repeated slashes (Express routes
+ * «/api/v1/search//smart» to the smart search too) — so no spelling of a
+ * search path reaches its route past the body limit.
+ *
+ * @param {string} path - req.path
+ * @returns {boolean}
+ */
+export const isSearchPath = (path) => {
+  const normalized = path.replace(/\/{2,}/g, '/').toLowerCase();
+  return normalized === SEARCH_PATH || normalized.startsWith(`${SEARCH_PATH}/`);
+};
 
 const smartSearchLimiter = createRateLimiter({
   limit: SMART_SEARCH_REQUESTS_PER_MINUTE,

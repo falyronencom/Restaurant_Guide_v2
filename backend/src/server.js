@@ -7,7 +7,7 @@ import logger from './utils/logger.js';
 import { testConnection, closePool } from './config/database.js';
 import { connectRedis, disconnectRedis } from './config/redis.js';
 import routes from './routes/index.js';
-import { SMART_SEARCH_BODY_LIMIT, SMART_SEARCH_PATH } from './routes/v1/searchRoutes.js';
+import { SEARCH_BODY_LIMIT, isSearchPath } from './routes/v1/searchRoutes.js';
 import { rateLimiter, globalRateLimitTiers } from './middleware/rateLimiter.js';
 import { siteVisitor, MIN_SECRET_LENGTH } from './middleware/siteVisitor.js';
 import { AppError, BODY_LIMIT_MB, errorHandler, notFoundHandler } from './middleware/errorHandler.js';
@@ -160,12 +160,19 @@ app.use(rateLimiter);
  * unreadable as a form answer in Russian with codes of their own
  * (errorHandler.js BODY_PARSER_REFUSALS); invalid JSON keeps INVALID_JSON.
  *
- * The smart search's body is parsed first, with its own limit
- * (routes/v1/searchRoutes.js SMART_SEARCH_BODY_LIMIT); a parsed body is
- * skipped by the general parsers below.
+ * A search request's body is parsed first, with the search's own limit
+ * (routes/v1/searchRoutes.js SEARCH_BODY_LIMIT), on every spelling of its
+ * path (isSearchPath); a parsed body is skipped by the general parsers below.
  */
-app.use(SMART_SEARCH_PATH, express.json({ limit: SMART_SEARCH_BODY_LIMIT, inflate: false }));
-app.use(SMART_SEARCH_PATH, express.urlencoded({ extended: true, limit: SMART_SEARCH_BODY_LIMIT, inflate: false }));
+const searchJson = express.json({ limit: SEARCH_BODY_LIMIT, inflate: false });
+const searchForm = express.urlencoded({ extended: true, limit: SEARCH_BODY_LIMIT, inflate: false });
+app.use((req, res, next) => {
+  if (!isSearchPath(req.path)) {
+    next();
+    return;
+  }
+  searchJson(req, res, (error) => (error ? next(error) : searchForm(req, res, next)));
+});
 app.use(express.json({ limit: `${BODY_LIMIT_MB}mb`, inflate: false }));
 app.use(express.urlencoded({ extended: true, limit: `${BODY_LIMIT_MB}mb`, inflate: false }));
 
