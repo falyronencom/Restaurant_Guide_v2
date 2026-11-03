@@ -114,11 +114,16 @@ const getLatestCodeForUser = async (userId) => {
 };
 
 const clearRateLimitKeys = async () => {
-  for (const prefix of ['verify-send', 'verify-code', 'register']) {
+  for (const prefix of ['verify-send', 'verify-code', 'register', 'register-day']) {
     const keys = await redisClient.keys(`ratelimit:${prefix}:*`);
     if (keys.length > 0) {
       await redisClient.del(keys);
     }
+  }
+  // The project's daily allowance of letters (services/mailAllowance.js)
+  const mailKeys = await redisClient.keys('mail:daily:*');
+  if (mailKeys.length > 0) {
+    await redisClient.del(mailKeys);
   }
 };
 

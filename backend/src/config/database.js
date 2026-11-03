@@ -23,6 +23,29 @@ const { Pool } = pg;
  * These defaults work well for development. Production deployments should tune based
  * on actual load patterns and database server capacity.
  */
+/**
+ * The longest a statement of the server's pool may run before the database
+ * cancels it (Postgres statement_timeout, set on every connection of the
+ * pool), ms. Until 03.11.2026 there was no bound: one request whose query ran
+ * long held its connection — one of the pool's ten — for as long as it ran
+ * (thread «Расходы посторонних», points 6–7). 30 s is far above any query of
+ * a request here; a cancelled statement answers 500 like any database
+ * failure. DB_STATEMENT_TIMEOUT_MS, a whole number of ms above zero, sets
+ * another bound; anything else keeps 30 s. The scripts that need longer set
+ * their own (scripts/lib/mediaOrphansDb.js, scripts/prod-snapshot).
+ *
+ * @param {Object} env - process.env or a stand-in
+ * @returns {number}
+ */
+export const statementTimeoutMs = (env) => {
+  const raw = env.DB_STATEMENT_TIMEOUT_MS;
+  if (typeof raw === 'string' && /^\s*\d+\s*$/.test(raw)) {
+    const value = Number(raw);
+    if (Number.isSafeInteger(value) && value > 0) return value;
+  }
+  return 30000;
+};
+
 const poolConfig = {
   host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT || '5432', 10),
@@ -33,6 +56,8 @@ const poolConfig = {
   max: parseInt(process.env.DB_MAX_CONNECTIONS || '10', 10),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '10000', 10),
   connectionTimeoutMillis: 3000,
+  // The longest a statement may run, ms (statementTimeoutMs below).
+  statement_timeout: statementTimeoutMs(process.env),
   // Enable SSL in production for encrypted connections; with DATABASE_TLS_CERT
   // set, only to the server holding the pinned certificate (config/databaseTls.js)
   ssl: databaseSsl(process.env),

@@ -57,7 +57,11 @@ const freezeClockAt = (originMs) => {
 let cloudUpload;
 
 const sweepAllowanceKeys = async () => {
-  const keys = await redisClient.keys('uploads:daily:*');
+  const keys = [
+    ...await redisClient.keys('uploads:daily:*'),
+    // The shared ceiling of unconfirmed accounts (services/unconfirmedAllowance.js)
+    ...await redisClient.keys('unconfirmed:daily:*'),
+  ];
   if (keys.length > 0) {
     await redisClient.del(keys);
   }

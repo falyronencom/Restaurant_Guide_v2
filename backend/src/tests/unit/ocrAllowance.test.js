@@ -158,6 +158,11 @@ describe('дом сида: свой предел', () => {
 describe('enqueueWithinDailyAllowance — постановка в очередь от имени партнёра', () => {
   const request = { userId: USER, establishmentId: CARD, mediaId: MEDIA };
 
+  // Учётка с подтверждённой почтой: общего потолка неподтверждённых нет.
+  beforeEach(() => {
+    pool.query.mockResolvedValue({ rows: [{ confirmed: true }] });
+  });
+
   test('у файла уже есть задание в очереди — оно и возвращается, места не тратит', async () => {
     const active = { id: 'job-1', status: 'pending' };
     OcrJobModel.findActiveJob.mockResolvedValue(active);
@@ -211,6 +216,65 @@ describe('enqueueWithinDailyAllowance — постановка в очередь
 
     await expect(enqueueWithinDailyAllowance(request)).rejects.toBe(failure);
     expect(decrement.mock.calls).toEqual([[KEY]]);
+  });
+});
+
+describe('enqueueWithinDailyAllowance — учётка без подтверждённой почты (нитка «Расходы посторонних», п. 3)', () => {
+  const request = { userId: USER, establishmentId: CARD, mediaId: MEDIA };
+  const SHARED = 'unconfirmed:daily:2026-10-17:ocr_jobs';
+
+  beforeEach(() => {
+    pool.query.mockResolvedValue({ rows: [{ confirmed: false }] });
+  });
+
+  test('10-е задание на всех неподтверждённых — ставится', async () => {
+    incrementWithExpiry.mockResolvedValueOnce(3).mockResolvedValueOnce(10);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-3' });
+
+    const result = await enqueueWithinDailyAllowance(request);
+
+    expect(result.queued).toBe(true);
+    expect(incrementWithExpiry.mock.calls[1]).toEqual([SHARED, 43200]);
+    expect(decrement).not.toHaveBeenCalled();
+  });
+
+  test('11-е — не ставится; оба резерва возвращены; строка в журнал', async () => {
+    incrementWithExpiry.mockResolvedValueOnce(3).mockResolvedValueOnce(11);
+
+    const result = await enqueueWithinDailyAllowance(request);
+
+    expect(result).toEqual({
+      queued: false,
+      refusal: {
+        granted: false, jobs: 11, limit: 10, retryAfter: 43200, resetAt: '2026-10-17T21:00:00.000Z',
+      },
+    });
+    expect(OcrJobModel.enqueue).not.toHaveBeenCalled();
+    expect(decrement.mock.calls).toEqual([[SHARED], [KEY]]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Unconfirmed accounts' recognition ceiling spent: job not queued",
+      { userId: USER, establishmentId: CARD, mediaId: MEDIA },
+    );
+  });
+
+  test('постановка упала — возвращаются и свой, и общий резерв', async () => {
+    incrementWithExpiry.mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+    const failure = new Error('insert failed');
+    OcrJobModel.enqueue.mockRejectedValue(failure);
+
+    await expect(enqueueWithinDailyAllowance(request)).rejects.toBe(failure);
+    expect(decrement.mock.calls).toEqual([[KEY], [SHARED]]);
+  });
+
+  test('подтверждённость читается одним запросом: почта, телефон или дом сида', async () => {
+    incrementWithExpiry.mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-4' });
+
+    await enqueueWithinDailyAllowance(request);
+
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    expect(pool.query.mock.calls[0][0]).toMatch(/email_verified OR phone_verified OR/);
+    expect(pool.query.mock.calls[0][1]).toEqual([USER]);
   });
 });
 

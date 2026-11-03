@@ -2,8 +2,8 @@
  * The daily recognition allowance of an account: how many menu files one
  * account may send to recognition in a Minsk calendar day.
  *
- * Why (review of PR #56 by the resource-exhaustion lens, finding 1; the
- * Coordinator's word of 17.10.2026): recognition is paid per call — a menu
+ * Why (review of PR #56; the Coordinator's word of 17.10.2026): recognition
+ * is paid per call — a menu
  * photo is a vision call and a structurer call to OpenRouter, every page of a
  * PDF the same — and it runs in one queue for every partner, one job at a
  * time (ocr/ocrJobPoller.js). A card's save queued a file that the save named
@@ -55,6 +55,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import * as OcrJobModel from '../models/ocrJobModel.js';
 import { minskDate, secondsUntilMinskMidnight } from '../utils/minskDay.js';
 import logger from '../utils/logger.js';
+import { reserveSharedOcrJob } from './unconfirmedAllowance.js';
 
 /**
  * Jobs per Minsk day. Approved by the Coordinator on 17.10.2026 (PR #59).
@@ -184,11 +185,25 @@ export const enqueueWithinDailyAllowance = async ({ userId, establishmentId, med
     return { queued: false, refusal: allowance };
   }
 
+  // An unconfirmed account spends the shared ceiling of the day too
+  // (services/unconfirmedAllowance.js).
+  const shared = await reserveSharedOcrJob(userId);
+  if (!shared.granted) {
+    await allowance.giveBack();
+    logger.warn("Unconfirmed accounts' recognition ceiling spent: job not queued", {
+      userId,
+      establishmentId,
+      mediaId,
+    });
+    return { queued: false, refusal: shared };
+  }
+
   try {
     const job = await OcrJobModel.enqueue({ establishmentId, mediaId });
     return { queued: true, job };
   } catch (error) {
     await allowance.giveBack();
+    await shared.giveBack();
     throw error;
   }
 };

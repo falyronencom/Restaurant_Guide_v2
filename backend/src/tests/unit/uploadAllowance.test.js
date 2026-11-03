@@ -197,6 +197,12 @@ describe('sendWithinDailyAllowance — общий путь всех загруз
   const TEXT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
   const upload = { userId: USER, bytes: 2048, message: TEXT };
 
+  // Учётка с подтверждённой почтой: общего потолка неподтверждённых нет
+  // (services/unconfirmedAllowance.js — свои случаи ниже).
+  beforeEach(() => {
+    pool.query.mockResolvedValue({ rows: [{ confirmed: true }] });
+  });
+
   test('предел исчерпан — DailyUploadLimitError: 429, код, текст вызывающего, подробности, срок; облако не зовётся', async () => {
     countersAfter(101, 7 * MB);
     seedHouse(false);
@@ -245,5 +251,82 @@ describe('sendWithinDailyAllowance — общий путь всех загруз
 
     await expect(sendWithinDailyAllowance(upload, async () => { throw failed; })).rejects.toBe(failed);
     expect(decrement).not.toHaveBeenCalled();
+  });
+});
+
+describe('sendWithinDailyAllowance — учётка без подтверждённой почты (нитка «Расходы посторонних», п. 3)', () => {
+  const TEXT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
+  const UNCONFIRMED_TEXT = 'Загрузки для учётных записей без подтверждённой почты на сегодня закончились. '
+    + 'Подтвердите почту в профиле — и продолжите.';
+  const upload = { userId: USER, bytes: 2048, message: TEXT };
+  const SHARED_FILES = 'unconfirmed:daily:2026-10-17:files';
+  const SHARED_BYTES = 'unconfirmed:daily:2026-10-17:bytes';
+
+  beforeEach(() => {
+    pool.query.mockResolvedValue({ rows: [{ confirmed: false }] });
+  });
+
+  test('ниже общего потолка — загрузка идёт, тратятся и свои, и общие счётчики', async () => {
+    countersAfter(5, 4096);
+    incrementWithExpiry.mockResolvedValueOnce(100).mockResolvedValueOnce(300 * MB);
+    const stored = { public_id: 'x' };
+
+    await expect(sendWithinDailyAllowance(upload, async () => stored)).resolves.toBe(stored);
+    expect(incrementWithExpiry.mock.calls.slice(2)).toEqual([
+      [SHARED_FILES, 43200],
+      [SHARED_BYTES, 43200, 2048],
+    ]);
+    expect(decrement).not.toHaveBeenCalled();
+  });
+
+  test('101-й файл на всех неподтверждённых — отказ со своим текстом; оба резерва возвращены; облако не зовётся', async () => {
+    countersAfter(5, 4096);
+    incrementWithExpiry.mockResolvedValueOnce(101).mockResolvedValueOnce(MB);
+    const send = jest.fn();
+
+    const refusal = await sendWithinDailyAllowance(upload, send).catch((error) => error);
+
+    expect(refusal).toBeInstanceOf(DailyUploadLimitError);
+    expect([refusal.statusCode, refusal.code, refusal.message]).toEqual([429, 'RATE_LIMIT_EXCEEDED', UNCONFIRMED_TEXT]);
+    expect(refusal.details).toEqual({
+      files_limit: 100,
+      bytes_limit: 300 * MB,
+      retry_after: 43200,
+      reset_at: '2026-10-17T21:00:00.000Z',
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(decrement.mock.calls).toEqual([
+      [SHARED_FILES], [SHARED_BYTES, 2048], [FILES_KEY], [BYTES_KEY, 2048],
+    ]);
+  });
+
+  test('300 МБ и один байт на всех — тоже отказ', async () => {
+    countersAfter(5, 4096);
+    incrementWithExpiry.mockResolvedValueOnce(3).mockResolvedValueOnce(300 * MB + 1);
+
+    await expect(sendWithinDailyAllowance(upload, jest.fn())).rejects.toBeInstanceOf(DailyUploadLimitError);
+  });
+
+  test('облако отказало явно — возвращаются и свой, и общий резерв', async () => {
+    countersAfter(5, 4096);
+    incrementWithExpiry.mockResolvedValueOnce(7).mockResolvedValueOnce(MB);
+    const refused = Object.assign(new Error('Invalid image file'), { httpCode: 400 });
+
+    await expect(sendWithinDailyAllowance(upload, async () => { throw refused; })).rejects.toBe(refused);
+    expect(decrement.mock.calls).toEqual([
+      [FILES_KEY], [BYTES_KEY, 2048], [SHARED_FILES], [SHARED_BYTES, 2048],
+    ]);
+  });
+
+  test('сбой поиска учётки — считается неподтверждённой (строже), строка в журнал', async () => {
+    pool.query.mockRejectedValue(new Error('connection terminated'));
+    countersAfter(5, 4096);
+    incrementWithExpiry.mockResolvedValueOnce(101).mockResolvedValueOnce(MB);
+
+    await expect(sendWithinDailyAllowance(upload, jest.fn())).rejects.toBeInstanceOf(DailyUploadLimitError);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Unconfirmed accounts allowance: account lookup failed, the shared ceiling applies',
+      expect.objectContaining({ userId: USER }),
+    );
   });
 });
