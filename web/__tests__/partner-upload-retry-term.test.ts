@@ -192,6 +192,21 @@ describe('uploadMedia (the wizard, /api/partner/media)', () => {
     });
   });
 
+  it('the shared ceiling of unconfirmed accounts: says that confirming the e-mail lifts it', async () => {
+    upstream.mockResolvedValueOnce(
+      refusal(429, {
+        code: 'RATE_LIMIT_EXCEEDED',
+        details: { files_limit: 100, bytes_limit: 314572800, retry_after: 43200, reset_at: RESET_AT, unconfirmed: true },
+      }, { 'retry-after': '43200' }),
+    );
+
+    expect(await uploadMedia(photo(), 'interior')).toMatchObject({
+      ok: false,
+      message: 'Загрузки для учётных записей без подтверждённой почты на сегодня закончились. '
+        + 'Подтвердите почту в профиле — и продолжите.',
+    });
+  });
+
   it('the request limiter: its own phrase with its term', async () => {
     upstream.mockResolvedValueOnce(
       refusal(429, {

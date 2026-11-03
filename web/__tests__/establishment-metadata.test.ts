@@ -52,8 +52,11 @@ const detail = (slug: string) => ({
   },
 });
 
+// In the form of a slug (lib/known-slugs.ts): «establishment page-live» →
+// «establishment-page-live» — any other form is «не найдено» unasked.
+const slugOf = (text: string) => text.replace(/[^a-z0-9]+/g, '-');
 const P = (slug: string) =>
-  Promise.resolve({ city: 'minsk', category: 'restaurants', slug });
+  Promise.resolve({ city: 'minsk', category: 'restaurants', slug: slugOf(slug) });
 
 const PAGES = [
   ['establishment page', detailMetadata, 'Летняя терраса — ресторан в городе Минск'],
@@ -113,7 +116,7 @@ describe.each(PAGES)('%s — tab title', (name, generateMetadata, liveTitle) => 
     const meta = await generateMetadata({ params: P(`${name}-edge`) });
 
     expect(meta.title).not.toBe('Заведение не найдено');
-    expect(meta.title).toContain(`${name}-edge`);
+    expect(meta.title).toContain(slugOf(`${name}-edge`));
   });
 
   it('a backend failure that is not 404 is not called «не найдено»', async () => {
@@ -122,6 +125,19 @@ describe.each(PAGES)('%s — tab title', (name, generateMetadata, liveTitle) => 
     const meta = await generateMetadata({ params: P(`${name}-500`) });
 
     expect(meta.title).not.toBe('Заведение не найдено');
-    expect(meta.title).toContain(`${name}-500`);
+    expect(meta.title).toContain(slugOf(`${name}-500`));
+  });
+});
+
+describe('establishment page — a path that is not a slug', () => {
+  // lib/known-slugs.ts: the site does not ask the API about it — «не найдено»
+  // without a call from the site's budget (thread «Расходы посторонних», п. 5).
+  it('«Заведение не найдено» without asking for the card', async () => {
+    const meta = await detailMetadata({
+      params: Promise.resolve({ city: 'minsk', category: 'restaurants', slug: 'wp-login.php' }),
+    });
+
+    expect(meta.title).toBe('Заведение не найдено');
+    expect(getBySlug).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,7 @@ import {
   ratingColorClass,
 } from '@/lib/establishment-helpers';
 import { establishmentAddress } from '@/lib/establishment-path';
+import { slugVerdict } from '@/lib/known-slugs';
 import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
@@ -66,6 +67,16 @@ type Params = { city: string; category: string; slug: string };
 
 const getCachedBySlug = cache((slug: string) => getBySlug(slug));
 
+/*
+ * Whether the site asks the API about this address at all
+ * (lib/known-slugs.ts): a slug not in the form of one, or not a card of the
+ * catalogue once the hour's allowance of such asks is spent, is «не найдено»;
+ * a card's foreign address past the allowance redirects to its own — both
+ * without a call from the site's budget, in the metadata and the body alike.
+ */
+const getCachedVerdict = cache((city: string, category: string, slug: string) =>
+  slugVerdict(slug, `/${city}/${category}/${slug}`));
+
 export async function generateStaticParams(): Promise<Params[]> {
   // Defer to runtime — combinatorial explosion (cities × categories × slugs).
   // Future optimization may pre-warm popular slugs.
@@ -94,6 +105,9 @@ export async function generateMetadata({
     if (!cityValid || !categoryValid) {
       return { title: NOT_FOUND_TITLE.establishment };
     }
+    const verdict = await getCachedVerdict(city, category, slug);
+    if (verdict.kind === 'not-found') return { title: NOT_FOUND_TITLE.establishment };
+    if (verdict.kind === 'redirect') return { alternates: { canonical: verdict.path } };
     const [detail, meta] = await Promise.all([
       // Only the card's own 404 is «не найдено» — the body maps exactly that
       // one to notFound(); a 404 from anything else is an error there.
@@ -166,6 +180,11 @@ export default async function EstablishmentPage({
     validateCategorySlug(category),
   ]);
   if (!cityValid || !categoryValid) notFound();
+
+  // 1a. Whether the API is asked at all (getCachedVerdict above).
+  const verdict = await getCachedVerdict(city, category, slug);
+  if (verdict.kind === 'not-found') notFound();
+  if (verdict.kind === 'redirect') permanentRedirect(verdict.path);
 
   // 2. Fetch detail. ApiError 404 → notFound. Other errors propagate to
   //    error.tsx boundary.

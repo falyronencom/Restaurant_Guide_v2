@@ -9,6 +9,24 @@ import { CITIES } from '@/lib/partner/constants';
 import { Field, SectionCard } from './primitives';
 import type { SectionProps } from './types';
 
+/**
+ * What the partner reads when the assist refuses (app/api/geocode/route.ts):
+ * a gone session is named, so it does not read as «no such address»; every
+ * other refusal keeps the general sentence. Each ends with the way out.
+ */
+export function geocodeRefusalText(code: string | undefined): string {
+  switch (code) {
+    case 'NO_SESSION':
+      return 'Сессия закончилась — войдите снова или введите координаты вручную.';
+    case 'RATE_LIMITED':
+      return 'Слишком много запросов за час — введите координаты вручную.';
+    case 'TOO_LONG':
+      return 'Адрес слишком длинный — сократите его или введите координаты вручную.';
+    default:
+      return 'Не удалось определить координаты. Введите вручную.';
+  }
+}
+
 /*
  * Address: city + street + building, with a geocode assist (Decision 3) that
  * fills lat/lng via the /api/geocode proxy. lat/lng stay the editable canon — the
@@ -31,15 +49,22 @@ export function AddressSection({ form, patch, disabled }: SectionProps) {
     setGeocoding(true);
     setGeoMsg(null);
     try {
-      const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`);
+      const res = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ q }),
+      });
       const json = (await res.json()) as {
         result: { lat: number; lng: number } | null;
+        code?: string;
       };
       if (json?.result) {
         patch({ latitude: json.result.lat, longitude: json.result.lng });
         setGeoMsg('Координаты определены — проверьте точку на карте.');
-      } else {
+      } else if (res.ok) {
         setGeoMsg('Адрес не найден — введите координаты вручную.');
+      } else {
+        setGeoMsg(geocodeRefusalText(json?.code));
       }
     } catch {
       setGeoMsg('Не удалось определить координаты. Введите вручную.');

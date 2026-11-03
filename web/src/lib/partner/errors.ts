@@ -129,13 +129,23 @@ export type Refusal = {
   fields?: FieldRefusal[];
   retryAfter?: number;
   /** Which limit refused, for RATE_LIMIT_EXCEEDED: the account's daily upload
-   *  allowance or the request limiter. */
-  limit?: 'daily_uploads' | 'requests';
+   *  allowance, the shared ceiling of the accounts without a confirmed e-mail
+   *  (backend services/unconfirmedAllowance.js — details.unconfirmed), or the
+   *  request limiter. */
+  limit?: 'daily_uploads' | 'unconfirmed_uploads' | 'requests';
   /** FORBIDDEN from the role gate (backend middleware/auth.js authorize): the
    *  role the server saw. Absent on the ownership refusal («не ваша или
    *  удалённая карточка»), which carries no details. */
   role?: string;
 };
+
+/** Which upload limit refused, from a 429's details (lib/partner/errors Refusal.limit). */
+export function uploadLimitOf(
+  details: { files_limit?: unknown; unconfirmed?: unknown } | undefined,
+): 'daily_uploads' | 'unconfirmed_uploads' | 'requests' {
+  if (details?.unconfirmed === true) return 'unconfirmed_uploads';
+  return details?.files_limit !== undefined ? 'daily_uploads' : 'requests';
+}
 
 /** «3 ч 5 мин», «12 мин», «40 сек» — how long until a limit lets go. */
 export function formatWait(seconds: number): string {
@@ -152,6 +162,11 @@ function ownPhrase(r: Refusal): string | undefined {
   switch (r.code) {
     case 'RATE_LIMIT_EXCEEDED': {
       const wait = r.retryAfter ? formatWait(r.retryAfter) : null;
+      if (r.limit === 'unconfirmed_uploads') {
+        // The server's own sentence: confirming the e-mail lifts the ceiling.
+        return 'Загрузки для учётных записей без подтверждённой почты на сегодня закончились. '
+          + 'Подтвердите почту в профиле — и продолжите.';
+      }
       if (r.limit === 'daily_uploads') {
         // The allowance renews at Minsk midnight (backend uploadAllowance.js).
         return wait

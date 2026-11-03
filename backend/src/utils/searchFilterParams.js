@@ -23,8 +23,25 @@ import { AppError } from '../middleware/errorHandler.js';
 const VALID_HOURS_FILTERS = ['until_22', 'until_morning', '24_hours'];
 
 /**
+ * Сколько значений берёт один списочный фильтр и какой длины может быть
+ * значение. Самый длинный канон — 15 категорий (`establishmentVocab.js`),
+ * самое длинное значение — ключ удобства в 22 знака: оба предела с запасом
+ * вдвое и больше, клиенты в них не упираются. До 03.11.2026 пределов не было:
+ * удобство — отдельное условие и параметр запроса, и список во всё тело
+ * (до 10 МБ) держал сервер и базу десятки секунд, а несколько таких запросов
+ * разом перезапустили базу стенда (замер нитки «Расходы посторонних»,
+ * п. 7). / The most values one list filter takes, and the longest value —
+ * twice the longest canon and more; past them the request is refused.
+ */
+export const MAX_LIST_VALUES = 30;
+export const MAX_LIST_VALUE_LENGTH = 64;
+
+/**
  * Список значений: массив (JSON-массив или повторённый query-параметр) либо
  * строка через запятую. Пустой результат — `null`, а не пустой массив.
+ * Повторы снимаются; больше MAX_LIST_VALUES значений или значение длиннее
+ * MAX_LIST_VALUE_LENGTH — 422. Длина считается до разбора строки и до обхода
+ * массива: отказ не стоит работы по всему списку.
  *
  * Разница видна на `priceRange`: в `searchService` он проверяется голым
  * `if (priceRange)`, и пустой массив (истинный в JS) уходит в SQL как
@@ -35,13 +52,32 @@ const VALID_HOURS_FILTERS = ['until_22', 'until_morning', '24_hours'];
  * array there zeroes the result set; the rule is uniform for consistency.
  *
  * @param {*} value
+ * @param {string} name - Имя фильтра для текста отказа
  * @returns {string[]|null}
+ * @throws {AppError} 422 VALIDATION_ERROR
  */
-function parseList(value) {
+function parseList(value, name) {
   if (value == null || value === '') return null;
-  const items = (Array.isArray(value) ? value : String(value).split(','))
+  const refusal = () => new AppError(
+    `${name} takes at most ${MAX_LIST_VALUES} values of at most ${MAX_LIST_VALUE_LENGTH} characters`,
+    422,
+    'VALIDATION_ERROR',
+  );
+  // Значение — строка или число (строкой его делает query-строка, числом —
+  // JSON); объект с чужим toString ронял разбор в 500. / Strings and numbers
+  // only: an object's own toString could throw here.
+  const scalar = (v) => typeof v === 'string' || typeof v === 'number';
+  if (Array.isArray(value)
+    ? value.length > MAX_LIST_VALUES || !value.every(scalar)
+    : !scalar(value) || String(value).length > MAX_LIST_VALUES * (MAX_LIST_VALUE_LENGTH + 1)) {
+    throw refusal();
+  }
+  const items = [...new Set((Array.isArray(value) ? value : String(value).split(','))
     .map(v => String(v).trim())
-    .filter(Boolean);
+    .filter(Boolean))];
+  if (items.length > MAX_LIST_VALUES || items.some(item => item.length > MAX_LIST_VALUE_LENGTH)) {
+    throw refusal();
+  }
   return items.length > 0 ? items : null;
 }
 
@@ -114,15 +150,15 @@ export function parseSearchFilterParams(source = {}) {
   }
 
   return {
-    categories: parseList(categories),
-    cuisines: parseList(cuisines),
-    priceRange: parseList(priceRange),
+    categories: parseList(categories, 'categories'),
+    cuisines: parseList(cuisines, 'cuisines'),
+    priceRange: parseList(priceRange, 'priceRange'),
     minRating: minRatingValue,
     maxDistance: maxDistanceKm,
     radius: radiusKm,
     sortBy: sort_by ?? null,
     hoursFilter: hours_filter ?? null,
-    features: parseList(features),
+    features: parseList(features, 'features'),
   };
 }
 
