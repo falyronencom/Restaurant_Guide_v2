@@ -21,6 +21,7 @@ import {
   ratingColorClass,
 } from '@/lib/establishment-helpers';
 import { establishmentAddress } from '@/lib/establishment-path';
+import { mayAskForSlug } from '@/lib/known-slugs';
 import { NOT_FOUND_TITLE } from '@/lib/not-found-titles';
 import { normalizeCategory, normalizeCuisine } from '@/lib/working-hours';
 import { OpenStatusBadge } from '@/components/catalog/OpenStatusBadge';
@@ -64,7 +65,18 @@ export const revalidate = 3600;
 
 type Params = { city: string; category: string; slug: string };
 
-const getCachedBySlug = cache((slug: string) => getBySlug(slug));
+/*
+ * A slug the site will not ask the API about (lib/known-slugs.ts: not the
+ * form of a slug, or not a card of the catalogue once the hour's allowance of
+ * such asks is spent) reads as the API's own 404 — «не найдено» in both the
+ * metadata and the body, without a call from the site's budget.
+ */
+const getCachedBySlug = cache(async (slug: string) => {
+  if (!(await mayAskForSlug(slug))) {
+    throw new ApiError(404, 'Establishment not found', 'NOT_FOUND');
+  }
+  return getBySlug(slug);
+});
 
 export async function generateStaticParams(): Promise<Params[]> {
   // Defer to runtime — combinatorial explosion (cities × categories × slugs).
