@@ -26,6 +26,18 @@ const router = express.Router();
  */
 export const SMART_SEARCH_REQUESTS_PER_MINUTE = 120;
 
+/**
+ * The most the smart search's body may weigh. Its body is a phrase of up to
+ * 150 characters, coordinates, a city and the screen's filters — under 2 KB
+ * from the app and the site; 32 KB leaves room for any of them. server.js
+ * parses this route's body with it, ahead of the general 10 MB parsers: until
+ * 03.11.2026 a body of up to 10 MB was parsed and walked here, and one such
+ * request held the server for seconds (measurement of the thread «Расходы
+ * посторонних», point 7).
+ */
+export const SMART_SEARCH_PATH = '/api/v1/search/smart';
+export const SMART_SEARCH_BODY_LIMIT = '32kb';
+
 const smartSearchLimiter = createRateLimiter({
   limit: SMART_SEARCH_REQUESTS_PER_MINUTE,
   windowSeconds: 60,

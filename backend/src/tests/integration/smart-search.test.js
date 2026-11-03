@@ -175,6 +175,34 @@ describe('Smart Search - Input Validation', () => {
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
   });
+
+  // Нитка «Расходы посторонних», п. 7 (03.11.2026): до правки город любой
+  // длины уходил в SQL, а список удобств во всё тело становился тысячами
+  // условий запроса к базе. / Bounded city and filter lists.
+  test('city of 100 characters is taken, of 101 — 400', async () => {
+    const taken = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'кофе', city: 'М'.repeat(100) });
+    expect(taken.status).toBe(200);
+
+    const refused = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'кофе', city: 'М'.repeat(101) });
+    expect(refused.status).toBe(400);
+    expect(refused.body.error).toEqual({
+      code: 'VALIDATION_ERROR',
+      message: 'city must be at most 100 characters',
+    });
+  });
+
+  test('features of 31 values — 422', async () => {
+    const response = await request(app)
+      .post('/api/v1/search/smart')
+      .send({ query: 'кофе', features: Array.from({ length: 31 }, (_, i) => `f${i}`) });
+
+    expect(response.status).toBe(422);
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+  });
 });
 
 // ─── Fallback (no API key) ───────────────────────────────────────────────────
