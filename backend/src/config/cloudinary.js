@@ -923,14 +923,27 @@ export const generatePdfPreviewUrl = (publicId) => {
  * Unlike thumbnail/preview helpers, this produces the page at its native
  * resolution (no width/height crop) — Vision models need readable text.
  *
+ * Signed (s--…--): every page is a transformation of its own, pg_1…pg_20, too
+ * many to list as allowed in the account, and with strict transformations on
+ * the cloud makes a new one only for a signed link (thread «Расходы
+ * посторонних», point 8). A signature covers this page of this file and
+ * nothing else; the page's image is the same one an unsigned link of the panel
+ * reads afterwards. The version is the stored link's.
+ *
  * @param {string} pdfUrl - Original PDF secure_url from establishment_media
  * @param {number} pageNum - 1-based page number
- * @returns {string} Cloudinary URL rendering the given page as JPG
+ * @returns {string} Signed Cloudinary URL rendering the given page as JPG
  */
 export const generatePdfPageImageUrl = (pdfUrl, pageNum) => {
-  return pdfUrl
-    .replace('/upload/', `/upload/pg_${pageNum}/`)
-    .replace(/\.pdf$/i, '.jpg');
+  return cloudinary.url(extractPublicIdFromUrl(pdfUrl), {
+    resource_type: 'image',
+    type: 'upload',
+    secure: true,
+    sign_url: true,
+    format: 'jpg',
+    version: String(pdfUrl).match(/\/v(\d+)\//)?.[1],
+    transformation: [{ page: pageNum }],
+  });
 };
 
 export const uploadAvatar = async (filePath, userId) => {
