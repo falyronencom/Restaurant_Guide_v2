@@ -14,6 +14,7 @@
  */
 
 import crypto from 'crypto';
+import { jest } from '@jest/globals';
 import request from 'supertest';
 import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
@@ -1776,7 +1777,35 @@ describe('Smart Search - Бюджет модели', () => {
     originalFetch = global.fetch;
   });
 
+  // Бюджет считает часы и минские сутки по настенным часам
+  // (services/smartSearchBudget.js hourIndexOf): на смене часа счётчики
+  // начинаются заново, и 05.11.2026 тест потолка упал в CI в 16:00:01Z. Часы
+  // стоят на середине текущего часа — ни час, ни сутки в тесте не сменятся, а
+  // счётчики лимитеров в Redis живут обычный срок. Подменён только Date:
+  // таймеры нужны настоящие — база, Redis и supertest ждут на них.
+  const REAL_TIMERS = [
+    'hrtime', 'nextTick', 'performance', 'queueMicrotask', 'requestAnimationFrame',
+    'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback',
+    'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout',
+  ];
+  const HOUR_MS = 3600 * 1000;
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test('часы блока стоят: настоящее время идёт, Date — нет', async () => {
+    const start = Date.now();
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(Date.now()).toBe(start);
+    expect(start % HOUR_MS).toBe(HOUR_MS / 2);
+  });
+
   beforeEach(async () => {
+    jest.useFakeTimers({
+      doNotFake: REAL_TIMERS,
+      now: Math.floor(Date.now() / HOUR_MS) * HOUR_MS + HOUR_MS / 2,
+    });
     await clearBudget();
     process.env.OPENROUTER_API_KEY = 'test-key';
     process.env.SMART_SEARCH_LLM_HOURLY_CAP = '';
