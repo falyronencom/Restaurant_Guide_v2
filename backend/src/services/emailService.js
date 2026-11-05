@@ -21,6 +21,7 @@
  */
 
 import { Resend } from 'resend';
+import { DEFAULT_SITE_URL } from '../config/siteUrl.js';
 import { reserveDailyMail } from './mailAllowance.js';
 import logger from '../utils/logger.js';
 
@@ -297,7 +298,7 @@ const buildResetTextBody = (resetUrl, userName, expiryMinutes) =>
 export const sendPasswordResetEmail = async (toEmail, rawToken, userName, { userId } = {}) => {
   const fromAddress = process.env.EMAIL_FROM_ADDRESS || 'noreply@nirivio.by';
   const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
-  const siteUrl = (process.env.SITE_URL || 'https://nirivio.by').replace(/\/+$/, '');
+  const siteUrl = (process.env.SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, '');
   const resetUrl = `${siteUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
   if (!ensureConfigured()) {
