@@ -114,8 +114,8 @@ const truncatesIn = (source) => {
   const found = [];
   const inspect = (text, node) => {
     for (const statement of text.matchAll(TRUNCATE_STATEMENT)) {
-      const list = statement[1].trim();
-      const dynamic = list.includes('${');
+      const list = statement[1].trim().replace(/"/g, '').replace(/\bpublic\./gi, '');
+      const dynamic = list === '' || list.includes('${'); // '' is 'TRUNCATE TABLE ' + name
       if (dynamic || /^\w+(\s*,\s*\w+)*$/.test(list)) { // otherwise prose, not a statement
         found.push({
           line: node.loc.start.line,
@@ -267,6 +267,9 @@ describe('TRUNCATE in the tests themselves', () => {
     expect(scan('await query(`TRUNCATE reviews CASCADE`);')).toHaveLength(1);
     expect(scan("await pool.query('TRUNCATE TABLE reviews, notifications CASCADE');")).toHaveLength(1);
     expect(scan('await query(`TRUNCATE TABLE ${name} CASCADE`);')).toHaveLength(1);
+    expect(scan("await query('TRUNCATE TABLE ' + name + ' CASCADE');")).toHaveLength(1);
+    expect(scan("await query('TRUNCATE TABLE public.establishments CASCADE');")).toHaveLength(1);
+    expect(scan(`await query('TRUNCATE "reviews" CASCADE');`)).toHaveLength(1);
 
     expect(scan("await query('TRUNCATE TABLE audit_log');")).toEqual([]);
     expect(scan("await query('TRUNCATE TABLE notifications, reviews CASCADE');")).toEqual([]);

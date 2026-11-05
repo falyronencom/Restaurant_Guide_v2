@@ -21,11 +21,12 @@
  *                                          stored in a Set/Map only also counts
  * Inside catch and finally the same shapes are found the same way.
  *
- * Does not see: calls through parameters and object fields it cannot follow,
- * results of factories, dynamic names (`obj[key]()`), a promise handed to a
- * helper (the helper is assumed to own it). A library call counts as async only
- * if it is listed in isLibraryCallAsync. So green is not a proof that no such
- * call exists; a bare `.catch` chain on anything is always seen.
+ * Does not see: calls through parameters and object fields it cannot follow
+ * (`client.query` on a local name is the exception), results of factories, dynamic
+ * names (`obj[key]()`), a promise handed to a helper (the helper is assumed to own
+ * it). A library call counts as async only if it is listed in isLibraryCallAsync.
+ * So green is not a proof that no such call exists; a then/catch/finally chain
+ * dropped as a statement is seen whatever it hangs on.
  */
 
 import { readdirSync, readFileSync } from 'fs';
@@ -52,7 +53,8 @@ const FS_CALLBACK_FUNCTIONS = new Set([
   'unlink', 'writeFile', 'readFile', 'mkdir', 'rm', 'rmdir', 'rename', 'copyFile', 'appendFile', 'stat',
   'access', 'readdir',
 ]);
-const CALLBACK_THAT_WAITS = /(^|\.)(map|flatMap|then|catch|finally|reduce|filter|find|some|every|sort|asyncHandler|inTransaction|executeInTransaction|withTransaction|race|all|allSettled)$/;
+const CALLBACK_RESULT_COLLECTED = /(^|\.)(map|flatMap|reduce|filter|find|some|every|sort|asyncHandler|inTransaction|executeInTransaction|withTransaction|race|all|allSettled)$/;
+const REASON_PLACEHOLDER = 'ЗАМЕНИ: почему ждать нельзя';
 
 /** Call text without arguments: stays the same when the arguments are edited. */
 function shape(node) {
@@ -83,6 +85,7 @@ function functionName(path, classes) {
   if (t.isVariableDeclarator(parent) && t.isIdentifier(parent.id)) return parent.id.name;
   if (t.isObjectProperty(parent)) return keyName(parent);
   if (t.isAssignmentExpression(parent)) return shape(parent.left);
+  if (t.isAssignmentPattern(parent) && t.isIdentifier(parent.left)) return parent.left.name;
   if (t.isCallExpression(parent)) {
     // `const handler = asyncHandler(async (req, res) => …)` is handler.
     const holder = path.parentPath.parent;
@@ -90,7 +93,12 @@ function functionName(path, classes) {
       if (t.isVariableDeclarator(holder) && t.isIdentifier(holder.id)) return holder.id.name;
       if (t.isObjectProperty(holder)) return keyName(holder);
     }
-    return `cb(${shape(parent.callee)})`;
+    // A route or an event names its callback: a new route above it moves nothing.
+    const [first] = parent.arguments;
+    const isNamedByFirstArgument = t.isMemberExpression(parent.callee) && !parent.callee.computed
+      && (ROUTE_METHODS.has(parent.callee.property.name) || EVENT_METHODS.has(parent.callee.property.name))
+      && t.isStringLiteral(first);
+    return isNamedByFirstArgument ? `cb(${shape(parent.callee)} '${first.value}')` : `cb(${shape(parent.callee)})`;
   }
   return 'anon';
 }
@@ -101,8 +109,11 @@ function stripAwait(node) {
   return current;
 }
 
+const isAnyCall = (node) => t.isCallExpression(node) || t.isOptionalCallExpression(node);
+const isAnyMember = (node) => t.isMemberExpression(node) || t.isOptionalMemberExpression(node);
+
 function isChainCall(node) {
-  return t.isCallExpression(node) && t.isMemberExpression(node.callee)
+  return isAnyCall(node) && isAnyMember(node.callee)
     && !node.callee.computed && CHAIN_METHODS.has(node.callee.property.name);
 }
 
@@ -115,8 +126,10 @@ function isPromiseCombinator(node) {
 function isLibraryCallAsync(desc, lastArgumentIsFunction) {
   if (/multi\(\)/.test(desc)) return /\.exec$/.test(desc);
   const parts = desc.replace(/\(\)/g, '').split('.');
-  const [module] = parts;
+  const module = parts[0].replace(/^node:/, '');
   const last = parts[parts.length - 1];
+  // A pg client handed around by name: getClient(), a transaction's parameter.
+  if (/^local:/.test(module) && last === 'query') return true;
   if (/^config\/database/.test(module)) return ['query', 'connect', 'end'].includes(last);
   if (/^config\/redis/.test(module)) return REDIS_COMMANDS.has(last);
   if (/^cloudinary/.test(module) || /^config\/cloudinary/.test(module)) {
@@ -124,7 +137,7 @@ function isLibraryCallAsync(desc, lastArgumentIsFunction) {
   }
   if (/^resend/.test(module)) return last === 'send';
   if (/firebaseAdmin|firebase-admin/.test(module)) return /^send|subscribe|unsubscribe/.test(last);
-  if (/^fs\/promises/.test(module)) return true;
+  if (/^fs\/promises/.test(module) || /^fs#promises/.test(module)) return true;
   if (/^fs#/.test(module) || module === 'fs') {
     if (parts.includes('promises')) return true;
     return !/Sync$/.test(last) && lastArgumentIsFunction && FS_CALLBACK_FUNCTIONS.has(last);
@@ -160,7 +173,7 @@ function followValue(path) {
       || (t.isConditionalExpression(parent) && key !== 'test')
       || t.isArrayExpression(parent) || t.isSpreadElement(parent)) {
       current = parentPath;
-    } else if (t.isMemberExpression(parent) && key === 'object') {
+    } else if (isAnyMember(parent) && key === 'object') {
       const callPath = parentPath.parentPath;
       if (callPath && isChainCall(callPath.node) && callPath.node.callee === parent) {
         chained = true;
@@ -191,6 +204,7 @@ function followValue(path) {
 function isVariableConsumed(scopePath, name) {
   const binding = name ? scopePath.scope.getBinding(name) : null;
   if (!binding) return true;
+  if (binding.path.parentPath?.parentPath?.isExportNamedDeclaration()) return true;
   for (const reference of binding.referencePaths) {
     const use = followValue(reference);
     if (use.state === 'awaited' || use.state === 'returned') return true;
@@ -200,6 +214,8 @@ function isVariableConsumed(scopePath, name) {
       if (!stored) return true;
     }
     if (use.state === 'assigned' || t.isObjectProperty(reference.parent)) return true;
+    if (isAnyCall(reference.parent) && reference.key === 'callee') return true;
+    if (t.isExportSpecifier(reference.parent) || t.isExportDefaultDeclaration(reference.parent)) return true;
   }
   return false;
 }
@@ -231,11 +247,16 @@ class SourceAnalysis {
   }
 
   parseModule(file, source) {
-    const ast = parser.parse(source, {
-      sourceType: 'module',
-      allowAwaitOutsideFunction: true,
-      allowReturnOutsideFunction: true,
-    });
+    let ast;
+    try {
+      ast = parser.parse(source, {
+        sourceType: 'module',
+        allowAwaitOutsideFunction: true,
+        allowReturnOutsideFunction: true,
+      });
+    } catch (error) {
+      throw new Error(`Сторож вызовов без ожидания не смог прочитать ${file}: ${error.message}`);
+    }
     const top = { qualifiedName: '<top>', file, isTop: true, isAsync: false, returnsPromise: false };
     const module = { file, ast, top, exports: new Map(), starExports: [], declarations: new Map() };
     this.modules.set(file, module);
@@ -320,7 +341,9 @@ class SourceAnalysis {
       }
     } else if (source) {
       for (const specifier of specifiers) {
-        exports.set(specifier.exported.name, { reexport: { from: source.value, name: specifier.local.name } });
+        exports.set(specifier.exported.name, specifier.local
+          ? { reexport: { from: source.value, name: specifier.local.name } }
+          : { external: `${source.value}#*` });
       }
     } else {
       for (const specifier of specifiers) {
@@ -427,7 +450,13 @@ class SourceAnalysis {
     }
     if (t.isFunction(init)) return { kind: 'function', fn: this.functionByNode.get(init) };
     if (t.isObjectExpression(init)) return this.resolveObject(init, bindingPath, file, depth);
-    if (t.isIdentifier(init)) return this.resolveName(bindingPath.scope, init.name, file, depth + 1);
+    if (t.isIdentifier(init)) {
+      const value = this.resolveName(bindingPath.scope, init.name, file, depth + 1);
+      if (!t.isObjectPattern(declarator.id)) return value;
+      const property = declarator.id.properties.find((candidate) => t.isObjectProperty(candidate)
+        && t.isIdentifier(candidate.value, { name }));
+      return property ? this.memberOf(value, keyName(property)) : { kind: 'local', name };
+    }
     if (t.isNewExpression(init)) {
       const constructed = this.resolveExpression(init.callee, bindingPath.scope, file, depth + 1);
       if (constructed.kind === 'class') return { kind: 'instance', cls: constructed.cls };
@@ -617,11 +646,11 @@ class SourceAnalysis {
     const { node } = path;
     const parentPath = path.parentPath;
     // The inner link of a chain is judged with the chain's outermost call.
-    if (t.isMemberExpression(parentPath.node) && path.key === 'object' && parentPath.key === 'callee'
+    if (isAnyMember(parentPath.node) && path.key === 'object' && parentPath.key === 'callee'
       && isChainCall(parentPath.parent)) return;
 
     let base = node;
-    while (isChainCall(base) && t.isCallExpression(stripAwait(base.callee.object))) {
+    while (isChainCall(base) && isAnyCall(stripAwait(base.callee.object))) {
       base = stripAwait(base.callee.object);
     }
     const baseCall = this.callByNode.get(base) ?? call;
@@ -678,17 +707,27 @@ class SourceAnalysis {
         const resolved = this.resolveExpression(argument, path.scope, module.file, 0, path);
         if (resolved.kind === 'function') target = resolved.fn;
       }
-      if (target?.isAsync && (isTimer || isEvent || isDroppedValue(value))) site('е', calleeShape);
+      // An inline function's own `return save()` is reported at save, by isReturnedIntoCallback.
+      const givesPromise = target?.isAsync || (target?.returnsPromise && !t.isFunction(argument));
+      if (givesPromise && (isTimer || isEvent || isDroppedValue(value))) site('е', calleeShape);
     }
   }
 
-  /** `items.forEach((i) => save(i))`: the promise goes back into a callback. */
+  /**
+   * `items.forEach((i) => save(i))`: the promise goes back into a callback. A chain
+   * is judged as a chain. `map` and its like collect the promises, so it depends
+   * on what happens to the result; anything else that is not awaited drops them,
+   * and returning its result does not help: multer's `parse` returns nothing.
+   */
   isReturnedIntoCallback(path) {
     const fnPath = path.getFunctionParent();
     if (!fnPath || fnPath.listKey !== 'arguments' || !t.isCallExpression(fnPath.parent)) return false;
+    if (isChainCall(fnPath.parent)) return false;
     const outer = this.callByNode.get(fnPath.parent);
-    return Boolean(outer) && outer.resolved.kind === 'external'
-      && !CALLBACK_THAT_WAITS.test(shape(fnPath.parent.callee));
+    if (!outer || outer.resolved.kind !== 'external') return false;
+    const value = followValue(fnPath.parentPath);
+    if (CALLBACK_RESULT_COLLECTED.test(shape(fnPath.parent.callee))) return isDroppedValue(value);
+    return value.state === 'returned' || isDroppedValue(value);
   }
 }
 
@@ -733,7 +772,9 @@ export function compareWithInventory(sites, rows) {
   const found = new Map();
   for (const site of sites) {
     const key = keyOf(site);
-    if (!found.has(key)) found.set(key, { file: site.file, function: site.function, callee: site.callee, lines: [] });
+    if (!found.has(key)) {
+      found.set(key, { file: site.file, function: site.function, callee: site.callee, pattern: site.pattern, lines: [] });
+    }
     found.get(key).lines.push(site.line);
   }
   const known = new Map(rows.map((row) => [keyOf(row), row]));
@@ -745,6 +786,8 @@ export function compareWithInventory(sites, rows) {
   return { added, changed, gone };
 }
 
+export { REASON_PLACEHOLDER };
+
 /** The guard's message, for a person who has never seen this guard. */
 export function describeDifference({ added, changed, gone }, inventoryName) {
   const parts = [];
@@ -755,13 +798,16 @@ export function describeDifference({ added, changed, gone }, inventoryName) {
       callee: place.callee,
       count: place.lines.length,
       class: 'намеренно фоновая',
-      reason: 'почему ждать нельзя',
+      reason: REASON_PLACEHOLDER,
     });
     parts.push([
       `Новый вызов без ожидания: ${place.file}:${place.lines.join(',')}, функция ${place.function}, вызов ${place.callee}.`,
       '  Ответ может уйти раньше, чем он закончится; при выкатке его работа может потеряться.',
-      '  Дождись записи (await). Если ждать нельзя — добавь в опись строку с причиной:',
+      place.pattern === 'е'
+        ? '  Этот вызов не ждёт асинхронную функцию (forEach, таймер, обработчик). Дождись записи: for…of с await или await Promise.all(items.map(…)). Если ждать нельзя — добавь в опись строку с причиной:'
+        : '  Дождись записи (await). Если ждать нельзя — добавь в опись строку с причиной:',
       `  ${row}`,
+      '  В строке замени reason на настоящую причину и выбери class: «намеренно фоновая» или «будет закрыта».',
     ].join('\n'));
   }
   for (const place of changed) {
@@ -773,7 +819,7 @@ export function describeDifference({ added, changed, gone }, inventoryName) {
   for (const row of gone) {
     parts.push([
       `В описи есть строка, а вызова в коде нет: ${row.file}, функция ${row.function}, вызов ${row.callee}.`,
-      '  Если вызов теперь ждут или его убрали — убери строку. Если функцию переименовали — поправь строку.',
+      '  Если вызов теперь ждут или его убрали — убери строку. Если функцию переименовали или у неё сдвинулся номер в имени (#2) — поправь строку.',
     ].join('\n'));
   }
   return [
@@ -782,5 +828,6 @@ export function describeDifference({ added, changed, gone }, inventoryName) {
     ...parts,
     '',
     'Опись одна на все ветки. Столкнулись на ней с другой веткой — обновись от main и поправь только свою строку.',
+    'Проверить у себя: cd backend && node scripts/test-isolated <имя> --testPathPatterns=unit/unawaited-calls-guard',
   ].join('\n');
 }

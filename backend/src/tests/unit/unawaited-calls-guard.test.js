@@ -15,6 +15,7 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
+  REASON_PLACEHOLDER,
   compareWithInventory,
   describeDifference,
   findUnawaitedCalls,
@@ -32,7 +33,9 @@ const PARSE_TIMEOUT_MS = 60000;
 
 const HELPERS = `
   async function save() {}
+  async function getClient() {}
   function plain() {}
+  const later = () => save().finally(plain);
   const items = [];
 `;
 
@@ -63,6 +66,7 @@ describe('server code and the inventory', () => {
     for (const site of INVENTORY.sites) {
       expect({ key: site.file, class: CLASSES.includes(site.class) }).toEqual({ key: site.file, class: true });
       expect(site.reason.trim()).not.toBe('');
+      expect(site.reason).not.toContain(REASON_PLACEHOLDER);
       expect(Number.isInteger(site.count) && site.count > 0).toBe(true);
     }
   });
@@ -81,6 +85,9 @@ describe('what the analysis reports', () => {
     ['з: inside catch', 'try { plain(); } catch { save().catch(plain); }', 'б', 'save'],
     ['з: inside finally', 'try { plain(); } finally { save(); }', 'а', 'save'],
     ['catch chain on an unknown object', 'someObject.write().catch(plain);', 'б', 'someObject.write'],
+    ['а: query on a client from getClient', 'const client = await getClient(); client.query("x");', 'а', 'client.query'],
+    ['б: chain on an optional call', 'someObject?.write().catch(plain);', 'б', 'someObject.write'],
+    ['е: non-async promise function to a timer', 'setInterval(later, 1);', 'е', 'setInterval'],
     ['е: async callback to forEach', 'items.forEach(async () => { await save(); });', 'е', 'items.forEach'],
     ['е: async callback to a timer', 'setTimeout(async () => { await save(); }, 1);', 'е', 'setTimeout'],
   ])('reports %s', (_name, body, pattern, callee) => {
@@ -91,6 +98,19 @@ describe('what the analysis reports', () => {
   test('reports a promise returned into a callback nobody waits on, in the callback', () => {
     expect(sitesOf('items.forEach(() => save());').map((site) => [site.pattern, site.function, site.callee]))
       .toEqual([['е', 'run>cb(items.forEach)', 'save']]);
+  });
+
+  test.each([
+    ['a map nobody takes', 'items.map(() => save());', 'run>cb(items.map)'],
+    ['a map kept and never awaited', 'const pending = items.map(() => save());', 'run>cb(items.map)'],
+    ['a library that drops it, though returned', 'return library(() => save());', 'run>cb(library)'],
+  ])('reports %s', (_name, body, fn) => {
+    expect(sitesOf(body).map((site) => [site.pattern, site.function, site.callee])).toEqual([['е', fn, 'save']]);
+  });
+
+  test('reports a query on a client received as a parameter', () => {
+    expect(findUnawaitedCalls({ 'a.js': 'async function run(client) { client.query("x"); }' })
+      .map((site) => site.callee)).toEqual(['client.query']);
   });
 
   test.each([
@@ -106,6 +126,11 @@ describe('what the analysis reports', () => {
     ['synchronous call', 'plain();'],
     ['an async route handler', 'router.post("/x", async () => { await save(); });'],
     ['a handler in asyncHandler', 'asyncHandler(async () => { await save(); });'],
+    ['an awaited limiter', 'await library(() => save());'],
+    ['a promise array the caller awaits', 'await Promise.all(Array.from(items, () => save()));'],
+    ['a map the caller returns', 'return Promise.all(items.map(() => save()));'],
+    ['a wrapped function called later', 'const cached = wrap(async () => {}); await cached(1);'],
+    ['a chain on another promise', 'await save().then(() => save());'],
   ])('stays silent on %s', (_name, body) => {
     expect(sitesOf(`const router = {}; ${body}`)).toEqual([]);
   });
@@ -125,6 +150,58 @@ describe('what the analysis reports', () => {
     ]);
   });
 
+  test('follows a class, its instance and this', () => {
+    const sites = findUnawaitedCalls({
+      'a.js': `class Repo {
+        async write() {}
+        run() { this.write(); }
+      }
+      const repo = new Repo();
+      function outside() { repo.write(); }`,
+    });
+
+    expect(sites.map((site) => `${site.function} ${site.callee}`)).toEqual([
+      'Repo.run this.write',
+      'outside repo.write',
+    ]);
+  });
+
+  test('follows a destructured object and a node: import', () => {
+    const sites = findUnawaitedCalls({
+      'thing.js': 'const write = async () => {}; export default { write };',
+      'a.js': "import Thing from './thing.js';\nconst { write } = Thing;\nfunction one() { write(); }",
+      'b.js': "import { unlink } from 'node:fs/promises';\nfunction two() { unlink('x'); }",
+      'c.js': "import { promises as fs } from 'fs';\nfunction three() { fs.unlink('x'); }",
+    });
+
+    expect(sites.map((site) => `${site.function} ${site.callee}`)).toEqual([
+      'one write',
+      'two unlink',
+      'three fs.unlink',
+    ]);
+  });
+
+  test('an exported wrapped function is not dropped, export * as does not break the reading', () => {
+    expect(findUnawaitedCalls({
+      'a.js': "export const handler = wrap(async () => {});\nexport * as all from './b.js';",
+      'b.js': 'const later = wrap(async () => {});\nexport default later;',
+    })).toEqual([]);
+  });
+
+  test('a file that cannot be read is named', () => {
+    expect(() => findUnawaitedCalls({ 'broken.js': "const a = 'x" })).toThrow('broken.js');
+  });
+
+  test('a new route or a default parameter above a place changes no function name', () => {
+    const names = (source) => findUnawaitedCalls({ 'a.js': source }).map((site) => site.function);
+    const place = "async function save() {}\nrouter.post('/b', async () => { save(); });";
+
+    expect(names(place)).toEqual(["cb(router.post '/b')"]);
+    expect(names(`router.post('/a', async () => {});\n${place}`)).toEqual(["cb(router.post '/b')"]);
+    expect(names(`async function save() {}
+      function make({ now = () => 1 } = {}) { return () => { save(); }; }`)).toEqual(['make>anon']);
+  });
+
   test('counts a function that returns a promise without being async', () => {
     expect(findUnawaitedCalls({
       'a.js': 'const later = () => new Promise(() => {});\nfunction run() { later(); }',
@@ -141,8 +218,8 @@ describe('what the analysis reports', () => {
 
     expect(sites.map((site) => `${site.function} ${site.callee}`)).toEqual([
       'handler pool.query',
-      'cb(router.post) pool.query',
-      'cb(router.post) pool.query',
+      "cb(router.post '/a') pool.query",
+      "cb(router.post '/a') pool.query",
     ]);
   });
 });
@@ -173,7 +250,7 @@ describe('comparing with the inventory', () => {
   test('a place outside the inventory is reported, with its line, and tells what to do', () => {
     const difference = compareWithInventory(findUnawaitedCalls({ 'a.js': source }), []);
 
-    expect(difference.added).toEqual([{ file: 'a.js', function: 'run', callee: 'save', lines: [2, 2] }]);
+    expect(difference.added).toEqual([{ file: 'a.js', function: 'run', callee: 'save', pattern: 'а', lines: [2, 2] }]);
     expect(describeDifference(difference, 'опись.json')).toEqual(expect.stringContaining('a.js:2,2'));
     expect(describeDifference(difference, 'опись.json')).toEqual(expect.stringContaining('Дождись записи'));
     expect(describeDifference(difference, 'опись.json')).toEqual(expect.stringContaining('обновись от main'));
@@ -186,7 +263,7 @@ describe('comparing with the inventory', () => {
     );
 
     expect(difference.changed).toEqual([
-      { file: 'a.js', function: 'run', callee: 'save', lines: [2, 2], expected: 1 },
+      { file: 'a.js', function: 'run', callee: 'save', pattern: 'а', lines: [2, 2], expected: 1 },
     ]);
   });
 
@@ -194,7 +271,7 @@ describe('comparing with the inventory', () => {
     const fewer = source.replace('save(); save();', 'await save(); save();');
 
     expect(compareWithInventory(findUnawaitedCalls({ 'a.js': fewer }), known).changed)
-      .toEqual([{ file: 'a.js', function: 'run', callee: 'save', lines: [2], expected: 2 }]);
+      .toEqual([{ file: 'a.js', function: 'run', callee: 'save', pattern: 'а', lines: [2], expected: 2 }]);
   });
 
   test('a row with no place in the code is reported', () => {
