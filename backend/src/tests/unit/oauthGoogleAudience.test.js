@@ -13,6 +13,7 @@ import { jest } from '@jest/globals';
 import { OAuth2Client } from 'google-auth-library';
 import { verifyGoogleToken } from '../../services/oauthService.js';
 import { resolveGoogleClientId } from '../../config/oauth.js';
+import logger from '../../utils/logger.js';
 
 const OUR_CLIENT = 'our-web-client.apps.googleusercontent.com';
 const OTHER_APP = 'somebody-elses-app.apps.googleusercontent.com';
@@ -71,6 +72,26 @@ describe('настройка задана', () => {
     await expect(verifyGoogleToken(idToken(OTHER_APP))).rejects.toThrow('OAUTH_INVALID_TOKEN');
   });
 
+  test('истёкший токен — отказ', async () => {
+    const past = Math.floor(Date.now() / 1000) - 7200;
+
+    await expect(verifyGoogleToken(idToken(OUR_CLIENT, { iat: past - 600, exp: past })))
+      .rejects.toThrow('OAUTH_INVALID_TOKEN');
+  });
+
+  test('токен другого издателя — отказ', async () => {
+    await expect(verifyGoogleToken(idToken(OUR_CLIENT, { iss: 'https://not-google.example' })))
+      .rejects.toThrow('OAUTH_INVALID_TOKEN');
+  });
+
+  test.each([
+    'worker@some-project.iam.gserviceaccount.com',
+    '123-compute@developer.gserviceaccount.com',
+    'Worker@Some-Project.IAM.GSERVICEACCOUNT.COM',
+  ])('служебная учётка Google (%s) — отказ, хотя токен выдан нашему клиенту', async (email) => {
+    await expect(verifyGoogleToken(idToken(OUR_CLIENT, { email }))).rejects.toThrow('OAUTH_INVALID_TOKEN');
+  });
+
   test('токен с чужой подписью — отказ', async () => {
     const [head, body] = idToken(OUR_CLIENT).split('.');
 
@@ -86,9 +107,11 @@ describe('настройка не задана', () => {
   ])('%s — любой токен получает отказ, ключи Google даже не спрашиваются', async (_label, value) => {
     if (value === undefined) delete process.env.GOOGLE_CLIENT_ID;
     else process.env.GOOGLE_CLIENT_ID = value;
+    const errorLine = jest.spyOn(logger, 'error').mockImplementation(() => logger);
 
     await expect(verifyGoogleToken(idToken(OTHER_APP))).rejects.toThrow('OAUTH_INVALID_TOKEN');
     expect(OAuth2Client.prototype.getFederatedSignonCertsAsync).not.toHaveBeenCalled();
+    expect(errorLine).toHaveBeenCalledWith('Google sign-in refused: GOOGLE_CLIENT_ID is not set');
   });
 });
 

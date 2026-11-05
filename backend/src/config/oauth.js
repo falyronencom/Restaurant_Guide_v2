@@ -4,9 +4,9 @@
  * login.yandex.ru/info answers for any valid Yandex OAuth token and names, in
  * `client_id`, the application the token was issued to (Yandex ID docs,
  * «Информация о пользователе»: a standard field of every response). Google's
- * ID token carries the same fact as its audience, and verifyGoogleToken has
- * always checked it; this list is the Yandex side of that check. A token
- * issued to any other application signs nobody in here.
+ * ID token carries the same fact as its audience, and verifyGoogleToken checks
+ * it (resolveGoogleClientId below); this list is the Yandex side of that check.
+ * A token issued to any other application signs nobody in here.
  *
  * The default is the one Yandex application our clients use: the mobile app
  * (iOS and Android) and the website. A client ID is not a secret — every

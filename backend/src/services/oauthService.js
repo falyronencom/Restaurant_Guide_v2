@@ -50,6 +50,13 @@ export async function verifyGoogleToken(idToken) {
       throw new Error('OAUTH_NO_EMAIL');
     }
 
+    // People sign in here: a Google service account is a program of some Google
+    // project, not a person's mailbox.
+    if (/\.gserviceaccount\.com$/i.test(payload.email.trim())) {
+      logger.warn('Google sign-in refused: a service account', { sub: payload.sub });
+      throw new Error('OAUTH_INVALID_TOKEN');
+    }
+
     // The provider's account number, never the address: the log holds no
     // e-mail of a person (30.10.2026). authService names our account next.
     logger.info('Google token verified', {
@@ -65,7 +72,7 @@ export async function verifyGoogleToken(idToken) {
       provider: 'google',
     };
   } catch (error) {
-    if (error.message === 'OAUTH_NO_EMAIL') {
+    if (error.message === 'OAUTH_NO_EMAIL' || error.message === 'OAUTH_INVALID_TOKEN') {
       throw error;
     }
     // google-auth-library quotes the token after its reason — the payload
