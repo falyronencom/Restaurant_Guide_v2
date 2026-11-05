@@ -90,6 +90,24 @@ describe('alcohol: the guest does not see it', () => {
     ['Хугарден', 'Пиво и безалкогольные напитки'],
     ['Сет вина'],
     ['Сет шотов'],
+    // Word of the Coordinator 05.11: liqueurs by name. «Амаро» first, with a coffee
+    // word in the name: a liqueur does not yield to it, a syrup would.
+    ['Амаро Эспрессо - Тоник 300мл', 'СЕЗОННЫЕ НАПИТКИ'],
+    ['Amaro Montenegro'],
+    ['Фернет Бранка'],
+    ['Fernet-Branca'],
+    ['Шартрез'],
+    ['Chartreuse Verte'],
+    ['Ягермейстер'],
+    ['Калуа'],
+    ['Triple Sec'],
+    ['Трипл сек'],
+    ['Драмбуи'],
+    ['Drambuie'],
+    ['Бенедиктин'],
+    ['Benedictine'],
+    ['Гальяно'],
+    ['Galliano'],
     // Mutation check: words no dish holds, and a vintage with no region named.
     ['Astoria Brut'],
     ['Veuve Clicquot'],
@@ -238,6 +256,12 @@ describe('a dish with such a word stays', () => {
     ['Сигареты из лаваша'],
     ['Курица табак'],
     ['Цыпленок - табак'],
+    // «Амаро» as what a dish is made with, and in other words.
+    ['Тирамису с амаро', 'Десерты'],
+    ['Панна-котта с соусом амаро'],
+    ['Сироп амаро', 'Добавки'],
+    ['Амарант с овощами'],
+    ['Печенье амаретти', 'Десерты'],
     // «Маргарита» is a pizza under a food section.
     ['Маргарита', 'Пицца'],
     ['МАРГАРИТА', 'ПИЦЦА ИЗ ДРОВЯНОЙ ПЕЧИ'],
@@ -254,6 +278,7 @@ describe('what says «no alcohol» stays', () => {
     // The brief.
     ['Безалкогольное пиво'],
     ['безалкогольный мохито'],
+    ['Амаро безалкогольное'],
     // Production.
     ['bud non-alco 330ml', 'ПИВО'],
     ['konix - moose just moose, non-alcoholic', 'пиво'],
