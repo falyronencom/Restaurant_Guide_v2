@@ -90,6 +90,10 @@ describe('alcohol: the guest does not see it', () => {
     ['Хугарден', 'Пиво и безалкогольные напитки'],
     ['Сет вина'],
     ['Сет шотов'],
+    // Mutation check: words no dish holds, and a vintage with no region named.
+    ['Astoria Brut'],
+    ['Veuve Clicquot'],
+    ['Travaglini, Gattinara 2020'],
     ['Хаус', 'Коктейли из рома'],
     // A wine's sweetness is no food section.
     ['Хаус', 'КРАСНОЕ СЛАДКОЕ'],
@@ -216,6 +220,12 @@ describe('a dish with such a word stays', () => {
     ['Тирамису', 'Десерты и вино'],
     ['Классический бургер', 'Бургеры и пиво'],
     ['Орешки', 'Бар меню'],
+    // Mutation check: a heading of food for the drink with no word of food in it.
+    ['Сырная тарелка', 'К игристому'],
+    ['Оливки', 'К шампанскому'],
+    ['Классический', 'Коктейли из креветок'],
+    // Mutation check: a word compounded from a drink's name.
+    ['Мартини-тарт', 'Десерты'],
     // Phase 3.5: other words that look like a drink's.
     ['Драники Бульбаш', 'Горячие блюда'],
     ['Драники Бульбаш'],

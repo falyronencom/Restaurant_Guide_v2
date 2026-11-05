@@ -568,6 +568,23 @@ describe('guestMenuRows — the menu the guest sees', () => {
     expect(names(guestMenuRows(rows))).toEqual(['Борщ']);
   });
 
+  test.each([
+    ['a', 'b'],
+    ['b', 'a'],
+  ])('two rows of a line in different sections: wine under either file hides it (%s, %s)', (wineFile, softFile) => {
+    // One menu in two files: the same three lines, one section read otherwise.
+    const rows = [
+      row(wineFile, 'Хаус', '12.00', 'Вино'),
+      row(wineFile, 'Борщ', '8.00', 'Супы'),
+      row(wineFile, 'Солянка', '9.00', 'Супы'),
+      row(softFile, 'Хаус', '12.00', 'Напитки'),
+      row(softFile, 'Борщ', '8.00', 'Супы'),
+      row(softFile, 'Солянка', '9.00', 'Супы'),
+    ];
+
+    expect(names(guestMenuRows(rows))).toEqual(['Борщ', 'Солянка']);
+  });
+
   test('a row with no section says less than its copy with one: a lemonade stays', () => {
     const rows = [
       row('pdf', 'Мохито', '9.00', 'Фирменные лимонады'),
