@@ -34,6 +34,16 @@ export const trackCall = async (establishmentId) => {
 };
 
 /**
+ * Record a share event: someone sent the card on through the app's menu.
+ *
+ * @param {string} establishmentId - UUID
+ */
+export const trackShare = async (establishmentId) => {
+  await PartnerAnalyticsModel.trackShare(establishmentId);
+  logger.debug('Share event tracked', { establishmentId });
+};
+
+/**
  * Record a promotion view event.
  * @param {string} establishmentId - UUID
  */
@@ -69,7 +79,7 @@ export const getOverview = async (partnerId, { period, from, to }) => {
     PartnerAnalyticsModel.getReviewMetricsInPeriod(ids, prevStart, prevEnd),
   ]);
 
-  const empty = { views: 0, favorites: 0, calls: 0 };
+  const empty = { views: 0, favorites: 0, calls: 0, shares: 0 };
   const emptyReviews = { reviews: 0, average_rating: 0 };
 
   const result = establishments.map(est => {
@@ -102,6 +112,11 @@ export const getOverview = async (partnerId, { period, from, to }) => {
         total: 0, // No cumulative call counter on establishments table
         in_period: now.calls,
         change_percent: computeChangePercent(now.calls, prev.calls),
+      },
+      shares: {
+        total: est.share_count,
+        in_period: now.shares,
+        change_percent: computeChangePercent(now.shares, prev.shares),
       },
       reviews: {
         total: est.review_count,

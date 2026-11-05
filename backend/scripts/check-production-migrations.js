@@ -106,6 +106,14 @@ const MARKERS = [
     query: `SELECT 1 FROM information_schema.tables
             WHERE table_schema = 'public' AND table_name = 'menu_item_hidden_names'`,
   },
+  {
+    id: '039',
+    label: 'establishment_analytics.share_count column',
+    query: `SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'establishment_analytics'
+              AND column_name = 'share_count'`,
+  },
 ];
 
 function maskUrl(url) {

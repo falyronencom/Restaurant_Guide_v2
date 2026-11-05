@@ -105,6 +105,7 @@ jobs:
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/035_sessions_revoked_at.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/037_service_account_flag.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/038_menu_item_hidden_names.sql
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/039_establishment_share_count.sql
 
       - name: Создать backend/.env.test
         # Файл гитигнорен, а setup-env.js и globalSetup.js читают его по пути.

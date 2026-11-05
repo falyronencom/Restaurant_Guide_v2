@@ -42,21 +42,21 @@ import bookingSettingsRoutes from './bookingSettingsRoutes.js';
 import { getPublicTerms as getPublicBookingTerms } from '../../controllers/bookingSettingsController.js';
 import partnerMenuItemRoutes from './partnerMenuItemRoutes.js';
 import { partnerBookingRouter, userBookingRouter } from './bookingRoutes.js';
-import { trackCall, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
+import { trackCall, trackShare, trackPromotionView } from '../../controllers/partnerAnalyticsController.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 
 const router = express.Router();
 
 /**
- * Shared per-IP budget for the two unauthenticated analytics writes (OSB-P5).
+ * Shared per-IP budget for the unauthenticated analytics writes (OSB-P5).
  *
- * One limiter instance on both routes = one Redis budget (the key carries
+ * One limiter instance on all of them = one Redis budget (the key carries
  * prefix+IP, not the path), so a counter-inflation script cannot double its
  * rate by alternating endpoints. 60/hour/IP is ~20× the legitimate ceiling
  * (a person taps «позвонить» or opens promo sheets a handful of times an
  * hour), while cutting the inflation potential of the global 300/hour bucket
- * by 5× on these counters. Both mobile call sites are fire-and-forget
- * (.ignore() / .catchError), so a 429 is invisible to users.
+ * by 5× on these counters. Every call site is fire-and-forget (.ignore() /
+ * .catchError in the app, the site's beacon), so a 429 is invisible to users.
  */
 const analyticsWriteLimiter = createRateLimiter({
   limit: 60,
@@ -296,10 +296,18 @@ router.use('/notifications', notificationRoutes);
 /**
  * POST /api/v1/establishments/:id/track-call
  *
- * Public endpoint for recording phone tap events from the mobile app.
- * No authentication required — lightweight fire-and-forget tracking.
+ * Public endpoint for recording phone tap events from the mobile app and the
+ * site. No authentication required — lightweight fire-and-forget tracking.
  */
 router.post('/establishments/:id/track-call', analyticsWriteLimiter, trackCall);
+
+/**
+ * POST /api/v1/establishments/:id/track-share
+ *
+ * Public endpoint: someone chose where to send the card in the app's share menu.
+ * No authentication required — lightweight fire-and-forget tracking.
+ */
+router.post('/establishments/:id/track-share', analyticsWriteLimiter, trackShare);
 
 /**
  * POST /api/v1/analytics/promotion-view
