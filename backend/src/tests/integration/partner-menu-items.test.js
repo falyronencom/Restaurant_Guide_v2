@@ -137,6 +137,87 @@ describe('GET /api/v1/partner/establishments/:id/menu-items', () => {
   });
 });
 
+// The guest does not see alcohol and tobacco (brief of 05.11.2026); the partner
+// sees every row, with what it is hidden for, or a missing line reads as an error.
+describe('GET and PATCH partner menu items — what the guest does not see', () => {
+  const setUpMenu = async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    return { partner, estId, mediaId };
+  };
+  const listOf = async (partner, estId) => (await request(app)
+    .get(`/api/v1/partner/establishments/${estId}/menu-items`)
+    .set('Authorization', `Bearer ${partner.accessToken}`)
+    .expect(200)).body.data;
+  const reasonsOf = (rows) => Object.fromEntries(
+    rows.map(row => [row.item_name, row.guest_hidden_reason]),
+  );
+  const guestNames = async (estId) => {
+    const { rows } = await query('SELECT slug FROM establishments WHERE id = $1', [estId]);
+    return (await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${rows[0].slug}/menu-items`)
+      .expect(200)).body.data.menu_items.map(item => item.item_name);
+  };
+
+  test('the partner sees alcohol and tobacco, each with its reason, dishes with none', async () => {
+    const { partner, estId, mediaId } = await setUpMenu();
+    await seedMenuItem(estId, mediaId, { itemName: 'Вино красное' });
+    await seedMenuItem(estId, mediaId, { itemName: 'Кальян классический' });
+    await seedMenuItem(estId, mediaId, { itemName: 'Стейк с соусом из коньяка' });
+
+    expect(reasonsOf(await listOf(partner, estId))).toEqual({
+      'Вино красное': 'alcohol',
+      'Кальян классический': 'tobacco',
+      'Стейк с соусом из коньяка': null,
+    });
+  });
+
+  test('a line is hidden as a whole: a copy with no section read carries the mark', async () => {
+    const { partner, estId, mediaId } = await setUpMenu();
+    const secondFile = await seedPdfMedia(estId);
+    await seedMenuItem(estId, mediaId, { itemName: 'Хаус', priceByn: 12, categoryRaw: 'ВИНО / белое' });
+    await seedMenuItem(estId, mediaId, { itemName: 'Борщ', priceByn: 8 });
+    await seedMenuItem(estId, secondFile, { itemName: 'Хаус', priceByn: 12 });
+    await seedMenuItem(estId, secondFile, { itemName: 'Борщ', priceByn: 8 });
+
+    const rows = await listOf(partner, estId);
+    expect(rows.filter(row => row.item_name === 'Хаус').map(row => row.guest_hidden_reason))
+      .toEqual(['alcohol', 'alcohol']);
+    expect(await guestNames(estId)).toEqual(['Борщ']);
+  });
+
+  test('an edit of the section decides at once: the mark and the guest\'s menu follow it', async () => {
+    const { partner, estId, mediaId } = await setUpMenu();
+    const item = await seedMenuItem(estId, mediaId, { itemName: 'Маргарита', categoryRaw: 'Коктейли' });
+    expect(reasonsOf(await listOf(partner, estId))).toEqual({ Маргарита: 'alcohol' });
+    expect(await guestNames(estId)).toEqual([]);
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/menu-items/${item.id}`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .send({ category_raw: 'Пицца' })
+      .expect(200);
+
+    expect(res.body.data.guest_hidden_reason).toBeNull();
+    expect(res.body.data.category_raw).toBe('Пицца');
+    expect(await guestNames(estId)).toEqual(['Маргарита']);
+  });
+
+  test('an edit that makes a line alcohol answers with the mark', async () => {
+    const { partner, estId, mediaId } = await setUpMenu();
+    const item = await seedMenuItem(estId, mediaId, { itemName: 'Хаус' });
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/menu-items/${item.id}`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .send({ category_raw: 'Пиво' })
+      .expect(200);
+
+    expect(res.body.data.guest_hidden_reason).toBe('alcohol');
+  });
+});
+
 // Finding КО-1 (Coordinator's choice «Б», 29.10.2026): when the moderator hid
 // every dish, the partner's list is empty and the screen said «nothing found —
 // upload a clearer photo», though the hiding is tied to the dish name and

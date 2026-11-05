@@ -59,7 +59,7 @@ beforeEach(() => {
 test('the state query fails → the items still come, recognition is null, and the log says why', async () => {
   OcrJobModel.getLatestJobPerMenuFile.mockRejectedValue(new Error('canceling statement due to statement timeout'));
 
-  await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({ items: [ITEM], recognition: null, hasHiddenItems: false });
+  await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({ items: [{ ...ITEM, guest_hidden_reason: null }], recognition: null, hasHiddenItems: false });
   expect(logger.error).toHaveBeenCalledWith(
     'Recognition state of the partner menu could not be read — answered without it',
     { establishmentId: CARD, error: 'canceling statement due to statement timeout' },
@@ -72,7 +72,7 @@ test('the state query answers → the state comes with the items', async () => {
   ]);
 
   await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({
-    items: [ITEM],
+    items: [{ ...ITEM, guest_hidden_reason: null }],
     recognition: { status: 'processing' },
     hasHiddenItems: false,
   });
@@ -97,7 +97,7 @@ test('the hidden-items query fails → the items and the state still come, hasHi
   MenuItemModel.hasHiddenByEstablishment.mockRejectedValue(new Error('connection terminated unexpectedly'));
 
   await expect(listMenuItems(PARTNER, CARD)).resolves.toEqual({
-    items: [ITEM],
+    items: [{ ...ITEM, guest_hidden_reason: null }],
     recognition: { status: 'done' },
     hasHiddenItems: null,
   });
