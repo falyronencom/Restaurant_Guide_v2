@@ -22,8 +22,8 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-// The client id is read once, when the module loads: set before the import, so
-// the audience the library is asked to check can be seen (and restored after).
+// The client id the library is asked to check against (restored after); what
+// happens without one — unit/oauthGoogleAudience.test.js, with the real library.
 const OUR_GOOGLE_CLIENT_ID = 'our-app.apps.googleusercontent.com';
 const originalGoogleClientId = process.env.GOOGLE_CLIENT_ID;
 process.env.GOOGLE_CLIENT_ID = OUR_GOOGLE_CLIENT_ID;

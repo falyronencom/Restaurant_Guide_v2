@@ -64,6 +64,13 @@ if (process.env.YANDEX_CLIENT_ID === undefined) {
   process.env.YANDEX_CLIENT_ID = '';
 }
 
+// Клиент Google: без него вход через Google отказывает (config/oauth.js), а
+// наборы с подменённой библиотекой Google проверяют вход дальше этого места.
+// Настоящий номер клиента не нужен: подпись в этих наборах не проверяется.
+if (!process.env.GOOGLE_CLIENT_ID) {
+  process.env.GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';
+}
+
 // Пределы общего лимитера — как в CI, где они не заданы: пустая строка =
 // «не задано» для резолвера (middleware/rateLimiter.js), то есть умолчания.
 // Безусловно, а не «если не задано»: в .env разработчика они бывают (1000 и

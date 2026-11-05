@@ -10,10 +10,8 @@
  */
 
 import { OAuth2Client } from 'google-auth-library';
-import { resolveYandexClientIds } from '../config/oauth.js';
+import { resolveGoogleClientId, resolveYandexClientIds } from '../config/oauth.js';
 import logger from '../utils/logger.js';
-
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
 // Yandex avatar URL template — default_avatar_id maps to this pattern
 const YANDEX_AVATAR_BASE = 'https://avatars.yandex.net/get-yapic';
@@ -23,19 +21,27 @@ const YANDEX_AVATAR_SIZE = 'islands-200'; // 200x200px
  * Verifies a Google ID token and extracts user information.
  *
  * Uses google-auth-library to verify the JWT signature against Google's
- * public keys and validates audience (client ID) to prevent token misuse.
+ * public keys and validates audience (client ID) to prevent token misuse. The
+ * library checks the audience only when it is given one: without our client ID
+ * nothing is verified and the sign-in is refused (config/oauth.js).
  *
  * @param {string} idToken - Google ID token from mobile Sign-In SDK
  * @returns {Promise<Object>} Normalized user data
  * @throws {Error} If token is invalid, expired, or audience mismatch
  */
 export async function verifyGoogleToken(idToken) {
+  const clientId = resolveGoogleClientId(process.env);
+  if (!clientId) {
+    logger.error('Google sign-in refused: GOOGLE_CLIENT_ID is not set');
+    throw new Error('OAUTH_INVALID_TOKEN');
+  }
+
   try {
-    const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+    const client = new OAuth2Client(clientId);
 
     const ticket = await client.verifyIdToken({
       idToken,
-      audience: GOOGLE_CLIENT_ID,
+      audience: clientId,
     });
 
     const payload = ticket.getPayload();
