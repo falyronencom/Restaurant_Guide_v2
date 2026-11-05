@@ -304,8 +304,8 @@ class PartnerEstablishmentCard extends StatelessWidget {
     );
   }
 
-  /// Build stats row (views, favorites). «Поделились» здесь нет: сервер
-  /// такого счётчика не ведёт, число всегда было 0 (сверка 01.11.2026, П7).
+  /// Build stats row (views, shares, favorites). «Поделились» — итог за всё
+  /// время: сколько раз карточку отправили через меню в приложении.
   Widget _buildStats(bool isPremium) {
     final stats = establishment.stats;
     final statColor = isPremium ? _backgroundColor : _greyText;
@@ -315,6 +315,12 @@ class PartnerEstablishmentCard extends StatelessWidget {
         _buildStatItem(
           icon: Icons.visibility_outlined,
           value: stats.views,
+          color: statColor,
+        ),
+        const SizedBox(width: 12),
+        _buildStatItem(
+          icon: Icons.ios_share_outlined,
+          value: stats.shares,
           color: statColor,
         ),
         const SizedBox(width: 12),

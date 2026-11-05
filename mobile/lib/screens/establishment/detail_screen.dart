@@ -691,14 +691,18 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Share establishment info via native share sheet: название, адрес и
   /// ссылка на страницу заведения на сайте.
+  ///
+  /// Партнёру в счётчик «Поделились» идёт только выбор приложения в меню:
+  /// закрытое меню и отказ плагина — не отправка.
   Future<void> _shareEstablishment() async {
     final establishment = _establishment;
     if (establishment == null) return;
-    await _shareText(
+    final chosen = await _shareText(
       establishmentShareText(establishment),
       subject: establishment.name,
       origin: _shareButtonRect(),
     );
+    if (chosen) PartnerService().trackShare(establishment.id);
   }
 
   /// Рамка кнопки «Поделиться» в координатах экрана.
@@ -722,19 +726,25 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
   /// iPad рисует меню всплывающим окном от рамки: без неё плагин отказывает.
   /// Не нашлась рамка кнопки (лист «Ссылка» её не знает) — берётся точка
   /// внизу посередине экрана.
-  Future<void> _shareText(String text, {String? subject, Rect? origin}) async {
+  ///
+  /// `true` — человек выбрал в меню, куда отправить. Само сообщение уходит уже
+  /// в выбранном приложении, и этого плагин не знает.
+  Future<bool> _shareText(String text, {String? subject, Rect? origin}) async {
     try {
-      await Share.share(
+      final result = await Share.share(
         text,
         subject: subject,
         sharePositionOrigin: origin ?? _screenBottomCenter(),
       );
+      return result.status == ShareResultStatus.success;
     } catch (_) {
-      if (!mounted) return;
-      _copyToClipboard(
-        text,
-        'Меню «Поделиться» не открылось. Текст скопирован — вставьте его в сообщение',
-      );
+      if (mounted) {
+        _copyToClipboard(
+          text,
+          'Меню «Поделиться» не открылось. Текст скопирован — вставьте его в сообщение',
+        );
+      }
+      return false;
     }
   }
 

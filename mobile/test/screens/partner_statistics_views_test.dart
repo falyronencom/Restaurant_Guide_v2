@@ -22,6 +22,7 @@ void main() {
 
   late int allTimeViews;
   late Map<String, dynamic> overviewViews;
+  Map<String, dynamic>? overviewShares;
   late List<Map<String, dynamic>> viewsTrend;
   late StubAdapter wire;
   String? primaryImage;
@@ -44,6 +45,7 @@ void main() {
   setUp(() {
     allTimeViews = totalViews;
     primaryImage = null;
+    overviewShares = null;
     overviewViews = {
       'total': totalViews,
       'in_period': 0,
@@ -86,6 +88,7 @@ void main() {
                 'views': overviewViews,
                 'favorites': zero,
                 'calls': zero,
+                if (overviewShares != null) 'shares': overviewShares,
                 'reviews': {...zero, 'average_rating': 0},
               },
             ],
@@ -254,6 +257,39 @@ void main() {
         expect(periods('/api/v1/partner/analytics/trends').last, choice.value,
             reason: '«${choice.key}» — график');
       }
+    });
+  });
+
+  group('строка «Поделились»', () {
+    /// Тексты строки: заголовок, процент, число.
+    Iterable<String> rowTexts(WidgetTester tester) {
+      final row = find
+          .ancestor(of: find.text('Поделились'), matching: find.byType(Row))
+          .last;
+      return find
+          .descendant(of: row, matching: find.byType(Text))
+          .evaluate()
+          .map((e) => (e.widget as Text).data ?? '');
+    }
+
+    testWidgets('число за период и изменение; итог за всё время — не здесь',
+        (tester) async {
+      overviewShares = {'total': 40, 'in_period': 6, 'change_percent': 100};
+      await pumpStats(tester);
+
+      await tester.ensureVisible(find.text('Поделились'));
+      expect(rowTexts(tester), contains('6'));
+      expect(rowTexts(tester), isNot(contains('40')));
+      expect(rowTexts(tester).join(' '), contains('100%'));
+    });
+
+    testWidgets('сервер без поля `shares`: экран открыт, в строке ноль',
+        (tester) async {
+      await pumpStats(tester);
+
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Поделились'));
+      expect(rowTexts(tester), contains('0'));
     });
   });
 

@@ -34,6 +34,7 @@ class EstablishmentOverview {
   final AnalyticsMetric views;
   final AnalyticsMetric favorites;
   final AnalyticsMetric calls;
+  final AnalyticsMetric shares;
   final AnalyticsMetric reviews;
   final double averageRating;
   final String aggregation;
@@ -44,6 +45,7 @@ class EstablishmentOverview {
     this.views = const AnalyticsMetric(),
     this.favorites = const AnalyticsMetric(),
     this.calls = const AnalyticsMetric(),
+    this.shares = const AnalyticsMetric(),
     this.reviews = const AnalyticsMetric(),
     this.averageRating = 0,
     this.aggregation = 'day',
@@ -56,6 +58,11 @@ class EstablishmentOverview {
       views: AnalyticsMetric.fromJson(json['views'] as Map<String, dynamic>),
       favorites: AnalyticsMetric.fromJson(json['favorites'] as Map<String, dynamic>),
       calls: AnalyticsMetric.fromJson(json['calls'] as Map<String, dynamic>),
+      // Необязательное поле: сервер без счётчика отправок не должен ронять
+      // экран статистики — там просто будет ноль.
+      shares: json['shares'] is Map<String, dynamic>
+          ? AnalyticsMetric.fromJson(json['shares'] as Map<String, dynamic>)
+          : const AnalyticsMetric(),
       reviews: AnalyticsMetric.fromJson(json['reviews'] as Map<String, dynamic>),
       averageRating: (json['reviews']?['average_rating'] as num?)?.toDouble() ?? 0,
       aggregation: (json['period']?['aggregation'] as String?) ?? 'day',
