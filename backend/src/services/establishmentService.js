@@ -714,10 +714,13 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       }
     }
 
-    // Calculate and save completeness score (non-blocking)
+    // Calculate and save the completeness score before answering: the write
+    // moves the card's updated_at, and whoever reads the card after the answer
+    // must not see it move. updateBaseScore logs a failure and does not throw,
+    // so a failed write does not fail the creation.
     const baseScore = EstablishmentModel.calculateCompletenessScore(establishment);
     if (baseScore > 0) {
-      EstablishmentModel.updateBaseScore(establishment.id, baseScore);
+      await EstablishmentModel.updateBaseScore(establishment.id, baseScore);
       establishment.base_score = baseScore;
     }
 

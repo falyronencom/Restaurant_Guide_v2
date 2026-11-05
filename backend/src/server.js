@@ -21,6 +21,7 @@ import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
 import { accessTokenLifetime } from './config/accessToken.js';
 import { resolveTrustProxyHops } from './config/trustProxy.js';
+import { siteUrlProblem } from './config/siteUrl.js';
 import {
   createGracefulShutdown,
   installShutdownHandlers,
@@ -290,6 +291,14 @@ const startServer = async () => {
     logger.info('Trusted proxy hops resolved', { hops: trustProxy.hops });
     if (trustProxy.warning) {
       logger.warn(`Trusted proxy hops: ${trustProxy.warning}`);
+    }
+
+    // The site's address in the reset letter's link (config/siteUrl.js): a
+    // wrong value fails no check and refuses no start, only the person who
+    // presses the letter's button finds out.
+    const siteUrlIssue = siteUrlProblem(process.env);
+    if (siteUrlIssue) {
+      logger.error(siteUrlIssue);
     }
 
     // The global limiter's numbers as read from RATE_LIMIT_* (middleware/
