@@ -69,6 +69,7 @@ const openrouterModule = await import('../../config/openrouter.js');
 
 const { pool } = await import('../../config/database.js');
 const ocrJobModel = await import('../../models/ocrJobModel.js');
+const { generatePdfPageImageUrl } = await import('../../config/cloudinary.js');
 const menuItemModel = await import('../../models/menuItemModel.js');
 const ocrService = await import('../../services/ocr/ocrService.js');
 const pdfTextExtractor = await import('../../services/ocr/pdfTextExtractor.js');
@@ -1372,8 +1373,10 @@ describe('OCR pipeline integration', () => {
     ]);
 
     /** Cloudinary rendering of page n of the test PDF (generatePdfPageImageUrl). */
-    const page = (n) =>
-      `https://res.cloudinary.com/test/image/upload/pg_${n}/v1/establishments/${establishment.id}/menu_pdf/test.jpg`;
+    const page = (n) => generatePdfPageImageUrl(
+      `https://res.cloudinary.com/test/image/upload/v1/establishments/${establishment.id}/menu_pdf/test.pdf`,
+      n,
+    );
 
     const chatResponse = (content, { finishReason = 'stop', nativeFinishReason = 'STOP' } = {}) => ({
       ok: true,
