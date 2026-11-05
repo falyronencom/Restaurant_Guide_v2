@@ -181,6 +181,21 @@ describe('POST /api/v1/auth/register', () => {
     expect(codeRow.used_at).toBeNull();
     expect(codeRow.attempts).toBe(0);
   });
+
+  test('the first letter reaches the mail provider, with the code the account holds, and spends the day of codes', async () => {
+    configureProvider(ACCEPTED);
+
+    const { user } = await registerUser();
+    await until(() => mails.length > 0);
+
+    expect(mails).toHaveLength(1);
+    expect(mails[0].to).toBe('verify@test.com');
+    expect(mails[0].subject).toBe('Подтверждение email — Nirivio');
+    const codeRow = await getLatestCodeForUser(user.id);
+    expect(codeInMail(mails[0])).toBe(codeRow.code);
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Minsk' }).format(new Date());
+    expect(await redisClient.get(`mail:daily:code:${day}`)).toBe('1');
+  });
 });
 
 describe('POST /api/v1/auth/send-verification-code', () => {
