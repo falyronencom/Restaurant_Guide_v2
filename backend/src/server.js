@@ -21,6 +21,7 @@ import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
 import { accessTokenLifetime } from './config/accessToken.js';
 import { resolveTrustProxyHops } from './config/trustProxy.js';
+import { resolveGoogleClientId } from './config/oauth.js';
 import { siteUrlProblem } from './config/siteUrl.js';
 import {
   createGracefulShutdown,
@@ -311,6 +312,11 @@ const startServer = async () => {
     });
     for (const warning of globalRateLimitTiers.warnings) {
       logger.warn(`Rate limiter: ${warning}`);
+    }
+
+    // Without it every Google sign-in is refused (config/oauth.js).
+    if (process.env.NODE_ENV === 'production' && !resolveGoogleClientId(process.env)) {
+      logger.error('GOOGLE_CLIENT_ID is not set: Google sign-in is refused');
     }
 
     // Whether the site's requests can be recognised (middleware/siteVisitor.js):
