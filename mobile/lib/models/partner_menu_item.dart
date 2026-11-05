@@ -13,6 +13,11 @@ class PartnerMenuItem {
   final Map<String, dynamic>? sanityFlag;
   final int position;
 
+  /// Почему гость не видит эту строку: `alcohol`, `tobacco` или null — видит.
+  /// Сервер читает это из названия и раздела при каждом показе. Сервер без
+  /// этого поля не отдаёт его вовсе — значит, null.
+  final String? guestHiddenReason;
+
   PartnerMenuItem({
     required this.id,
     required this.establishmentId,
@@ -23,10 +28,13 @@ class PartnerMenuItem {
     required this.confidence,
     required this.sanityFlag,
     required this.position,
+    this.guestHiddenReason,
   });
 
   bool get hasSanityFlag =>
       sanityFlag != null && sanityFlag!.isNotEmpty;
+
+  bool get isHiddenFromGuests => guestHiddenReason != null;
 
   factory PartnerMenuItem.fromJson(Map<String, dynamic> json) {
     return PartnerMenuItem(
@@ -41,6 +49,7 @@ class PartnerMenuItem {
           ? json['sanity_flag'] as Map<String, dynamic>
           : null,
       position: (json['position'] as num?)?.toInt() ?? 0,
+      guestHiddenReason: json['guest_hidden_reason'] as String?,
     );
   }
 
@@ -60,6 +69,7 @@ class PartnerMenuItem {
       confidence: confidence,
       sanityFlag: sanityFlag,
       position: position,
+      guestHiddenReason: guestHiddenReason,
     );
   }
 

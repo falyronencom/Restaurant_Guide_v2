@@ -30,6 +30,7 @@
  */
 
 import { dishKey } from '../utils/menuItemName.js';
+import { restrictionOf } from '../utils/menuRestriction.js';
 
 /**
  * Text as two recognitions of one menu may differ in it (utils/menuItemName.js
@@ -239,9 +240,9 @@ export const groupGuestLines = (rows) => {
  * candidate.
  *
  * @param {Object[]} rows - menu_items rows of one establishment, in menu order
- * @returns {Object[]} The rows the guest sees
+ * @returns {(group: Object[]) => Object} Picks the shown row of a guest line
  */
-export const collapseMenuRepeats = (rows) => {
+const shownRowOfLine = (rows) => {
   const linesPerFile = new Map();
   for (const row of rows) {
     linesPerFile.set(row.media_id, (linesPerFile.get(row.media_id) ?? 0) + 1);
@@ -258,9 +259,68 @@ export const collapseMenuRepeats = (rows) => {
     return fileComesFirst(candidate, shown);
   };
 
-  return groupGuestLines(rows).map(group => group.reduce(
-    (shown, row) => (isPreferred(row, shown) ? row : shown),
-  ));
+  return (group) => group.reduce((shown, row) => (isPreferred(row, shown) ? row : shown));
+};
+
+/**
+ * One row per guest line, repeats collapsed. See shownRowOfLine.
+ *
+ * @param {Object[]} rows - menu_items rows of one establishment, in menu order
+ * @returns {Object[]}
+ */
+export const collapseMenuRepeats = (rows) => groupGuestLines(rows).map(shownRowOfLine(rows));
+
+/**
+ * What the guest must not see a guest line for: 'alcohol', 'tobacco' or null
+ * (utils/menuRestriction.js). A line is decided by all its rows with a section
+ * read: two reads of one menu may read a wine's section in one file and none in
+ * the other («Хаус» under «Вино» and with no section), and a row with no section
+ * says less than one with it: «Мохито» under «Лимонады» with a copy of no
+ * section is a lemonade. With no section read anywhere, the names decide.
+ *
+ * @param {Object[]} group - The rows of one guest line
+ * @returns {('alcohol'|'tobacco'|null)}
+ */
+const restrictionOfLine = (group) => {
+  const withSection = group.filter(row => sectionKey(row) !== '');
+  for (const row of withSection.length > 0 ? withSection : group) {
+    const restriction = restrictionOf(row);
+    if (restriction) return restriction;
+  }
+  return null;
+};
+
+/**
+ * The menu the guest sees: repeats collapsed, alcohol and tobacco out. The only
+ * way a menu line reaches a guest — the site, its Schema.org markup and every
+ * build of the app read GET /public/establishments/by-slug/:slug/menu-items.
+ *
+ * Lines are grouped over all the rows and only then taken out, so which files
+ * are copies of one menu and which row is shown stay exactly what they were.
+ *
+ * @param {Object[]} rows - menu_items rows of one establishment, in menu order
+ * @returns {Object[]} The rows the guest sees
+ */
+export const guestMenuRows = (rows) => groupGuestLines(rows)
+  .filter(group => restrictionOfLine(group) === null)
+  .map(shownRowOfLine(rows));
+
+/**
+ * The partner's list: every row, each with what it is hidden from guests for.
+ * The mark is the guest's line's, so a copy in another file reads the same as
+ * the line the guest does not see.
+ *
+ * @param {Object[]} rows - menu_items rows of one establishment, shown by a
+ *   moderator (is_hidden_by_admin = FALSE) — the rows the guest's lines are from
+ * @returns {Object[]} The rows with guest_hidden_reason ('alcohol'|'tobacco'|null)
+ */
+export const withGuestHiddenReason = (rows) => {
+  const reasonOf = new Map();
+  for (const group of groupGuestLines(rows)) {
+    const reason = restrictionOfLine(group);
+    for (const row of group) reasonOf.set(row, reason);
+  }
+  return rows.map(row => ({ ...row, guest_hidden_reason: reasonOf.get(row) ?? null }));
 };
 
 /**

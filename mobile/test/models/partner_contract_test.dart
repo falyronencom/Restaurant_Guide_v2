@@ -124,6 +124,22 @@ void main() {
       expect(m.hasSanityFlag, isFalse);
     });
 
+    test('почему гость не видит строку — из guest_hidden_reason', () {
+      final m = PartnerMenuItem.fromJson(
+        {...menuItemRow(), 'guest_hidden_reason': 'alcohol'},
+      );
+      expect(m.guestHiddenReason, 'alcohol');
+      expect(m.isHiddenFromGuests, isTrue);
+      // Правка строки на экране не снимает пометку до ответа сервера.
+      expect(m.copyWith(priceByn: 5).isHiddenFromGuests, isTrue);
+    });
+
+    test('сервер без этого поля — гость видит строку', () {
+      final m = PartnerMenuItem.fromJson(menuItemRow());
+      expect(m.guestHiddenReason, isNull);
+      expect(m.isHiddenFromGuests, isFalse);
+    });
+
     test('цена приходит строкой NUMERIC и разбирается', () {
       // `price_byn` — NUMERIC в базе; без явного каста node-pg отдаёт строку.
       expect(PartnerMenuItem.fromJson(menuItemRow(price: '24.50')).priceByn,

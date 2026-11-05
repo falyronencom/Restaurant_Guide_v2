@@ -22,6 +22,7 @@ import app from '../../server.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
+import { searchWithoutLocation } from '../../services/searchService.js';
 
 let partnerId;
 let userId;
@@ -924,6 +925,84 @@ describe('Public API — GET /api/v1/public/establishments/by-slug/:slug/menu-it
 
     expect(response.body.data.menu_items).toEqual([]);
   });
+
+  // -- Alcohol and tobacco (the default of the legal pass, item 2h; brief of
+  // 05.11.2026): the guest does not see such a line; the rows stay.
+
+  const seedLines = (lines) => query(
+    `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, category_raw, position)
+     SELECT $1, $2, line->>0, (line->>1)::numeric, line->>2, ordinality::int
+     FROM jsonb_array_elements($3::jsonb) WITH ORDINALITY AS t(line, ordinality)`,
+    [activeEstId, mediaId, JSON.stringify(lines)],
+  );
+  const guestNames = async () => {
+    const response = await request(app)
+      .get(`/api/v1/public/establishments/by-slug/${activeSlug}/menu-items`)
+      .expect(200);
+    return response.body.data.menu_items.map(i => i.item_name);
+  };
+
+  test('alcohol and tobacco are not in the guest\'s menu, the dishes with such a word are', async () => {
+    await seedLines([
+      ['Hoegaarden 440ml', 14, 'ПИВО'],
+      ['Вино красное', 12, null],
+      ['Сангрия бокал', 12, 'Напитки'],
+      ['Кальян классический', 40, null],
+      ['Стейк с соусом из коньяка', 40, 'Горячее'],
+      ['Пенне алла водка', 25, null],
+      ['Безалкогольное пиво', 9, 'ПИВО'],
+    ]);
+
+    const names = await guestNames();
+
+    expect(names).toEqual([
+      'Драники',
+      'Борщ',
+      'Стейк с соусом из коньяка',
+      'Пенне алла водка',
+      'Безалкогольное пиво',
+    ]);
+    // The count the card prints is the length of this list.
+  });
+
+  test('the rows stay in the database', async () => {
+    await seedLines([['Вино красное', 12, null]]);
+    await guestNames();
+
+    const { rows } = await query(
+      'SELECT is_hidden_by_admin FROM menu_items WHERE establishment_id = $1 AND item_name = $2',
+      [activeEstId, 'Вино красное'],
+    );
+    expect(rows).toEqual([{ is_hidden_by_admin: false }]);
+  });
+
+  test('a menu of nothing but alcohol answers an empty list, not an error', async () => {
+    await query('DELETE FROM menu_items WHERE establishment_id = $1', [activeEstId]);
+    await seedLines([
+      ['Кальян классический', 40, 'Кальяны'],
+      ['Мартини Бьянко', 10, 'Бар меню'],
+    ]);
+
+    expect(await guestNames()).toEqual([]);
+  });
+
+  test('search still finds the establishment by the hidden line and shows no line of it', async () => {
+    await seedLines([['Вино красное', 12, null]]);
+    // A card with no such line: without it «found» would prove nothing.
+    await query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, price_range, status, working_hours, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, 'No Wine', 'no-wine-slug', 'Test', 'Минск', 'Test', 53.9, 27.5, ARRAY['Ресторан'], ARRAY['Европейская'], '$$', 'active', $2::jsonb, NOW(), NOW())
+    `, [partnerId, defaultWorkingHours]);
+
+    // The route of the smart search: its dish reaches the service, not a query
+    // parameter of GET /search/establishments.
+    const found = await searchWithoutLocation({ dish: 'Вино красное', city: 'Минск' });
+
+    const slugs = found.establishments.map(e => e.slug);
+    expect(slugs).toContain(activeSlug);
+    expect(slugs).not.toContain('no-wine-slug');
+    expect(JSON.stringify(found)).not.toContain('Вино красное');
+  });
 });
 
 // -- One menu uploaded as several files (photo of the board + PDF) -----------
@@ -1086,13 +1165,13 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
   });
 
   test('a copy hidden by the moderator stays hidden; the dish is shown once', async () => {
-    await insertItems(photoId, [['Мохито', 12, 'Коктейли', 0, { hidden: true }]]);
-    await insertItems(pdfId, [['Мохито', 12, 'Коктейли', 0]]);
-    await insertItems(pdfId, [['Подозрительное', 999, 'Коктейли', 1, { hidden: true }]]);
+    await insertItems(photoId, [['Лимонад', 12, 'Напитки', 0, { hidden: true }]]);
+    await insertItems(pdfId, [['Лимонад', 12, 'Напитки', 0]]);
+    await insertItems(pdfId, [['Подозрительное', 999, 'Напитки', 1, { hidden: true }]]);
 
     const items = await fetchMenu();
 
-    expect(lines(items)).toEqual(['Мохито — 12']);
+    expect(lines(items)).toEqual(['Лимонад — 12']);
   });
 
   test('two different menus (breakfast and lunch) that share a dish keep it in both sections', async () => {
@@ -1145,7 +1224,7 @@ describe('Public API — menu-items: one menu uploaded as several files', () => 
     await insertItems(photoId, [
       ...oysters,
       ['Устрицы Жиллардо №3', 27, 'УСТРИЧНЫЙ БАР'], ['Сет устриц', 174, 'УСТРИЧНЫЙ БАР'],
-      ['Шабли', 30, 'ВИНО'], ['Мюскаде', 26, 'ВИНО'], ['Шампанское', 45, 'ВИНО'],
+      ['Оливки', 30, 'К ВИНУ'], ['Хамон', 26, 'К ВИНУ'], ['Сыры', 45, 'К ВИНУ'],
     ].map(([name, price, section], i) => [name, price, section, i]));
 
     const items = await fetchMenu();

@@ -16,7 +16,7 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as OcrJobModel from '../models/ocrJobModel.js';
 import { MENU_RECOGNITION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { findCopies } from '../projections/menuItemProjections.js';
+import { findCopies, withGuestHiddenReason } from '../projections/menuItemProjections.js';
 import logger from '../utils/logger.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { DailyOcrLimitError, enqueueWithinDailyAllowance } from './ocrAllowance.js';
@@ -147,6 +147,11 @@ const readHasHiddenItems = async (establishmentId) => {
  * empty because items are hidden, so that it does not advise a clearer photo
  * — the hiding is tied to the dish name and survives a re-read.
  *
+ * Alcohol and tobacco are in the list: the guest does not see them, the
+ * partner does, each row with `guest_hidden_reason` ('alcohol', 'tobacco' or
+ * null), so that the partner does not take a line missing on the card for an
+ * error (menuItemProjections.withGuestHiddenReason).
+ *
  * With the items comes the state of the menu's recognition (recognitionState;
  * null when it cannot be read); the controller sends it beside `data`, which
  * stays the list it always was.
@@ -172,7 +177,7 @@ export const listMenuItems = async (partnerId, establishmentId) => {
     readRecognitionState(establishmentId),
     readHasHiddenItems(establishmentId),
   ]);
-  return { items, recognition, hasHiddenItems };
+  return { items: withGuestHiddenReason(items), recognition, hasHiddenItems };
 };
 
 /**
@@ -251,6 +256,8 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
     { includeHidden: false },
   );
   const copies = findCopies(menuItemId, visibleRows);
+  const reasonBefore = withGuestHiddenReason(visibleRows)
+    .find(row => row.id === menuItemId)?.guest_hidden_reason ?? null;
 
   const updated = await MenuItemModel.updateById(menuItemId, filteredUpdates);
   for (const copy of copies) {
@@ -271,7 +278,36 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
     copies: copies.map(copy => copy.id),
   });
 
-  return updated;
+  // The edit may decide the mark: a name or a section is what it is read from.
+  // Read after the edit, as the list would show it; the edit itself stands
+  // whatever this read does, so a failure here does not answer it as failed.
+  try {
+    const rowsNow = withGuestHiddenReason(await MenuItemModel.getByEstablishmentId(
+      existing.establishment_id,
+      { includeHidden: false },
+    ));
+    const marked = rowsNow.find(row => row.id === menuItemId) ?? updated;
+    // A rename is how a wrongly hidden dish comes back, and how a wine could.
+    // Nothing stops it; the log keeps who brought what back into the guest's view.
+    if (reasonBefore !== null && (marked.guest_hidden_reason ?? null) === null) {
+      logger.warn('Partner edit brought a menu line back into the guest menu', {
+        menuItemId,
+        partnerId,
+        establishmentId: existing.establishment_id,
+        reasonBefore,
+        before: { item_name: existing.item_name, category_raw: existing.category_raw },
+        after: { item_name: marked.item_name, category_raw: marked.category_raw },
+      });
+    }
+    return marked;
+  } catch (error) {
+    logger.error('The mark of an edited menu item could not be read — answered without it', {
+      menuItemId,
+      establishmentId: existing.establishment_id,
+      error: error.message,
+    });
+    return updated;
+  }
 };
 
 /**

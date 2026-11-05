@@ -30,7 +30,7 @@ import {
   toPublicEstablishmentMapMarker,
 } from '../projections/establishmentProjections.js';
 import { toPublicReview } from '../projections/reviewProjections.js';
-import { collapseMenuRepeats, toPublicMenuItem } from '../projections/menuItemProjections.js';
+import { guestMenuRows, toPublicMenuItem } from '../projections/menuItemProjections.js';
 import {
   CITY_SLUG_MAP,
   CATEGORY_SLUG_MAP,
@@ -253,9 +253,11 @@ const assembleEstablishmentDetail = async (row) => {
  *   - Calls MenuItemModel.getByEstablishmentId with includeHidden=false
  *     (admin-hidden items never reach public response)
  *   - Collapses a menu uploaded as several files (photo + PDF) so the guest
- *     sees each dish once (collapseMenuRepeats); the rows themselves
- *     stay per file for the partner's cabinet and the moderator's panel
- *   - Returns empty array if establishment has no parsed menu yet
+ *     sees each dish once, and takes alcohol and tobacco out (guestMenuRows);
+ *     the rows themselves stay as read for the partner's cabinet and the
+ *     moderator's panel
+ *   - Returns empty array if establishment has no parsed menu yet, or nothing
+ *     but alcohol and tobacco in it: the card shows the photos and the PDF
  *
  * @param {string} slug
  * @returns {Promise<{ menu_items: Object[] }>}
@@ -273,7 +275,7 @@ export const getPublicMenuItems = async (slug) => {
   });
 
   return {
-    menu_items: collapseMenuRepeats(items).map(toPublicMenuItem),
+    menu_items: guestMenuRows(items).map(toPublicMenuItem),
   };
 };
 

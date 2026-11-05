@@ -20,7 +20,9 @@ import { toPublicReview, toPublicUserReview } from '../../projections/reviewProj
 import {
   collapseMenuRepeats,
   findCopies,
+  guestMenuRows,
   toPublicMenuItem,
+  withGuestHiddenReason,
 } from '../../projections/menuItemProjections.js';
 
 const SENSITIVE_FIELDS = [
@@ -527,6 +529,142 @@ describe('toPublicMenuItem — menu item projection', () => {
     const { sanity_flag, ...withoutFlag } = rawItem; // eslint-disable-line no-unused-vars
     const result = toPublicMenuItem(withoutFlag);
     expect(result.quality_tier).toBe('clean');
+  });
+});
+
+describe('guestMenuRows — the menu the guest sees', () => {
+  let seq = 0;
+  const row = (mediaId, itemName, priceByn, categoryRaw, extra = {}) => ({
+    id: `gm-${++seq}`,
+    media_id: mediaId,
+    item_name: itemName,
+    price_byn: priceByn,
+    category_raw: categoryRaw,
+    sanity_flag: null,
+    position: 0,
+    ...extra,
+  });
+  const names = rows => rows.map(r => r.item_name);
+
+  test('takes alcohol and tobacco out, keeps the order and the rest', () => {
+    const rows = [
+      row('a', 'Борщ', '8.00', 'Супы'),
+      row('a', 'Вино красное', '12.00', 'Вино'),
+      row('a', 'Кальян', '40.00', null),
+      row('a', 'Стейк с соусом из коньяка', '40.00', 'Горячее'),
+    ];
+
+    expect(names(guestMenuRows(rows))).toEqual(['Борщ', 'Стейк с соусом из коньяка']);
+  });
+
+  test('a line goes when any of its rows is alcohol: the same wine read with no section', () => {
+    const rows = [
+      row('pdf', 'Хаус', '12.00', 'ВИНО / белое'),
+      row('pdf', 'Борщ', '8.00', 'Супы'),
+      row('photo', 'Хаус', '12.00', null),
+      row('photo', 'Борщ', '8.00', null),
+    ];
+
+    expect(names(guestMenuRows(rows))).toEqual(['Борщ']);
+  });
+
+  test('a row with no section says less than its copy with one: a lemonade stays', () => {
+    const rows = [
+      row('pdf', 'Мохито', '9.00', 'Фирменные лимонады'),
+      row('pdf', 'Морс', '5.00', 'Фирменные лимонады'),
+      row('photo', 'Мохито', '9.00', null),
+      row('photo', 'Морс', '5.00', null),
+    ];
+
+    expect(names(guestMenuRows(rows))).toEqual(['Мохито', 'Морс']);
+  });
+
+  test('with no section read anywhere the names decide', () => {
+    const rows = [
+      row('pdf', 'Мохито', '9.00', null),
+      row('pdf', 'Морс', '5.00', null),
+      row('photo', 'Мохито', '9.00', null),
+      row('photo', 'Морс', '5.00', null),
+    ];
+
+    expect(names(guestMenuRows(rows))).toEqual(['Морс']);
+  });
+
+  test('grouping and the shown row stay what they were without the filter', () => {
+    // The bar is half of the bigger file: taking it out before grouping would
+    // change which file is the biggest and which row of «Борщ» is shown.
+    const rows = [
+      row('pdf', 'Вино белое', '12.00', 'Вино'),
+      row('pdf', 'Вино красное', '12.00', 'Вино'),
+      row('pdf', 'Вино розовое', '12.00', 'Вино'),
+      row('pdf', 'Борщ', '8.00', 'СУПЫ'),
+      row('photo', 'Борщ', '8.00', 'Супы'),
+      row('photo', 'Солянка', '9.00', 'Супы'),
+    ];
+
+    const shownWithoutFilter = collapseMenuRepeats(rows).find(r => r.item_name === 'Борщ');
+    const shown = guestMenuRows(rows).find(r => r.item_name === 'Борщ');
+
+    expect(shownWithoutFilter.media_id).toBe('pdf');
+    expect(shown).toBe(shownWithoutFilter);
+  });
+
+  test('a menu of nothing but alcohol is empty', () => {
+    expect(guestMenuRows([row('a', 'Пиво', '5.00', 'Пиво')])).toEqual([]);
+  });
+
+  test('no rows, no lines', () => {
+    expect(guestMenuRows([])).toEqual([]);
+  });
+});
+
+describe('withGuestHiddenReason — the partner sees every row, with what it is hidden for', () => {
+  let seq = 0;
+  const row = (mediaId, itemName, categoryRaw) => ({
+    id: `gh-${++seq}`,
+    media_id: mediaId,
+    item_name: itemName,
+    price_byn: '12.00',
+    category_raw: categoryRaw,
+    sanity_flag: null,
+    position: 0,
+  });
+
+  test('marks by the reason, in the given order, no row lost', () => {
+    const rows = [
+      row('a', 'Вино красное', null),
+      row('a', 'Борщ', 'Супы'),
+      row('a', 'Кальян', null),
+    ];
+
+    expect(withGuestHiddenReason(rows).map(r => [r.item_name, r.guest_hidden_reason])).toEqual([
+      ['Вино красное', 'alcohol'],
+      ['Борщ', null],
+      ['Кальян', 'tobacco'],
+    ]);
+  });
+
+  test('every row of a hidden line reads the same, and the mark agrees with the guest\'s menu', () => {
+    const rows = [
+      row('pdf', 'Хаус', 'Вино'),
+      row('pdf', 'Борщ', 'Супы'),
+      row('photo', 'Хаус', null),
+      row('photo', 'Борщ', null),
+    ];
+
+    const marked = withGuestHiddenReason(rows);
+    expect(marked.filter(r => r.item_name === 'Хаус').map(r => r.guest_hidden_reason))
+      .toEqual(['alcohol', 'alcohol']);
+    const shownNames = new Set(guestMenuRows(rows).map(r => r.item_name));
+    for (const r of marked) {
+      expect(r.guest_hidden_reason === null).toBe(shownNames.has(r.item_name));
+    }
+  });
+
+  test('the rows given are not changed', () => {
+    const rows = [row('a', 'Вино', null)];
+    withGuestHiddenReason(rows);
+    expect(rows[0]).not.toHaveProperty('guest_hidden_reason');
   });
 });
 

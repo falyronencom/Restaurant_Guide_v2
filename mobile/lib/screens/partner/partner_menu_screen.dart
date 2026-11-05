@@ -750,6 +750,16 @@ class _MenuItemCardState extends State<_MenuItemCard> {
                             ),
                           ),
                         ],
+                        if (item.isHiddenFromGuests) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Гостям не показывается: алкоголь и табак',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textGrey,
+                            ),
+                          ),
+                        ],
                         if (item.hasSanityFlag) ...[
                           const SizedBox(height: 8),
                           GestureDetector(
