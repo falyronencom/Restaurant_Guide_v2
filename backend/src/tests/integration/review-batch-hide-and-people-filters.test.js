@@ -21,7 +21,7 @@
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import {
   createAdminAndGetToken,
@@ -80,7 +80,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await query('TRUNCATE TABLE audit_log CASCADE');
-  await query('TRUNCATE TABLE reviews CASCADE');
+  await clearTableTree('reviews');
 });
 
 afterAll(async () => {

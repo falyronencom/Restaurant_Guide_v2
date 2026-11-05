@@ -20,7 +20,7 @@ import { readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from '../../config/database.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import {
   VIEWER_CREDENTIALS,
   createAdminAndGetToken,
@@ -79,7 +79,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   // menu_items и establishment_media уходят каскадом; у audit_log внешнего
   // ключа на заведения нет — чистится отдельно.
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
   await query('TRUNCATE TABLE audit_log');
 });
 

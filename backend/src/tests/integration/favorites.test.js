@@ -16,7 +16,7 @@
 
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, query, getDefaultWorkingHours } from '../utils/database.js';
+import { clearAllData, clearTableTree, query, getDefaultWorkingHours } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 
@@ -40,8 +40,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await query('TRUNCATE TABLE favorites CASCADE');
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 
   // Create test establishments with required fields including working_hours
   const defaultWorkingHours = JSON.stringify({

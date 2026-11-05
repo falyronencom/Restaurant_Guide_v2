@@ -21,7 +21,7 @@ import request from 'supertest';
 import app from '../../server.js';
 import { pool } from '../../config/database.js';
 import * as EstablishmentService from '../../services/establishmentService.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { testUsers } from '../fixtures/users.js';
 import {
   createAdminAndGetToken,
@@ -46,7 +46,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   // Each test starts with an empty establishments table
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 });
 
 afterAll(async () => {

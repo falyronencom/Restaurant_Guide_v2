@@ -11,7 +11,7 @@
 
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 import { testEstablishments } from '../fixtures/establishments.js';
@@ -48,7 +48,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 });
 
 afterAll(async () => {

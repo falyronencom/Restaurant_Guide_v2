@@ -25,7 +25,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, getClient, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, getClient, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { setReviewVisibility } from '../../models/adminReviewModel.js';
 import * as adminReviewService from '../../services/adminReviewService.js';
@@ -67,7 +67,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   // Reset reviews and audit_log between tests; keep users and establishment
   await query('TRUNCATE TABLE audit_log CASCADE');
-  await query('TRUNCATE TABLE reviews CASCADE');
+  await clearTableTree('reviews');
 });
 
 afterAll(async () => {

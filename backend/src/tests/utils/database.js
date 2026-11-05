@@ -10,7 +10,7 @@
 
 import { pool } from '../../config/database.js';
 import logger from '../../utils/logger.js';
-import { TEST_STATE_TABLES } from '../testTables.js';
+import { TABLE_TREES, TEST_STATE_TABLES } from '../testTables.js';
 
 /**
  * Clear all test data from database
@@ -54,53 +54,31 @@ export async function clearAllData() {
 }
 
 /**
- * Clear users table only
+ * Clear one table together with everything that references it, keeping the rest
+ * — for a file that keeps users and tokens from beforeAll between its tests, so
+ * clearAllData would take them too.
+ *
+ * One statement, children first, the same as clearAllData and for the same
+ * reason (TABLE_TREES in testTables.js). `TRUNCATE establishments CASCADE` locks
+ * the parent first; a fire-and-forget INSERT of the previous test holds its own
+ * table and asks for the parent on its FK check, the two close a ring, and the
+ * next test's hook fails with `deadlock detected` (main, 2026-11-05: INSERT INTO
+ * ocr_jobs). Here the cleanup just waits for that insert. Its FK violation, when
+ * the cleanup wins the race, stays: the tail swallows it, this does not treat it.
+ *
+ * Guard: integration/clear-all-data-lock-order.test.js.
+ *
+ * @param {'establishments'|'reviews'} root - The parent table
  */
-export async function clearUsers() {
+export async function clearTableTree(root) {
   if (process.env.NODE_ENV !== 'test') {
-    throw new Error('clearUsers can only be called in test environment!');
+    throw new Error('clearTableTree can only be called in test environment!');
   }
-  await pool.query('TRUNCATE TABLE users CASCADE');
-}
-
-/**
- * Clear establishments table only
- */
-export async function clearEstablishments() {
-  if (process.env.NODE_ENV !== 'test') {
-    throw new Error('clearEstablishments can only be called in test environment!');
+  const tables = TABLE_TREES[root];
+  if (!tables) {
+    throw new Error(`clearTableTree: no list for ${root}, see TABLE_TREES in testTables.js`);
   }
-  await pool.query('TRUNCATE TABLE establishments CASCADE');
-}
-
-/**
- * Clear reviews table only
- */
-export async function clearReviews() {
-  if (process.env.NODE_ENV !== 'test') {
-    throw new Error('clearReviews can only be called in test environment!');
-  }
-  await pool.query('TRUNCATE TABLE reviews CASCADE');
-}
-
-/**
- * Clear favorites table only
- */
-export async function clearFavorites() {
-  if (process.env.NODE_ENV !== 'test') {
-    throw new Error('clearFavorites can only be called in test environment!');
-  }
-  await pool.query('TRUNCATE TABLE favorites CASCADE');
-}
-
-/**
- * Clear media table only
- */
-export async function clearMedia() {
-  if (process.env.NODE_ENV !== 'test') {
-    throw new Error('clearMedia can only be called in test environment!');
-  }
-  await pool.query('TRUNCATE TABLE establishment_media CASCADE');
+  await pool.query(`TRUNCATE TABLE ${tables.join(', ')} CASCADE`);
 }
 
 /**
@@ -344,11 +322,7 @@ export async function rollbackTransaction(client) {
 
 export default {
   clearAllData,
-  clearUsers,
-  clearEstablishments,
-  clearReviews,
-  clearFavorites,
-  clearMedia,
+  clearTableTree,
   getClient,
   query,
   countRecords,

@@ -15,7 +15,7 @@
 
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, getClient, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, getClient, query } from '../utils/database.js';
 import { sdkAnalyticsQuery } from '../utils/cloudinaryAnalytics.js';
 import { createTestUser, createUserAndGetTokens } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
@@ -49,7 +49,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   // Clear establishments before each test
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 });
 
 afterAll(async () => {
