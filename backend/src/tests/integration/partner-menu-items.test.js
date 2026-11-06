@@ -14,7 +14,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 
 async function createPartner() {
@@ -92,7 +92,7 @@ async function seedMenuItem(establishmentId, mediaId, overrides = {}) {
 }
 
 beforeEach(async () => {
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 });
 
 afterAll(async () => {

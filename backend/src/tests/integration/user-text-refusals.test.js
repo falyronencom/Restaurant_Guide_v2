@@ -27,7 +27,7 @@ jest.unstable_mockModule('google-auth-library', () => ({
 
 const request = (await import('supertest')).default;
 const app = (await import('../../server.js')).default;
-const { clearAllData, query } = await import('../utils/database.js');
+const { clearAllData, clearTableTree, query } = await import('../utils/database.js');
 const { createUserAndGetTokens, getUserByEmail } = await import('../utils/auth.js');
 const { testUsers, oauthProviderResponses } = await import('../fixtures/users.js');
 const { NAME_REFUSALS, PROVIDER_NAME_FALLBACK } = await import('../../utils/userName.js');
@@ -60,7 +60,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await query('TRUNCATE TABLE reviews CASCADE');
+  await clearTableTree('reviews');
   MockOAuth2Client.mockImplementation(() => ({ verifyIdToken: mockVerifyIdToken }));
 });
 

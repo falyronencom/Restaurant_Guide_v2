@@ -42,3 +42,37 @@ export const TEST_STATE_TABLES = [
   'refresh_tokens',
   'users',
 ];
+
+const inListOrder = (...tables) => TEST_STATE_TABLES.filter((table) => tables.includes(table));
+
+/**
+ * What clearTableTree truncates for a parent: the parent and every table a
+ * `TRUNCATE <parent> CASCADE` reaches from it, children first. The order comes
+ * from TEST_STATE_TABLES and is load-bearing the same way.
+ *
+ * seed_import_registry references establishments and is left to CASCADE, which
+ * locks it after the list: nothing writes it in the background, and a pg-test
+ * built before migration 031 does not have it.
+ *
+ * A migration that adds a child of one of these tables adds it here too.
+ * Guard: integration/clear-all-data-lock-order.test.js.
+ */
+export const TABLE_TREES = {
+  establishments: inListOrder(
+    'favorites',
+    'bookings',
+    'booking_settings',
+    'promotions',
+    'menu_items',
+    'ocr_jobs',
+    'establishment_media',
+    'notifications',
+    'reviews',
+    'partner_documents',
+    'subscriptions',
+    'establishment_analytics',
+    'menu_item_hidden_names',
+    'establishments',
+  ),
+  reviews: inListOrder('notifications', 'reviews'),
+};

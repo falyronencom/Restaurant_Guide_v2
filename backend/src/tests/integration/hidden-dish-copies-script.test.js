@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from '../../config/database.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { createPartnerWithEstablishment } from '../utils/adminTestHelpers.js';
 import {
   AUDIT_USER_AGENT,
@@ -28,7 +28,7 @@ const MIGRATION_038 = join(
 );
 
 beforeEach(async () => {
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
   await query('TRUNCATE TABLE audit_log');
 });
 

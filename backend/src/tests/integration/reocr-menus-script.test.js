@@ -29,7 +29,7 @@ import { readdirSync, readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from '../../config/database.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { createAdminAndGetToken, createPartnerWithEstablishment } from '../utils/adminTestHelpers.js';
 import * as adminService from '../../services/adminService.js';
 import * as partnerMenuItemService from '../../services/partnerMenuItemService.js';
@@ -60,7 +60,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   // Файлы, позиции и задачи уходят каскадом; у audit_log внешнего ключа на
   // заведения нет — чистится отдельно.
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
   await query('TRUNCATE TABLE audit_log');
 });
 

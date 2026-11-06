@@ -13,7 +13,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { createUserAndGetTokens, createTestEstablishment } from '../utils/auth.js';
 import { testUsers } from '../fixtures/users.js';
 
@@ -47,8 +47,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await query('TRUNCATE TABLE reviews CASCADE');
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
   establishmentId = (await createTestEstablishment(owner.user.id)).id;
 });
 

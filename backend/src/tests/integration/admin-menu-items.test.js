@@ -16,7 +16,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
@@ -34,7 +34,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   // menu_items and establishment_media cascade from establishments
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 });
 
 afterAll(async () => {

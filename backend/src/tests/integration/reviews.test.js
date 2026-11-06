@@ -17,7 +17,7 @@
 
 import request from 'supertest';
 import app from '../../server.js';
-import { clearAllData, query, countRecords } from '../utils/database.js';
+import { clearAllData, clearTableTree, query, countRecords } from '../utils/database.js';
 import { createUserAndGetTokens, createTestEstablishment, createPartnerAndGetToken } from '../utils/auth.js';
 import redisClient, { connectRedis, deleteKey } from '../../config/redis.js';
 import { testUsers } from '../fixtures/users.js';
@@ -63,8 +63,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   // Clear reviews and establishments
-  await query('TRUNCATE TABLE reviews CASCADE');
-  await query('TRUNCATE TABLE establishments CASCADE');
+  await clearTableTree('establishments');
 
   // Create test establishment
   const defaultWorkingHours = JSON.stringify({
@@ -125,7 +124,7 @@ describe('Reviews System - Create Review', () => {
   test('should accept ratings 1-5', async () => {
     for (let rating = 1; rating <= 5; rating++) {
       // Clear previous review
-      await query('TRUNCATE TABLE reviews CASCADE');
+      await clearTableTree('reviews');
 
       const response = await request(app)
         .post('/api/v1/reviews')
