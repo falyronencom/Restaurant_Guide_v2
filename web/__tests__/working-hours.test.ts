@@ -49,12 +49,27 @@ describe('parseDayHours', () => {
     });
   });
 
-  it('rejects a string that is not exactly two non-empty halves', () => {
+  it('rejects a string that is not exactly two proper times', () => {
     expect(parseDayHours('10:00')).toBeNull(); // one part
     expect(parseDayHours('10-22-00')).toBeNull(); // three parts
     expect(parseDayHours('-22:00')).toBeNull(); // empty open
     expect(parseDayHours('10:00-')).toBeNull(); // empty close
     expect(parseDayHours('10:00-   ')).toBeNull(); // whitespace-only close
+    expect(parseDayHours('25:99-abc')).toBeNull(); // not times at all
+    expect(parseDayHours('10:00-25:99')).toBeNull(); // close out of range
+  });
+
+  it('brings a time to one form: «9:00» and seconds read, «09:00» comes out', () => {
+    expect(parseDayHours({ open: '9:00', close: '22:00:00' })).toEqual({
+      open: '09:00',
+      close: '22:00',
+      isOpen: true,
+    });
+    expect(parseDayHours('9:05-1:30')).toEqual({
+      open: '09:05',
+      close: '01:30',
+      isOpen: true,
+    });
   });
 
   it('reads { is_open: false } as the closed marker, even beside times', () => {
@@ -77,10 +92,20 @@ describe('parseDayHours', () => {
     expect(
       parseDayHours({ is_open: true, open: '09:00', close: '18:00' }),
     ).toEqual(normalized);
-    // Non-string times inside an object are dropped, the day stays "open" —
-    // that combination is what routes computeOpenStatus to statusFallback.
+    // Anything but a proper time is dropped, the day stays "open" — that is the
+    // day computeOpenStatus calls unknown and the cabinet shows as unfinished.
     expect(parseDayHours({ open: 900, close: null })).toEqual({
       open: null,
+      close: null,
+      isOpen: true,
+    });
+    expect(parseDayHours({ is_open: true, open: '', close: '' })).toEqual({
+      open: null,
+      close: null,
+      isOpen: true,
+    });
+    expect(parseDayHours({ open: '10:00', close: '25:99' })).toEqual({
+      open: '10:00',
       close: null,
       isOpen: true,
     });
@@ -91,71 +116,97 @@ describe('parseDayHours', () => {
     expect(parseDayHours(undefined)).toBeNull();
     expect(parseDayHours(42)).toBeNull();
     expect(parseDayHours(true)).toBeNull();
+    expect(parseDayHours([1, 2])).toBeNull();
   });
 });
+
+const open = (closingTime: string) => ({ state: 'open', closingTime });
+const closed = { state: 'closed', closingTime: null };
+const unknown = { state: 'unknown', closingTime: null };
+
+const everyDay = (hours: unknown) =>
+  Object.fromEntries(
+    [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ].map((day) => [day, hours]),
+  );
+
+// 2026-09-07 (Monday) … 2026-09-13 (Sunday), the same week the app's tests use.
+const at = (daysFromMonday: number, h: number, m = 0) =>
+  new Date(2026, 8, 7 + daysFromMonday, h, m);
 
 describe('computeOpenStatus', () => {
   it('keeps an overnight schedule open across midnight (18:00-02:00)', () => {
     // The M45 branch. Three points, not one: before midnight, after midnight,
     // and midday — a mutant that hard-codes "closed" survives any single
-    // "open" point that happens to sit outside the window.
-    const hours = { monday: '18:00-02:00' };
+    // "open" point that happens to sit outside the window. The night belongs
+    // to yesterday's shift, so the schedule covers the whole week.
+    const hours = everyDay('18:00-02:00');
 
-    expect(computeOpenStatus(hours, 'active', monday(23, 0))).toEqual({
-      isOpen: true,
-      closingTime: '02:00',
-      source: 'workingHours',
-    });
-    expect(computeOpenStatus(hours, 'active', monday(1, 0))).toEqual({
-      isOpen: true,
-      closingTime: '02:00',
-      source: 'workingHours',
-    });
-    expect(computeOpenStatus(hours, 'active', monday(12, 0))).toEqual({
-      isOpen: false,
-      closingTime: '02:00',
-      source: 'workingHours',
-    });
+    expect(computeOpenStatus(hours, 'active', monday(23, 0))).toEqual(
+      open('02:00'),
+    );
+    expect(computeOpenStatus(hours, 'active', monday(1, 0))).toEqual(
+      open('02:00'),
+    );
+    expect(computeOpenStatus(hours, 'active', monday(12, 0))).toEqual(closed);
+    // The boundaries of the night window are a branch of their own.
+    expect(computeOpenStatus(hours, 'active', monday(1, 59)).state).toBe('open');
+    expect(computeOpenStatus(hours, 'active', monday(2, 0)).state).toBe('closed');
+    expect(computeOpenStatus(hours, 'active', monday(18, 0)).state).toBe('open');
+    expect(computeOpenStatus(hours, 'active', monday(17, 59)).state).toBe(
+      'closed',
+    );
   });
 
-  it('treats close equal to open as round-the-clock, not as a zero-width window', () => {
-    // Pins `closeMin <= openMin` (wrap-around) against `closeMin < openMin`,
-    // which would send 12:00-12:00 down the plain-day branch and report the
-    // place closed at every minute of the day.
-    const hours = { monday: '12:00-12:00' };
+  it('reads close equal to open as 24 hours from the opening, not a zero-width window', () => {
+    // Pins `closeMin <= openMin` against `closeMin < openMin`, which would send
+    // 12:00-12:00 down the plain-day branch and report the place closed at every
+    // minute of the day.
+    const hours = {
+      sunday: { is_open: false },
+      monday: '12:00-12:00',
+      tuesday: { is_open: false },
+    };
 
-    expect(computeOpenStatus(hours, 'active', monday(11, 59))).toEqual({
-      isOpen: true,
-      closingTime: '12:00',
-      source: 'workingHours',
-    });
-    expect(computeOpenStatus(hours, 'active', monday(12, 0))).toEqual({
-      isOpen: true,
-      closingTime: '12:00',
-      source: 'workingHours',
-    });
+    expect(computeOpenStatus(hours, 'active', at(0, 11, 59))).toEqual(closed);
+    expect(computeOpenStatus(hours, 'active', at(0, 12))).toEqual(open('12:00'));
+    expect(computeOpenStatus(hours, 'active', at(1, 11, 59))).toEqual(
+      open('12:00'),
+    );
+    expect(computeOpenStatus(hours, 'active', at(1, 12))).toEqual(closed);
   });
 
-  it('reports a plain day with its close time and the workingHours source', () => {
+  it('00:00-00:00 is exactly that day, and every hour of a week of them', () => {
+    const oneDay = { monday: '00:00-00:00', tuesday: { is_open: false } };
+    for (const h of [0, 1, 12, 23]) {
+      expect(computeOpenStatus(oneDay, 'active', at(0, h)).state).toBe('open');
+    }
+    expect(computeOpenStatus(oneDay, 'active', at(1, 0))).toEqual(closed);
+
+    const week = everyDay('00:00-00:00');
+    for (let day = 0; day < 7; day++) {
+      for (let h = 0; h < 24; h++) {
+        expect(computeOpenStatus(week, 'active', at(day, h)).state).toBe('open');
+      }
+    }
+  });
+
+  it('reports a plain day with its close time, a closed verdict without one', () => {
     const hours = { monday: { open: '10:00', close: '22:00' } };
 
-    expect(computeOpenStatus(hours, 'active', monday(14, 30))).toEqual({
-      isOpen: true,
-      closingTime: '22:00',
-      source: 'workingHours',
-    });
-    // Closed verdicts still carry the day's close time, and `status: 'active'`
-    // does not overrule the schedule.
-    expect(computeOpenStatus(hours, 'active', monday(9, 59))).toEqual({
-      isOpen: false,
-      closingTime: '22:00',
-      source: 'workingHours',
-    });
-    expect(computeOpenStatus(hours, 'active', monday(22, 30))).toEqual({
-      isOpen: false,
-      closingTime: '22:00',
-      source: 'workingHours',
-    });
+    expect(computeOpenStatus(hours, 'active', monday(14, 30))).toEqual(
+      open('22:00'),
+    );
+    // `status: 'active'` does not overrule the schedule.
+    expect(computeOpenStatus(hours, 'active', monday(9, 59))).toEqual(closed);
+    expect(computeOpenStatus(hours, 'active', monday(22, 30))).toEqual(closed);
   });
 
   it('opens on the opening minute and closes on the closing minute', () => {
@@ -163,15 +214,15 @@ describe('computeOpenStatus', () => {
     // point sees neither.
     const hours = { monday: '10:00-22:00' };
 
-    expect(computeOpenStatus(hours, 'active', monday(10, 0)).isOpen).toBe(true);
-    expect(computeOpenStatus(hours, 'active', monday(9, 59)).isOpen).toBe(
-      false,
+    expect(computeOpenStatus(hours, 'active', monday(10, 0)).state).toBe('open');
+    expect(computeOpenStatus(hours, 'active', monday(9, 59)).state).toBe(
+      'closed',
     );
-    expect(computeOpenStatus(hours, 'active', monday(21, 59)).isOpen).toBe(
-      true,
+    expect(computeOpenStatus(hours, 'active', monday(21, 59)).state).toBe(
+      'open',
     );
-    expect(computeOpenStatus(hours, 'active', monday(22, 0)).isOpen).toBe(
-      false,
+    expect(computeOpenStatus(hours, 'active', monday(22, 0)).state).toBe(
+      'closed',
     );
   });
 
@@ -184,71 +235,130 @@ describe('computeOpenStatus', () => {
     // the schedule.
     const sundayOnly = { sunday: '10:00-22:00' };
 
-    expect(computeOpenStatus(sundayOnly, 'inactive', sunday(14, 0))).toEqual({
-      isOpen: true,
-      closingTime: '22:00',
-      source: 'workingHours',
-    });
-    expect(computeOpenStatus(sundayOnly, 'inactive', monday(14, 0))).toEqual({
-      isOpen: false,
-      closingTime: null,
-      source: 'statusFallback',
-    });
-  });
-
-  it('falls back to status when the day is absent, incomplete or unparsable', () => {
-    const fallbackOpen = {
-      isOpen: true,
-      closingTime: null,
-      source: 'statusFallback',
-    };
-
-    // (a) nothing usable to look a day up in
-    expect(computeOpenStatus(null, 'active', monday(14, 0))).toEqual(
-      fallbackOpen,
+    expect(computeOpenStatus(sundayOnly, 'inactive', sunday(14, 0))).toEqual(
+      open('22:00'),
     );
-    expect(computeOpenStatus('10:00-22:00', 'active', monday(14, 0))).toEqual(
-      fallbackOpen,
+    expect(computeOpenStatus(sundayOnly, 'inactive', monday(14, 0))).toEqual(
+      closed,
     );
-    expect(
-      computeOpenStatus({ tuesday: '10:00-22:00' }, 'active', monday(14, 0)),
-    ).toEqual(fallbackOpen);
-
-    // (b) the day is marked open but carries no times
-    expect(
-      computeOpenStatus({ monday: { is_open: true } }, 'active', monday(14, 0)),
-    ).toEqual(fallbackOpen);
-
-    // (c) times are there but do not parse into minutes
-    expect(
-      computeOpenStatus(
-        { monday: { open: 'ab:cd', close: 'ef:gh' } },
-        'active',
-        monday(14, 0),
-      ),
-    ).toEqual(fallbackOpen);
-
-    // The fallback follows `status`, and closingTime is dropped even when a
-    // close string was known — the badge must not pair a status verdict with
-    // a schedule time.
-    expect(
-      computeOpenStatus(
-        { monday: { is_open: true, close: '22:00' } },
-        'pending',
-        monday(14, 0),
-      ),
-    ).toEqual({ isOpen: false, closingTime: null, source: 'statusFallback' });
   });
 
   it('treats is_open: false as a schedule verdict, not as a missing day', () => {
-    // `status: 'active'` would say "open" if this fell through to the
-    // fallback; the day off has to win, and be attributed to workingHours.
     expect(
       computeOpenStatus(
         { monday: { is_open: false } },
         'active',
         monday(14, 0),
       ),
-    ).toEqual({ isOpen: false, closingTime: null, source: 'workingHours' });
+    ).toEqual(closed);
+  });
+
+  describe('the night belongs to yesterday\'s shift', () => {
+    it('Friday 01:00: Thursday closed at 23:00, Friday opens at 12:00', () => {
+      // Finding 2 of the check of 06.11.2026: it read «Открыто · до 02:00».
+      const hours = { thursday: '12:00-23:00', friday: '12:00-02:00' };
+      expect(computeOpenStatus(hours, 'active', at(4, 1))).toEqual(closed);
+    });
+
+    it('Sunday 01:00: Saturday\'s shift till 02:00 is still on', () => {
+      // The reverse of the same finding: it read «Закрыто».
+      const hours = { saturday: '12:00-02:00', sunday: '12:00-23:00' };
+      expect(computeOpenStatus(hours, 'active', at(6, 1))).toEqual(open('02:00'));
+    });
+
+    it('crosses from Sunday to Monday', () => {
+      const hours = { sunday: '18:00-03:00', monday: { is_open: false } };
+      expect(computeOpenStatus(hours, 'active', at(0, 2, 59))).toEqual(
+        open('03:00'),
+      );
+      expect(computeOpenStatus(hours, 'active', at(0, 3))).toEqual(closed);
+    });
+
+    it('a day off today does not cut yesterday\'s shift short', () => {
+      const hours = { friday: '18:00-02:00', saturday: { is_open: false } };
+      expect(computeOpenStatus(hours, 'active', at(5, 1))).toEqual(open('02:00'));
+      expect(computeOpenStatus(hours, 'active', at(5, 2))).toEqual(closed);
+      expect(computeOpenStatus(hours, 'active', at(5, 13))).toEqual(closed);
+    });
+
+    it('a day off yesterday: today\'s overnight record does not open the night', () => {
+      const hours = { sunday: { is_open: false }, monday: '18:00-02:00' };
+      expect(computeOpenStatus(hours, 'active', at(0, 1))).toEqual(closed);
+      expect(computeOpenStatus(hours, 'active', at(0, 19))).toEqual(open('02:00'));
+    });
+
+    it('no data for yesterday: today\'s record decides', () => {
+      const hours = { monday: '18:00-02:00' };
+      expect(computeOpenStatus(hours, 'active', at(0, 1))).toEqual(closed);
+      expect(computeOpenStatus(hours, 'active', at(0, 18))).toEqual(open('02:00'));
+    });
+
+    it('a broken record yesterday: today\'s record decides', () => {
+      const hours = {
+        sunday: { is_open: true, open: '', close: '' },
+        monday: '10:00-22:00',
+      };
+      expect(computeOpenStatus(hours, 'active', at(0, 1))).toEqual(closed);
+      expect(computeOpenStatus(hours, 'active', at(0, 12))).toEqual(open('22:00'));
+    });
+
+    it('no data for today: open while yesterday\'s shift runs, then unknown', () => {
+      const hours = { monday: '18:00-02:00' };
+      expect(computeOpenStatus(hours, 'active', at(1, 1))).toEqual(open('02:00'));
+      expect(computeOpenStatus(hours, 'active', at(1, 2))).toEqual(unknown);
+    });
+
+    it('a plain day yesterday does not run on into the night', () => {
+      const hours = { monday: '10:00-22:00', tuesday: '10:00-22:00' };
+      expect(computeOpenStatus(hours, 'active', at(1, 1))).toEqual(closed);
+    });
+  });
+
+  describe('hours that cannot be read: unknown, not «Открыто»', () => {
+    it.each<[string, unknown]>([
+      ['empty strings (what the cabinet used to send)', { is_open: true, open: '', close: '' }],
+      ['one time empty', { is_open: true, open: '10:00', close: '' }],
+      ['no times at all', { is_open: true }],
+      ['a time that does not exist', { open: '25:99', close: '22:00' }],
+      ['minutes that do not exist', { open: '10:60', close: '22:00' }],
+      ['seconds that do not exist', { open: '10:00:99', close: '22:00' }],
+      ['letters', { open: 'ab:cd', close: 'ef:gh' }],
+      ['a tail after the time', { open: '10:00abc', close: '22:00' }],
+      ['a time that is not a string', { open: 10, close: 22 }],
+      ['a string without a dash', 'abc'],
+      ['an empty string', ''],
+      ['garbage in a string', '25:99-abc'],
+      ['a number', 42],
+      ['a list', [1, 2]],
+      ['null', null],
+    ])('%s', (_name, entry) => {
+      for (let h = 0; h < 24; h++) {
+        expect(
+          computeOpenStatus({ monday: entry }, 'active', monday(h, 0)),
+        ).toEqual(unknown);
+      }
+    });
+
+    it('no usable week at all, or no record for today', () => {
+      expect(computeOpenStatus(null, 'active', monday(14, 0))).toEqual(unknown);
+      expect(computeOpenStatus({}, 'active', monday(14, 0))).toEqual(unknown);
+      expect(computeOpenStatus('10:00-22:00', 'active', monday(14, 0))).toEqual(
+        unknown,
+      );
+      expect(
+        computeOpenStatus({ tuesday: '10:00-22:00' }, 'active', monday(14, 0)),
+      ).toEqual(unknown);
+    });
+
+    it('a card off the catalog is closed, not unknown', () => {
+      expect(computeOpenStatus(null, 'pending', monday(14, 0))).toEqual(closed);
+      expect(
+        computeOpenStatus(
+          { monday: { is_open: true, close: '22:00' } },
+          'suspended',
+          monday(14, 0),
+        ),
+      ).toEqual(closed);
+    });
   });
 });

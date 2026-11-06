@@ -81,6 +81,10 @@ const CODE_RU: Record<string, string> = {
     'Это действие недоступно в текущем статусе заведения.',
   INCOMPLETE_ESTABLISHMENT:
     'Перед отправкой на модерацию заполните все обязательные поля.',
+  // The server's own text names the days and is what the partner reads; this one
+  // is for a refusal that reaches the site without it.
+  WORKING_HOURS_INCOMPLETE:
+    'Часы работы заполнены не до конца. Укажите время открытия и закрытия или отметьте день выходным.',
   CONSTRAINT_VIOLATION:
     'Данные заведения нарушают ограничения. Проверьте корректность полей.',
   NO_SESSION: 'Сессия истекла. Войдите снова.',
