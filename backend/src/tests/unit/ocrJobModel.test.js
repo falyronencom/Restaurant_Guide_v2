@@ -83,7 +83,7 @@ describe('enqueue', () => {
     expect(mockQuery).toHaveBeenCalledTimes(2);
     const [insertSql, insertParams] = mockQuery.mock.calls[1];
     expect(insertSql).toContain('INSERT INTO ocr_jobs');
-    expect(insertParams).toEqual([ESTABLISHMENT_ID, MEDIA_ID]);
+    expect(insertParams).toEqual([ESTABLISHMENT_ID, MEDIA_ID, null]);
   });
 
   test('treats processing status as active (idempotent even when mid-processing)', async () => {
