@@ -14,6 +14,10 @@
  * сохранение или загрузка проходят. Перезапуск, которому не досталось ни
  * одного задания, — 429. Одобрение модератором не считается.
  *
+ * Страницы дня (нитка «Общий потолок распознавания») считает чтение
+ * (integration/ocr-page-ceiling); дверь только смотрит, не потрачены ли они: блок
+ * «страницы дня у двери».
+ *
  * Ожидания — литералы утверждённых чисел (Координатор, 17.10.2026, PR #59) и
  * утверждённого текста лимитера. Через настоящее приложение и настоящий
  * Redis; счётчик дня ставится прямо перед границей; облако подменено.
@@ -36,10 +40,11 @@ import { testEstablishments } from '../fixtures/establishments.js';
 process.env.RATE_LIMIT_AUTHENTICATED = '1000';
 process.env.RATE_LIMIT_WINDOW_AUTHENTICATED = '60';
 const { default: app } = await import('../../server.js');
-const { dailyOcrJobKey } = await import('../../services/ocrAllowance.js');
+const { dailyOcrCeilingKey, dailyOcrJobKey, dailyOcrPagesKey } = await import('../../services/ocrAllowance.js');
 const adminService = await import('../../services/adminService.js');
 
 const REFUSAL_LOG = 'Daily recognition allowance spent: job not queued';
+const PAGES_LOG = 'Recognition pages of the day spent: job not queued';
 const LIMITER_TEXT = 'Слишком много запросов. Попробуйте позже.';
 const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 
@@ -95,6 +100,7 @@ const expectStatus = (res, status) => {
 const sweepKeys = async () => {
   const keys = [
     ...await redisClient.keys('ocr:daily:*'),
+    ...await redisClient.keys('ocr:ceiling:*'),
     ...await redisClient.keys('uploads:daily:*'),
     // The shared ceiling of unconfirmed accounts (services/unconfirmedAllowance.js)
     ...await redisClient.keys('unconfirmed:daily:*'),
@@ -143,7 +149,7 @@ afterAll(async () => {
   await clearAllData();
 });
 
-const newAccount = async ({ role = 'partner', service = false } = {}) => {
+const newAccount = async ({ role = 'partner', service = false, confirmed = false } = {}) => {
   const { user, accessToken } = await createUserAndGetTokens({
     email: `ocr-allowance-${randomUUID()}@test.com`,
     password: 'Partner123!@#',
@@ -152,6 +158,9 @@ const newAccount = async ({ role = 'partner', service = false } = {}) => {
   });
   if (service) {
     await query('UPDATE users SET is_service_account = true WHERE id = $1', [user.id]);
+  }
+  if (confirmed) {
+    await query('UPDATE users SET email_verified = true WHERE id = $1', [user.id]);
   }
   return { id: user.id, token: accessToken };
 };
@@ -185,7 +194,9 @@ const menuMediaOf = async (establishmentId) => (await query(
 )).rows;
 
 const refusalsFor = (account) =>
-  warn.mock.calls.filter(([message, meta]) => message === REFUSAL_LOG && meta?.userId === account.id);
+  warn.mock.calls.filter(([message, meta]) => (
+    (message === REFUSAL_LOG || message === PAGES_LOG) && meta?.userId === account.id
+  ));
 
 /**
  * Дождаться, пока каждый файл меню карточки получит исход: задание или отказ
@@ -507,6 +518,147 @@ describe('дом сида (служебная учётка): свой преде
     await settled(at1000, at1000.establishmentId);
     expect(await jobsOf(at1000.establishmentId)).toEqual([]);
     expect(refusalsFor(at1000)).toEqual([[REFUSAL_LOG, expect.objectContaining({ jobs: 1001, jobsLimit: 1000 })]]);
+  });
+});
+
+describe('страницы дня у двери', () => {
+  const ceilingToday = () => dailyOcrCeilingKey(new Date(Date.now()));
+  const readToday = (pages) => redisClient.set(ceilingToday(), String(pages), { EX: 3600 });
+  const ceilingCounter = async () => Number(await redisClient.get(ceilingToday()));
+  const summaries = async (establishmentId) => (await query(
+    'SELECT result_summary FROM ocr_jobs WHERE establishment_id = $1',
+    [establishmentId],
+  )).rows.map((row) => row.result_summary);
+  const recognition = async (account) => (await request(app)
+    .get(`/api/v1/partner/establishments/${account.establishmentId}/menu-items`)
+    .set('Authorization', `Bearer ${account.token}`)
+    .expect(200)).body.recognition;
+
+  afterEach(() => {
+    process.env.OCR_DAILY_PAGE_CEILING = '';
+  });
+
+  test('99 страниц из 100 прочитано — задание ставится и несёт учётку; счётчик страниц дверь не двигает', async () => {
+    const partner = await newPartnerWithCard({ confirmed: true });
+    await readToday(99);
+
+    expectStatus(await saveMenu(partner, [menuLink(partner, 'a')]), 200);
+    await settled(partner, partner.establishmentId);
+
+    expect(await summaries(partner.establishmentId)).toEqual([{ pages_counted_for: partner.id }]);
+    expect(await ceilingCounter()).toBe(99);
+    expect(await counter(partner)).toBe(1);
+  });
+
+  test('100 из 100 — и у свежей учётки с подтверждённой почтой задание не ставится: файл на месте, партнёр видит «не запущено», задания дня целы', async () => {
+    const partner = await newPartnerWithCard({ confirmed: true });
+    await readToday(100);
+
+    expectStatus(await saveMenu(partner, [menuLink(partner, 'a')]), 200);
+    await settled(partner, partner.establishmentId);
+
+    expect(await menuMediaOf(partner.establishmentId)).toHaveLength(1);
+    expect(await jobsOf(partner.establishmentId)).toEqual([]);
+    expect(refusalsFor(partner)).toEqual([[PAGES_LOG, expect.objectContaining({
+      userId: partner.id,
+      establishmentId: partner.establishmentId,
+      refusedBy: 'ceiling',
+      pages: 100,
+      pagesLimit: 100,
+    })]]);
+    expect(await counter(partner)).toBe(0);
+    expect((await recognition(partner)).status).toBe('not_started');
+  });
+
+  test('неподтверждённая учётка упирается в тот же потолок', async () => {
+    const partner = await newPartnerWithCard();
+    await readToday(100);
+
+    expectStatus(await saveMenu(partner, [menuLink(partner, 'a')]), 200);
+    await settled(partner, partner.establishmentId);
+
+    expect(await jobsOf(partner.establishmentId)).toEqual([]);
+    expect(refusalsFor(partner)).toEqual([[PAGES_LOG, expect.objectContaining({ refusedBy: 'ceiling' })]]);
+  });
+
+  test('перезапуск на выбранном потолке — 429 до полуночи Минска; в новых сутках та же кнопка ставит файл', async () => {
+    // Минская полночь — 21:00 UTC. Минута до неё: токен учётки к полуночи ещё жив.
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-17T20:59:00.000Z'));
+    const partner = await newPartnerWithCard({ confirmed: true });
+    await insertMenuFile(partner, 'a');
+    await readToday(100);
+
+    const refused = await retryOcr(partner);
+
+    expect(refused.status).toBe(429);
+    expect(refused.body.message).toBe(LIMITER_TEXT);
+    expect(refused.body.error.details).toEqual({
+      pages_limit: 100,
+      retry_after: 60,
+      reset_at: '2026-10-17T21:00:00.000Z',
+    });
+    expect(refused.headers['retry-after']).toBe('60');
+    expect(await jobsOf(partner.establishmentId)).toEqual([]);
+
+    Date.now.mockReturnValue(Date.parse('2026-10-17T21:01:00.000Z'));
+
+    await retryOcr(partner).expect(202);
+    expect(await jobsOf(partner.establishmentId)).toHaveLength(1);
+  });
+
+  test('своя граница: 49 страниц учётки — задание ставится, 50 — нет, хотя потолок не выбран', async () => {
+    const at49 = await newPartnerWithCard({ confirmed: true });
+    await redisClient.set(dailyOcrPagesKey(at49.id, new Date(Date.now())), '49', { EX: 3600 });
+    expectStatus(await saveMenu(at49, [menuLink(at49, 'a')]), 200);
+    await settled(at49, at49.establishmentId);
+    expect(await jobsOf(at49.establishmentId)).toHaveLength(1);
+
+    const at50 = await newPartnerWithCard({ confirmed: true });
+    await redisClient.set(dailyOcrPagesKey(at50.id, new Date(Date.now())), '50', { EX: 3600 });
+    expectStatus(await saveMenu(at50, [menuLink(at50, 'a')]), 200);
+    await settled(at50, at50.establishmentId);
+    expect(await jobsOf(at50.establishmentId)).toEqual([]);
+    expect(refusalsFor(at50)).toEqual([[PAGES_LOG, expect.objectContaining({ refusedBy: 'account', pages: 50, pagesLimit: 50 })]]);
+  });
+
+  test('дом сида вне потолка: на выбранном задание ставится, страницы считать не на кого', async () => {
+    const seedHouse = await newPartnerWithCard({ service: true });
+    await readToday(100);
+
+    expectStatus(await saveMenu(seedHouse, [menuLink(seedHouse, 'a')]), 200);
+    await settled(seedHouse, seedHouse.establishmentId);
+
+    expect(await jobsOf(seedHouse.establishmentId)).toHaveLength(1);
+    expect(await summaries(seedHouse.establishmentId)).toEqual([null]);
+  });
+
+  test('одобрение на выбранном потолке ставит нераспознанное: страницы считать не на кого', async () => {
+    const partner = await newPartnerWithCard({ confirmed: true });
+    await insertMenuFile(partner, 'a');
+    await query("UPDATE establishments SET status = 'pending' WHERE id = $1", [partner.establishmentId]);
+    const admin = await newAccount({ role: 'admin' });
+    await readToday(100);
+
+    await adminService.moderateEstablishment(partner.establishmentId, { action: 'approve', adminUserId: admin.id });
+
+    expect(await jobsOf(partner.establishmentId)).toHaveLength(1);
+    expect(await summaries(partner.establishmentId)).toEqual([null]);
+  });
+
+  test('переменная меняет число без выпуска: при потолке 3 после двух страниц ставится, после трёх — нет', async () => {
+    process.env.OCR_DAILY_PAGE_CEILING = '3';
+    await readToday(2);
+    const before = await newPartnerWithCard({ confirmed: true });
+    expectStatus(await saveMenu(before, [menuLink(before, 'a')]), 200);
+    await settled(before, before.establishmentId);
+    expect(await jobsOf(before.establishmentId)).toHaveLength(1);
+
+    await readToday(3);
+    const after = await newPartnerWithCard({ confirmed: true });
+    expectStatus(await saveMenu(after, [menuLink(after, 'a')]), 200);
+    await settled(after, after.establishmentId);
+    expect(await jobsOf(after.establishmentId)).toEqual([]);
+    expect(refusalsFor(after)).toEqual([[PAGES_LOG, expect.objectContaining({ pages: 3, pagesLimit: 3 })]]);
   });
 });
 

@@ -50,7 +50,7 @@ import {
  * queue, however many there are. Normally the wait is short: about 6 ms a file
  * here, so 0.2 s for the 30 a card may hold, and well under 2 s with the network
  * of production between the steps. A half-open Redis costs 500 ms an operation
- * and 1-3 operations a file, 15-45 s for 30 files: the partner must not sit through
+ * and 2-4 operations a file, 30-60 s for 30 files: the partner must not sit through
  * that. Past the ceiling the files go on in the background, in the same order and
  * with the same failure lines; one lost to a restart is picked up by the approval
  * of the card, the partner's restart button, the moderator's signal or the script.
