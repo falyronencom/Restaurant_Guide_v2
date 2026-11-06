@@ -224,10 +224,11 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         bytes: pdfUploadResult.bytes,
       });
 
-      // Fire-and-forget OCR job enqueue, within the partner's daily recognition
+      // OCR job enqueue before the answer, within the partner's daily recognition
       // allowance (services/ocrAllowance.js); an active job of the same media
-      // is returned, not doubled.
-      enqueueWithinDailyAllowance({ userId: partnerId, establishmentId, mediaId: pdfRecord.id })
+      // is returned, not doubled. A failed enqueue is logged: the file is already
+      // saved, and an unhandled rejection would stop the server.
+      await enqueueWithinDailyAllowance({ userId: partnerId, establishmentId, mediaId: pdfRecord.id })
         .catch((err) => logger.error('Failed to enqueue OCR job after PDF upload', {
           error: err.message,
           mediaId: pdfRecord.id,
@@ -316,10 +317,11 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     }
 
     // Menu photos feed the same OCR pipeline as PDF menus (vision_image
-    // strategy), within the partner's daily recognition allowance.
-    // Fire-and-forget; an active job of the same media is returned, not doubled.
+    // strategy), within the partner's daily recognition allowance. Before the
+    // answer, a failure logged; an active job of the same media is returned,
+    // not doubled.
     if (type === 'menu') {
-      enqueueWithinDailyAllowance({ userId: partnerId, establishmentId, mediaId: mediaRecord.id })
+      await enqueueWithinDailyAllowance({ userId: partnerId, establishmentId, mediaId: mediaRecord.id })
         .catch((err) => logger.error('Failed to enqueue OCR job after menu photo upload', {
           error: err.message,
           mediaId: mediaRecord.id,

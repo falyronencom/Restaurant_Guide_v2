@@ -1383,7 +1383,9 @@ export async function getEstablishmentById(id) {
 
   const row = result.rows[0];
 
-  // Track view (non-blocking, fire-and-forget). Defensive .catch so a future
+  // Track view, deliberately not waited for (Coordinator's decision, 05.11.2026):
+  // every view of a card goes through one row, and a popular card would make its
+  // guests queue for the lock; a lost view is one view. Defensive .catch so a future
   // refactor that removes the inner try/catch in incrementViewCount cannot
   // produce unhandled promise rejection here.
   EstablishmentModel.incrementViewCount(id).catch(() => {});

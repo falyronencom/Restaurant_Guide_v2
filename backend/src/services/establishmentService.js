@@ -28,6 +28,7 @@ import { generateUniqueSlug } from '../utils/slugGenerator.js';
 import { upgradeUserToPartner } from './authService.js';
 import { MAX_PDFS_PER_ESTABLISHMENT, MEDIA_LIMITS } from './mediaService.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
+import { startSequence } from '../utils/sequence.js';
 import { VALID_CATEGORIES, VALID_CUISINES, isCuisineRequired } from '../constants/establishmentVocab.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import {
@@ -43,6 +44,37 @@ import {
   ownedFolders,
   photoVariantsOf,
 } from '../config/cloudinary.js';
+
+/**
+ * How long a save of a card waits for its menu files to enter the recognition
+ * queue, however many there are. Normally the wait is short: about 6 ms a file
+ * here, so 0.2 s for the 30 a card may hold, and well under 2 s with the network
+ * of production between the steps. A half-open Redis costs 500 ms an operation
+ * and 1-3 operations a file, 15-45 s for 30 files: the partner must not sit through
+ * that. Past the ceiling the files go on in the background, in the same order and
+ * with the same failure lines; one lost to a restart is picked up by the approval
+ * of the card, the partner's restart button, the moderator's signal or the script.
+ */
+const OCR_ENQUEUE_WAIT_MS = 2000;
+
+/**
+ * Wait for the queue of a card's menu files, within OCR_ENQUEUE_WAIT_MS.
+ *
+ * @param {{ settleWithin: Function }} queue - utils/sequence.js
+ * @param {string} establishmentId
+ * @returns {Promise<void>}
+ */
+const waitForOcrQueue = async (queue, establishmentId) => {
+  const { settled, total, finished } = await queue.settleWithin(OCR_ENQUEUE_WAIT_MS);
+  if (!settled) {
+    logger.warn('Menu files go on to the recognition queue in the background', {
+      establishmentId,
+      total,
+      finished,
+      waitedMs: OCR_ENQUEUE_WAIT_MS,
+    });
+  }
+};
 
 /**
  * Whether a link names a PDF's file on our cloud: uploadPdf files every PDF —
@@ -607,6 +639,9 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       });
     });
 
+    // The menu files of this card, queued for recognition one after another.
+    const ocrQueue = startSequence();
+
     // Insert all photos into establishment_media
     if (allPhotos.length > 0) {
       const mediaPromises = allPhotos.map(photo =>
@@ -629,12 +664,13 @@ export const createEstablishment = async (partnerId, establishmentData) => {
 
       // Menu photos enter the OCR pipeline in parity with PDF menus below
       // (vision_image strategy), within the partner's daily recognition
-      // allowance (services/ocrAllowance.js). Fire-and-forget — enqueue
+      // allowance (services/ocrAllowance.js). One after another, in this order;
+      // the answer waits for them within OCR_ENQUEUE_WAIT_MS (below). Enqueue
       // failure must not fail registration finalization. allPhotos[i]
       // corresponds to mediaRecords[i] (Promise.all preserves order).
       mediaRecords.forEach((record, index) => {
         if (allPhotos[index].type === 'menu') {
-          enqueueWithinDailyAllowance({
+          ocrQueue.add(() => enqueueWithinDailyAllowance({
             userId: partnerId,
             establishmentId: establishment.id,
             mediaId: record.id,
@@ -642,7 +678,7 @@ export const createEstablishment = async (partnerId, establishmentData) => {
             error: err.message,
             mediaId: record.id,
             establishmentId: establishment.id,
-          }));
+          })));
         }
       });
     }
@@ -671,12 +707,12 @@ export const createEstablishment = async (partnerId, establishmentData) => {
         pdfCount: menuPdfs.length,
       });
 
-      // Fire-and-forget: enqueue OCR jobs for newly persisted PDF menus, within
+      // Enqueue OCR jobs for newly persisted PDF menus, after the photos, within
       // the partner's daily recognition allowance. Temp uploads do not create
       // establishment_media rows; they are materialised here at registration
       // finalization, so this is the earliest valid enqueue point.
       for (const record of pdfRecords) {
-        enqueueWithinDailyAllowance({
+        ocrQueue.add(() => enqueueWithinDailyAllowance({
           userId: partnerId,
           establishmentId: establishment.id,
           mediaId: record.id,
@@ -684,9 +720,11 @@ export const createEstablishment = async (partnerId, establishmentData) => {
           error: err.message,
           mediaId: record.id,
           establishmentId: establishment.id,
-        }));
+        })));
       }
     }
+
+    await waitForOcrQueue(ocrQueue, establishment.id);
 
     // Save legal fields to partner_documents if provided
     if (legal_name || unp || contact_person || contact_email) {
@@ -1235,6 +1273,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       }
 
       // Sync each media type
+      const ocrQueue = startSequence();
       for (const { type, existingOfType, toDelete, toInsert } of plans) {
         // Delete removed media
         for (const media of toDelete) {
@@ -1261,9 +1300,10 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           // autosave PUT), so newly inserted menu media must enter the OCR
           // pipeline here in parity with createEstablishment, within the
           // partner's daily recognition allowance (services/ocrAllowance.js).
-          // Fire-and-forget; an active job of the file is returned, not doubled.
+          // One after another, waited for below; an active job of the file is
+          // returned, not doubled.
           if (type === 'menu') {
-            enqueueWithinDailyAllowance({
+            ocrQueue.add(() => enqueueWithinDailyAllowance({
               userId: partnerId,
               establishmentId,
               mediaId: record.id,
@@ -1271,7 +1311,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
               error: err.message,
               mediaId: record.id,
               establishmentId,
-            }));
+            })));
           }
         }
 
@@ -1285,6 +1325,8 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
           }
         }
       }
+
+      await waitForOcrQueue(ocrQueue, establishmentId);
 
       // Sync the primary photo THROUGH setPrimaryPhoto — the only writer that also
       // updates establishments.primary_image_url (the catalog thumbnail). The inline
@@ -1360,10 +1402,12 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       updates,
     );
 
-    // Recalculate completeness score (non-blocking)
+    // Recalculate completeness score, before the answer as on create: the write
+    // moves the card's updated_at, and whoever reads the card after the answer
+    // must not see it move. updateBaseScore logs a failure and does not throw.
     const newScore = EstablishmentModel.calculateCompletenessScore(updatedEstablishment);
     if (newScore !== updatedEstablishment.base_score) {
-      EstablishmentModel.updateBaseScore(establishmentId, newScore);
+      await EstablishmentModel.updateBaseScore(establishmentId, newScore);
       updatedEstablishment.base_score = newScore;
     }
 

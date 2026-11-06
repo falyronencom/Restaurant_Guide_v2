@@ -64,8 +64,10 @@ export const addToFavorites = async (userId, establishmentId) => {
   // Sync cached favorite_count in establishments table
   await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);
 
-  // Track in per-day analytics (fire-and-forget)
-  PartnerAnalyticsModel.trackFavorite(establishmentId, 1);
+  // Track in per-day analytics, before the answer: a restart cannot lose it and
+  // no write outlives the request. The writer logs its own failure and does not
+  // throw, so this cannot fail the request.
+  await PartnerAnalyticsModel.trackFavorite(establishmentId, 1);
 
   logger.info('Favorite added successfully', {
     userId,
@@ -107,9 +109,9 @@ export const removeFromFavorites = async (userId, establishmentId) => {
   // Sync cached favorite_count in establishments table
   await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);
 
-  // Track in per-day analytics (fire-and-forget, only if actually deleted)
+  // Track in per-day analytics, only if actually deleted (see addToFavorites)
   if (wasDeleted) {
-    PartnerAnalyticsModel.trackFavorite(establishmentId, -1);
+    await PartnerAnalyticsModel.trackFavorite(establishmentId, -1);
   }
 
   if (wasDeleted) {

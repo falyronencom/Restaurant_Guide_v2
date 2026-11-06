@@ -14,6 +14,8 @@ import { v4 as uuidv4 } from 'uuid';
 // Mock dependencies
 jest.unstable_mockModule('../../models/notificationModel.js', () => ({
   create: jest.fn(),
+  createForEstablishmentFavorites: jest.fn(),
+  createForReviewAuthors: jest.fn(),
   getByUserId: jest.fn(),
   getUnreadCount: jest.fn(),
   markAsRead: jest.fn(),
@@ -28,10 +30,6 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
 
 jest.unstable_mockModule('../../models/reviewModel.js', () => ({
   findReviewById: jest.fn(),
-}));
-
-jest.unstable_mockModule('../../models/favoriteModel.js', () => ({
-  getUserIdsByEstablishment: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
@@ -56,7 +54,6 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 const NotificationModel = await import('../../models/notificationModel.js');
 const EstablishmentModel = await import('../../models/establishmentModel.js');
 const ReviewModel = await import('../../models/reviewModel.js');
-const FavoriteModel = await import('../../models/favoriteModel.js');
 const MenuItemModel = await import('../../models/menuItemModel.js');
 const PushService = await import('../../services/pushService.js');
 const logger = (await import('../../utils/logger.js')).default;
@@ -78,6 +75,7 @@ const {
   notifyBookingExpired,
   notifyBookingCancelled,
   notifyPromotionNew,
+  notifyReviewsHidden,
   notifyMenuParsed,
   buildMenuParsedMessage,
   notifyMenuRecognitionFailed,
@@ -938,43 +936,42 @@ describe('notificationService', () => {
       EstablishmentModel.findEstablishmentById.mockResolvedValue(
         createMockEstablishment({ id: establishmentId, name: 'Пиццерия Люкс' })
       );
-      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue([]);
     });
 
-    test('should create notifications for all users who favorited', async () => {
+    /** Let the pushes in the background take their next step. */
+    const flush = () => new Promise((resolve) => { setImmediate(resolve); });
+
+    test('writes the feed of all subscribers in one call and pushes to each', async () => {
       const userIds = [uuidv4(), uuidv4(), uuidv4()];
-      FavoriteModel.getUserIdsByEstablishment.mockResolvedValue(userIds);
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue(userIds);
 
       await notifyPromotionNew(establishmentId, 'Скидка 20%');
+      await flush();
 
-      expect(NotificationModel.create).toHaveBeenCalledTimes(3);
+      expect(NotificationModel.createForEstablishmentFavorites).toHaveBeenCalledTimes(1);
+      expect(NotificationModel.createForEstablishmentFavorites).toHaveBeenCalledWith({
+        establishmentId,
+        type: 'promotion_new',
+        title: 'Новая акция',
+        message: 'Новая акция в «Пиццерия Люкс»: Скидка 20%',
+      });
+      expect(NotificationModel.create).not.toHaveBeenCalled();
+
       expect(PushService.sendPush).toHaveBeenCalledTimes(3);
-
       userIds.forEach((uid) => {
-        expect(NotificationModel.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            userId: uid,
-            type: 'promotion_new',
-            title: 'Новая акция',
-            message: 'Новая акция в «Пиццерия Люкс»: Скидка 20%',
-            establishmentId,
-          })
-        );
-        expect(PushService.sendPush).toHaveBeenCalledWith(
-          uid,
-          expect.objectContaining({
-            data: expect.objectContaining({ type: 'promotion_new', establishmentId }),
-          })
-        );
+        expect(PushService.sendPush).toHaveBeenCalledWith(uid, {
+          title: 'Новая акция',
+          message: 'Новая акция в «Пиццерия Люкс»: Скидка 20%',
+          data: { type: 'promotion_new', establishmentId },
+        });
       });
     });
 
-    test('should do nothing when no favorites exist', async () => {
-      FavoriteModel.getUserIdsByEstablishment.mockResolvedValue([]);
-
+    test('should send no push when no favorites exist', async () => {
       await notifyPromotionNew(establishmentId, 'Акция');
+      await flush();
 
-      expect(NotificationModel.create).not.toHaveBeenCalled();
       expect(PushService.sendPush).not.toHaveBeenCalled();
     });
 
@@ -983,37 +980,172 @@ describe('notificationService', () => {
 
       await notifyPromotionNew(establishmentId, 'Акция');
 
-      expect(FavoriteModel.getUserIdsByEstablishment).not.toHaveBeenCalled();
+      expect(NotificationModel.createForEstablishmentFavorites).not.toHaveBeenCalled();
     });
 
-    test('should continue despite individual failures (Promise.allSettled)', async () => {
-      const userIds = [uuidv4(), uuidv4()];
-      FavoriteModel.getUserIdsByEstablishment.mockResolvedValue(userIds);
-      // First create succeeds, second fails
-      NotificationModel.create
-        .mockResolvedValueOnce({ id: uuidv4() })
-        .mockRejectedValueOnce(new Error('DB error'));
+    /** Pushes that hang until the test lets them go, one at a time. */
+    const holdPushes = () => {
+      const hanging = [];
+      PushService.sendPush.mockImplementation(() => new Promise((resolve) => { hanging.push(resolve); }));
+      return hanging;
+    };
 
-      // Should NOT throw
+    /** The line of pushes is shared by the process: leave it empty for the next test. */
+    const releaseAll = async (hanging) => {
+      for (let released = 0; released < hanging.length; released += 1) {
+        hanging[released]();
+        // eslint-disable-next-line no-await-in-loop
+        await flush();
+      }
+    };
+
+    test('returns with the pushes still hanging: the answer does not wait for the network', async () => {
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue([uuidv4()]);
+      const hanging = holdPushes();
+
+      await expect(notifyPromotionNew(establishmentId, 'Акция')).resolves.toBeUndefined();
+
+      await flush();
+      expect(hanging).toHaveLength(1);
+      await releaseAll(hanging);
+    });
+
+    test('at most 5 pushes at a time, and every subscriber gets one, in turn', async () => {
+      const userIds = Array.from({ length: 12 }, () => uuidv4());
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue(userIds);
+      const hanging = holdPushes();
+
+      await notifyPromotionNew(establishmentId, 'Акция');
+      await flush();
+      expect(hanging).toHaveLength(5);
+
+      hanging[0]();
+      await flush();
+      expect(hanging).toHaveLength(6);
+
+      await releaseAll(hanging);
+      expect(hanging).toHaveLength(12);
+      expect(PushService.sendPush.mock.calls.map(([uid]) => uid)).toEqual(userIds);
+    });
+
+    test('two mailings at once share the same 5: the limit holds for the process', async () => {
+      const first = Array.from({ length: 4 }, () => uuidv4());
+      const second = Array.from({ length: 4 }, () => uuidv4());
+      NotificationModel.createForEstablishmentFavorites
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+      const hanging = holdPushes();
+
+      await notifyPromotionNew(establishmentId, 'Первая акция');
+      await notifyPromotionNew(establishmentId, 'Вторая акция');
+      await flush();
+      expect(hanging).toHaveLength(5);
+
+      await releaseAll(hanging);
+      expect(PushService.sendPush.mock.calls.map(([uid]) => uid)).toEqual([...first, ...second]);
+    });
+
+    test('a push that fails goes to the log and the others still go out', async () => {
+      const userIds = Array.from({ length: 7 }, () => uuidv4());
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue(userIds);
+      PushService.sendPush.mockRejectedValueOnce(new Error('FCM refused'));
+
+      await notifyPromotionNew(establishmentId, 'Акция');
+      await flush();
+
+      expect(PushService.sendPush).toHaveBeenCalledTimes(7);
+      expect(logger.error).toHaveBeenCalledWith('Push failed for new promotion', {
+        error: 'FCM refused',
+        userId: userIds[0],
+      });
+    });
+
+    test('should NOT throw when the feed cannot be written, and sends no push', async () => {
+      NotificationModel.createForEstablishmentFavorites.mockRejectedValue(new Error('DB error'));
+
       await expect(
         notifyPromotionNew(establishmentId, 'Акция')
       ).resolves.toBeUndefined();
+      await flush();
 
-      // Both create calls were attempted
-      expect(NotificationModel.create).toHaveBeenCalledTimes(2);
-    });
-
-    test('should NOT throw on error (non-blocking)', async () => {
-      FavoriteModel.getUserIdsByEstablishment.mockRejectedValue(new Error('DB error'));
-
-      await expect(
-        notifyPromotionNew(establishmentId, 'Акция')
-      ).resolves.toBeUndefined();
-
+      expect(PushService.sendPush).not.toHaveBeenCalled();
       expect(logger.error).toHaveBeenCalledWith(
         'Failed to create promotion notifications',
         expect.objectContaining({ establishmentId })
       );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // notifyReviewsHidden
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('notifyReviewsHidden', () => {
+    test('one statement for the batch, with the texts of a single hide, and no push', async () => {
+      const reviewIds = [uuidv4(), uuidv4()];
+      NotificationModel.createForReviewAuthors.mockResolvedValue(2);
+
+      await notifyReviewsHidden(reviewIds);
+
+      expect(NotificationModel.createForReviewAuthors).toHaveBeenCalledTimes(1);
+      expect(NotificationModel.createForReviewAuthors).toHaveBeenCalledWith({
+        reviewIds,
+        type: 'review_hidden',
+        title: 'Отзыв скрыт модератором',
+        messageTemplate: 'Ваш отзыв на «{name}» скрыт модератором',
+        nameSlot: '{name}',
+        fallbackName: 'Заведение',
+      });
+      expect(PushService.sendPush).not.toHaveBeenCalled();
+    });
+
+    test('nothing hidden: no statement', async () => {
+      await notifyReviewsHidden([]);
+
+      expect(NotificationModel.createForReviewAuthors).not.toHaveBeenCalled();
+    });
+
+    test('should NOT throw when the write fails, and logs it', async () => {
+      NotificationModel.createForReviewAuthors.mockRejectedValue(new Error('DB error'));
+
+      await expect(notifyReviewsHidden([uuidv4()])).resolves.toBeUndefined();
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to create batch review moderation notifications',
+        { error: 'DB error', count: 1 },
+      );
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // The answer waits for the feed entry, never for the network
+  // ═══════════════════════════════════════════════════════════════════════
+
+  describe('a push still hanging does not hold the notifier', () => {
+    const establishmentId = uuidv4();
+    const reviewId = uuidv4();
+    const userId = uuidv4();
+    const booking = { establishment_name: 'Кафе', booking_date: '2026-12-01', booking_time: '19:00:00', guest_count: 2 };
+
+    test.each([
+      ['notifyBookingReceived', () => notifyBookingReceived(userId, booking, establishmentId)],
+      ['notifyBookingConfirmed', () => notifyBookingConfirmed(userId, booking, establishmentId)],
+      ['notifyBookingDeclined', () => notifyBookingDeclined(userId, booking, establishmentId, 'Мест нет')],
+      ['notifyBookingCancelled', () => notifyBookingCancelled(userId, booking, establishmentId)],
+      ['notifyNewReview', () => notifyNewReview(reviewId, establishmentId)],
+      ['notifyPartnerResponse', () => notifyPartnerResponse(reviewId, establishmentId)],
+    ])('%s', async (_, act) => {
+      EstablishmentModel.findEstablishmentById.mockResolvedValue(
+        createMockEstablishment({ id: establishmentId, partner_id: userId, name: 'Кафе' })
+      );
+      ReviewModel.findReviewById.mockResolvedValue(createMockReview({ id: reviewId, user_id: userId }));
+      NotificationModel.create.mockResolvedValue({ id: uuidv4() });
+      PushService.sendPush.mockImplementation(() => new Promise(() => {}));
+
+      await expect(act()).resolves.toBeUndefined();
+
+      expect(NotificationModel.create).toHaveBeenCalledTimes(1);
+      expect(PushService.sendPush).toHaveBeenCalledTimes(1);
     });
   });
 

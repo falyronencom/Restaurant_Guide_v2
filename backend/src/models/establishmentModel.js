@@ -761,7 +761,10 @@ export const incrementViewCount = async (establishmentId) => {
 
   try {
     await pool.query(query, [establishmentId]);
-    // Dual write: also record in per-day analytics table (fire-and-forget)
+    // Dual write: also record in per-day analytics table. Deliberately not waited
+    // for, like the view count above it (Coordinator's decision, 05.11.2026): every
+    // view of a card goes through one row, and a popular card would make its guests
+    // queue for the lock. A lost view is one view.
     const { trackView } = await import('./partnerAnalyticsModel.js');
     trackView(establishmentId);
     logger.debug('View count incremented', { establishmentId });

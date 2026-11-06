@@ -5,7 +5,8 @@
  * create → confirm/decline/expire → cancel/no_show/complete
  *
  * Validates: user limits, establishment settings, working hours, time constraints.
- * Integrates: notifications (non-blocking), analytics tracking.
+ * Integrates: notifications and analytics tracking, written before the answer
+ * (a failure there is logged and does not fail the booking).
  */
 
 import * as BookingModel from '../models/bookingModel.js';
@@ -298,11 +299,14 @@ export const createBooking = async (userId, data, { now = null } = {}) => {
     throw new AppError('Учётная запись отключена — забронировать нельзя', 403, 'USER_INACTIVE');
   }
 
-  // 11. Track analytics (non-blocking)
-  PartnerAnalyticsModel.trackBookingRequest(establishmentId).catch(() => {});
+  // 11. Track analytics. Written before the answer, like the notification
+  // below: a restart cannot lose it and no write outlives the request. The
+  // writer logs its own failure, so this cannot fail the booking.
+  await PartnerAnalyticsModel.trackBookingRequest(establishmentId).catch(() => {});
 
-  // 12. Notify partner (non-blocking)
-  NotificationService.notifyBookingReceived(
+  // 12. Notify partner: the feed entry before the answer, the push in the
+  // background inside the notifier (the answer does not wait for the network).
+  await NotificationService.notifyBookingReceived(
     establishment.partner_id,
     {
       establishment_name: establishment.name,
@@ -346,11 +350,11 @@ export const confirmBooking = async (bookingId, partnerId, establishmentId) => {
     confirmedAt: new Date(),
   });
 
-  // Track analytics (non-blocking)
-  PartnerAnalyticsModel.trackBookingConfirmed(establishmentId).catch(() => {});
+  // Track analytics, before the answer (see createBooking)
+  await PartnerAnalyticsModel.trackBookingConfirmed(establishmentId).catch(() => {});
 
-  // Notify user (non-blocking)
-  NotificationService.notifyBookingConfirmed(
+  // Notify user, before the answer (see createBooking)
+  await NotificationService.notifyBookingConfirmed(
     booking.user_id,
     {
       establishment_name: booking.establishment_name,
@@ -391,8 +395,8 @@ export const declineBooking = async (bookingId, partnerId, establishmentId, reas
     declineReason: reason.trim(),
   });
 
-  // Notify user (non-blocking)
-  NotificationService.notifyBookingDeclined(
+  // Notify user, before the answer (see createBooking)
+  await NotificationService.notifyBookingDeclined(
     booking.user_id,
     {
       establishment_name: booking.establishment_name,
@@ -431,9 +435,9 @@ export const cancelBooking = async (bookingId, userId) => {
   // Get establishment for partner notification
   const establishment = await EstablishmentModel.findEstablishmentById(booking.establishment_id, true);
 
-  // Notify partner (non-blocking)
+  // Notify partner, before the answer (see createBooking)
   if (establishment && establishment.partner_id) {
-    NotificationService.notifyBookingCancelled(
+    await NotificationService.notifyBookingCancelled(
       establishment.partner_id,
       {
         establishment_name: booking.establishment_name,

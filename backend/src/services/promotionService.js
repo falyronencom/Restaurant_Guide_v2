@@ -122,8 +122,10 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
     throw error;
   }
 
-  // Notify users who favorited this establishment (non-blocking)
-  NotificationService.notifyPromotionNew(establishmentId, data.title).catch(() => {});
+  // Notify users who favorited this establishment: their feed in one statement
+  // before the answer, the pushes in the background inside the notifier. The
+  // notifier logs its own failure, so this cannot fail the promotion.
+  await NotificationService.notifyPromotionNew(establishmentId, data.title).catch(() => {});
 
   logger.info('Promotion created', {
     promotionId: promotion.id,

@@ -129,7 +129,9 @@ describe('notificationModel', () => {
       expect(mockQuery.mock.calls[0][0]).toContain('COUNT(*)');
       expect(mockQuery.mock.calls[0][1]).toEqual([userId]);
       // Data query with default limit=20, offset=0
-      expect(mockQuery.mock.calls[1][0]).toContain('ORDER BY n.created_at DESC');
+      // A batch writes its notices with one created_at (createForReviewAuthors):
+      // without the second key they could repeat or vanish between pages.
+      expect(mockQuery.mock.calls[1][0]).toContain('ORDER BY n.created_at DESC, n.id DESC');
       expect(mockQuery.mock.calls[1][1]).toEqual([userId, 20, 0]);
     });
 

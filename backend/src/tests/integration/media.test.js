@@ -315,6 +315,88 @@ describe('Media System - Upload Operations', () => {
       expect(response.body.data.is_primary).toBe(false);
     });
 
+    // Постановка распознавания идёт до ответа, и её сбой ответ не портит (нитка
+    // «Хвосты записи», Директива 2). Остальные места — writes-before-answer.test.js;
+    // эти здесь, потому что загрузке нужно подменённое облако.
+    describe('menu recognition is queued before the answer', () => {
+      const SILENCE_MS = 250;
+      const isOcrInsert = (text) => typeof text === 'string' && text.includes('INSERT INTO ocr_jobs');
+
+      const interceptOcrInsert = (onWrite) => {
+        const realQuery = pool.query.bind(pool);
+        return jest.spyOn(pool, 'query').mockImplementation((text, ...rest) => (
+          isOcrInsert(text) ? onWrite(() => realQuery(text, ...rest)) : realQuery(text, ...rest)
+        ));
+      };
+
+      const uploadPhoto = () => request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('fake image'), 'menu.jpg');
+
+      const uploadPdfFile = () => request(app)
+        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+        .set('Authorization', `Bearer ${partnerToken}`)
+        .field('type', 'menu')
+        .attach('file', Buffer.from('%PDF-1.4 fake'), { filename: 'menu.pdf', contentType: 'application/pdf' });
+
+      const jobs = async () => (await pool.query(
+        'SELECT count(*)::int AS n FROM ocr_jobs WHERE establishment_id = $1',
+        [establishment.id],
+      )).rows[0].n;
+
+      test.each([
+        ['menu photo', uploadPhoto],
+        ['PDF menu', uploadPdfFile],
+      ])('%s: the answer waits for the job', async (_, upload) => {
+        let release;
+        const released = new Promise((resolve) => { release = resolve; });
+        let markReached;
+        const reached = new Promise((resolve) => { markReached = resolve; });
+        interceptOcrInsert(async (write) => {
+          markReached();
+          await released;
+          return write();
+        });
+
+        let answered = false;
+        const pending = upload().then((response) => {
+          answered = true;
+          return response;
+        });
+
+        try {
+          await Promise.race([reached, pending]);
+          await new Promise((resolve) => { setTimeout(resolve, SILENCE_MS); });
+          expect(answered).toBe(false);
+        } finally {
+          release();
+        }
+
+        expect((await pending).status).toBe(201);
+        expect(await jobs()).toBe(1);
+      });
+
+      test.each([
+        ['menu photo', uploadPhoto, 'Failed to enqueue OCR job after menu photo upload'],
+        ['PDF menu', uploadPdfFile, 'Failed to enqueue OCR job after PDF upload'],
+      ])('%s: a failed job leaves the answer as it was and goes to the log', async (_, upload, line) => {
+        const { default: logger } = await import('../../utils/logger.js');
+        const errorLine = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+        interceptOcrInsert(async () => { throw new Error('write failed'); });
+
+        const response = await upload();
+
+        expect(response.status).toBe(201);
+        expect(response.body.data.type).toBe('menu');
+        expect(errorLine).toHaveBeenCalledWith(
+          line,
+          expect.objectContaining({ establishmentId: establishment.id, error: 'write failed' }),
+        );
+      });
+    });
+
     // Regression (MARKS, 2026-07-20): a PDF-compatible .ai file arrives with
     // mimetype application/pdf on machines where Acrobat owns the extension.
     // The mimetype gate alone passes it; the extension gate must reject it.

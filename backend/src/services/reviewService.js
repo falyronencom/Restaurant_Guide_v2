@@ -198,8 +198,10 @@ export const createReview = async (reviewData) => {
     // Fetch complete review with author information for response
     const reviewWithAuthor = await ReviewModel.findReviewById(createdReview.id);
 
-    // Notify establishment partner (non-blocking)
-    NotificationService.notifyNewReview(createdReview.id, establishment_id)
+    // Notify establishment partner: the feed entry before the answer, the push
+    // in the background inside the notifier. The review is already committed;
+    // the notifier logs its own failure, so this cannot fail the request.
+    await NotificationService.notifyNewReview(createdReview.id, establishment_id)
       .catch(() => {});
 
     logger.info('Review created successfully', {
@@ -726,8 +728,8 @@ export const addPartnerResponse = async (reviewId, partnerId, responseText) => {
 
   const updatedReview = await ReviewModel.findReviewById(reviewId);
 
-  // Notify review author (non-blocking)
-  NotificationService.notifyPartnerResponse(reviewId, reviewWithEstablishment.establishment_id)
+  // Notify review author, before the answer (see createReview)
+  await NotificationService.notifyPartnerResponse(reviewId, reviewWithEstablishment.establishment_id)
     .catch(() => {});
 
   logger.info('Partner response saved', {
