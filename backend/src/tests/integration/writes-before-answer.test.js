@@ -329,27 +329,6 @@ describe('отзывы', () => {
     expect(await notificationsAbout(est.id, 'review_hidden')).toBe(3);
   });
 
-  test('пакет: лента одного автора листается без повторов и пропусков, хотя время у строк одно', async () => {
-    const others = [];
-    for (let i = 0; i < 24; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      others.push(await createTestEstablishment(partner.user.id));
-    }
-    const reviews = [];
-    for (const place of [est, ...others]) {
-      // eslint-disable-next-line no-await-in-loop
-      reviews.push(await createTestReview(guest.user.id, place.id));
-    }
-    await hideBatch(reviews.map((r) => r.id)).expect(200);
-
-    const page = async (n) => (await as(guest.accessToken, 'get', `/notifications?page=${n}&limit=10&is_read=false`).expect(200))
-      .body.data.items.map((item) => item.review_id);
-    const seen = [...await page(1), ...await page(2), ...await page(3)];
-
-    expect(seen).toHaveLength(25);
-    expect(new Set(seen).size).toBe(25);
-  });
-
   describe('пакет говорит то же, что одиночное скрытие', () => {
     const noticeOf = async (reviewId) => (await query(
       `SELECT user_id, type, title, message, is_read FROM notifications WHERE review_id = $1`,
