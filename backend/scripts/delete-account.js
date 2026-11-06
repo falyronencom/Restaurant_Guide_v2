@@ -32,12 +32,15 @@
  *   - The establishments are told of the bookings it cancelled by the notice
  *     the server writes when a guest cancels (bookingCancelledNotice), in the
  *     same transaction — without a push: the script sends none.
- *   - The picture stays on the cloud: the script never calls the cloud — a
- *     local run must not delete a file that a production row still names. It
- *     says which file to delete in the Cloudinary console, and only a file in
- *     the account's own avatar folder: before 02.10 a profile could store any
- *     link (authController), and another card's photo is not the account's to
- *     delete.
+ *   - The script never calls the cloud — a local run must not delete a file
+ *     that a production row still names. The task to empty the account's avatar
+ *     folder goes into avatar_deletions in the same transaction, and the
+ *     server's loop does it (services/avatarDeletionLoop.js). Before migration
+ *     040 reaches the target database there is no such table: the question is
+ *     asked before BEGIN, and the script then says which file to delete in the
+ *     Cloudinary console, and only a file in the account's own avatar folder:
+ *     before 02.10 a profile could store any link (authController), and another
+ *     card's photo is not the account's to delete.
  *   - The server's cached account status cannot be dropped from here: a
  *     server process may let an access token already issued through for up to
  *     ACCOUNT_STATUS_TTL_MS; after that the switched-off account refuses it.
@@ -85,6 +88,7 @@ import { loginFormOf } from './lib/serviceAccounts.js';
 import serverPool from '../src/config/database.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../src/config/serviceAccounts.js';
 import { isOwnedAsset, ownCloudPublicId, ownedFolders } from '../src/config/cloudinary.js';
+import { avatarDeletionTableExists } from '../src/models/avatarDeletionModel.js';
 import {
   anonymiseAccount,
   holdsCatalogueCards,
@@ -180,9 +184,12 @@ const yesNo = (value) => (value ? 'yes' : 'no');
  * is judged again under its row lock — the person may have deleted it, or the
  * operator marked it a service account, since the question.
  *
- * @returns {Promise<{outcome?: Object, account?: Object, notices?: number, refusal?: string, deleted?: boolean}>}
+ * @returns {Promise<{outcome?: Object, account?: Object, notices?: number, avatarQueued?: boolean, refusal?: string, deleted?: boolean}>}
  */
 const deleteInTransaction = async (client, accountId) => {
+  // Before BEGIN: inside the transaction a missing table would fail the deletion.
+  const avatarQueued = await avatarDeletionTableExists(client);
+
   await client.query('BEGIN');
   try {
     const account = await lockAccount(client, accountId);
@@ -199,7 +206,11 @@ const deleteInTransaction = async (client, accountId) => {
       return { refusal: 'A panel or service account: its access is the operator\'s — switch it off with set-user-active.js.' };
     }
 
-    const outcome = await anonymiseAccount(client, account, { userId: null, label: ACTOR });
+    const outcome = await anonymiseAccount(client, account, {
+      userId: null,
+      label: ACTOR,
+      queueAvatarDeletion: avatarQueued,
+    });
 
     let notices = 0;
     for (const booking of outcome.cancelled) {
@@ -213,7 +224,7 @@ const deleteInTransaction = async (client, accountId) => {
     }
 
     await client.query('COMMIT');
-    return { outcome, account, notices };
+    return { outcome, account, notices, avatarQueued };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     if (error.code === 'ACCOUNT_OWNS_ESTABLISHMENTS') {
@@ -223,7 +234,7 @@ const deleteInTransaction = async (client, accountId) => {
   }
 };
 
-/** What the operator does with the account's picture after the deletion. */
+/** What the operator does with the account's picture after a deletion without the task. */
 const pictureAdvice = (avatarUrl, accountId) => {
   const ownFolder = ownedFolders.avatars(accountId);
   const publicId = ownCloudPublicId(avatarUrl);
@@ -307,7 +318,9 @@ const main = async () => {
     console.log(`✅ Account ${target.id} deleted: ${counts.reviews_kept} review(s) kept under «Гость», `
       + `${counts.bookings_cancelled} booking(s) ahead cancelled (${result.notices} establishment notice(s), no push), `
       + `${counts.favorites_removed} favourite(s) removed, ${counts.drafts_deleted} unfinished card(s) deleted; every session ended.`);
-    if (result.account.avatar_url) {
+    if (result.avatarQueued) {
+      console.log(`   The pictures in ${ownedFolders.avatars(target.id)} are queued: the server removes them from the cloud.`);
+    } else if (result.account.avatar_url) {
       console.log(pictureAdvice(result.account.avatar_url, target.id));
     }
     console.log(`   A server process may let an old access token through for up to ${ACCOUNT_STATUS_TTL_MS / 1000} seconds.`);

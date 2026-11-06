@@ -503,11 +503,13 @@ export const assetHolder = (publicId) => {
  * @param {boolean} [options.invalidate=false] - also drop the CDN's cached
  *   copies (Cloudinary `invalidate`): for a picture of a person whose account
  *   is deleted, which must not keep being served from the edge
+ * @param {string} [options.resourceType] - the asset's resource type, when a
+ *   listing named one; left out, the cloud reads it as an image
  * @returns {Promise<Object>} Deletion result; { result: 'refused' } when the
  *   asset is not inside the given folders
  * @throws {Error} If deletion fails
  */
-export const deleteImage = async (publicId, folders, { invalidate = false } = {}) => {
+export const deleteImage = async (publicId, folders, { invalidate = false, resourceType } = {}) => {
   const refusal = ownershipRefusal(publicId, folders);
   if (refusal) {
     // No ids and no file names: the public_id may come from client-supplied text.
@@ -522,8 +524,12 @@ export const deleteImage = async (publicId, folders, { invalidate = false } = {}
   try {
     // The option object only when asked: every other caller's destroy stays
     // the one-argument call it always was.
-    const result = invalidate
-      ? await cloudinary.uploader.destroy(publicId, { invalidate: true })
+    const options = {
+      ...(invalidate ? { invalidate: true } : {}),
+      ...(resourceType ? { resource_type: resourceType } : {}),
+    };
+    const result = Object.keys(options).length > 0
+      ? await cloudinary.uploader.destroy(publicId, options)
       : await cloudinary.uploader.destroy(publicId);
 
     logger.info('Image deleted from Cloudinary', {
@@ -533,12 +539,136 @@ export const deleteImage = async (publicId, folders, { invalidate = false } = {}
 
     return result;
   } catch (error) {
+    const failure = uploadFailureOf(error);
     logger.error('Error deleting image from Cloudinary', {
-      error: error.message,
+      error: failure.message,
+      httpCode: failure.httpCode,
       publicId,
     });
-    throw new Error(`Failed to delete image: ${error.message}`);
+    throw Object.assign(new Error(`Failed to delete image: ${failure.message}`), { httpCode: failure.httpCode });
   }
+};
+
+/**
+ * How long one call to the cloud may take while a folder is emptied. Needed for
+ * the Admin API above all: its `timeout` option only arms the socket and nothing
+ * listens (cloudinary 2.8, lib/api_client/execute_request.js), so a call that got
+ * no answer would hang forever, and the loop and its shutdown with it.
+ */
+const CLOUD_CALL_DEADLINE_MS = 20 * 1000;
+
+/** Files per listing — the most the Admin API returns at a time. */
+const FOLDER_LISTING_PAGE_SIZE = 500;
+
+/**
+ * Listings per resource type in one run. A person's folder holds a few files
+ * (the daily upload limit stands in the way of more). Past 2500 files of a type
+ * the run fails before deleting any of them: such a folder needs a person.
+ */
+const FOLDER_LISTING_MAX_PAGES = 5;
+
+/**
+ * Every avatar goes up as an image (uploadAvatar), and the listing of the other
+ * two types costs one call each: a file of a type nobody expected would otherwise
+ * stay behind unseen. Delivery type `upload` only: nothing in this project uploads
+ * as private or authenticated.
+ */
+const FOLDER_RESOURCE_TYPES = Object.freeze(['image', 'video', 'raw']);
+
+const USER_ID_PATTERN = new RegExp(`^${UUID_SOURCE}$`);
+
+const withinDeadline = (promise, deadlineMs) => {
+  let timer;
+  const deadline = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`no answer from the cloud in ${deadlineMs} ms`)), deadlineMs);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+};
+
+/**
+ * Empty the avatar folder of a user: the current picture and every older one a
+ * replacement failed to remove. Called when the account is deleted, by
+ * services/avatarDeletionLoop.js, and nowhere else.
+ *
+ * The folder is listed by prefix through the Admin API, and each file is destroyed
+ * through deleteImage. Not the Admin API's delete by prefix: its `invalidate` is
+ * off unless support enables it (Cloudinary docs, Admin API, delete resources),
+ * and the person's picture would keep being served from the CDN; the destroy of
+ * one file invalidates as it is. It also keeps deleteImage's check on every id.
+ *
+ * The prefix is whole or there is no call: only a UUID goes in, because an empty
+ * id would make the prefix `avatars/` and take everybody's pictures, and the
+ * closing slash keeps a neighbouring folder out of it.
+ *
+ * Repeating is safe: a file already gone reads as `not found`. Strict
+ * transformations have no bearing here: they govern delivery URLs, and neither
+ * call is one (Cloudinary docs, Media access control, Strict transformations).
+ * Admin API calls: one per resource type and per 500 files.
+ *
+ * @param {string} userId - UUID of the account
+ * @param {Object} [options]
+ * @param {() => boolean} [options.shouldStop] - asked before every call: true
+ *   ends the run with `complete: false`
+ * @param {number} [options.deadlineMs] - bound of one call to the cloud
+ * @returns {Promise<{complete: boolean, deleted: number}>} Whether the folder was
+ *   gone through to the end, and how many files this run destroyed
+ * @throws {Error} When the id is not a UUID (no call is made), a call fails or
+ *   gets no answer, or a file stays where it was
+ */
+export const deleteAvatarFolder = async (
+  userId,
+  { shouldStop = () => false, deadlineMs = CLOUD_CALL_DEADLINE_MS } = {},
+) => {
+  if (typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
+    throw new Error('Avatar folder delete refused: the user id is not a UUID');
+  }
+  const folder = ownedFolders.avatars(userId);
+
+  let deleted = 0;
+  for (const resourceType of FOLDER_RESOURCE_TYPES) {
+    // The whole list first, the deleting after: a file removed in the middle of
+    // the walk could shift the cursor, and what it skipped would stay unnoticed.
+    const publicIds = [];
+    let nextCursor;
+    for (let page = 0; page === 0 || nextCursor; page += 1) {
+      if (page >= FOLDER_LISTING_MAX_PAGES) {
+        throw new Error(`Avatar folder delete: more than ${FOLDER_LISTING_MAX_PAGES} pages of ${resourceType} files`);
+      }
+      if (shouldStop()) return { complete: false, deleted };
+
+      let listing;
+      try {
+        listing = await withinDeadline(cloudinary.api.resources({
+          type: 'upload',
+          resource_type: resourceType,
+          prefix: folder,
+          max_results: FOLDER_LISTING_PAGE_SIZE,
+          ...(nextCursor ? { next_cursor: nextCursor } : {}),
+        }), deadlineMs);
+      } catch (error) {
+        // Only the text and the code: the SDK's rejection also carries the
+        // request's options, the key and the secret among them.
+        const failure = uploadFailureOf(error);
+        throw Object.assign(new Error(`Avatar folder listing failed: ${failure.message}`), { httpCode: failure.httpCode });
+      }
+      publicIds.push(...listing.resources.map((resource) => resource.public_id));
+      nextCursor = listing.next_cursor;
+    }
+
+    for (const publicId of publicIds) {
+      if (shouldStop()) return { complete: false, deleted };
+      const { result } = await withinDeadline(
+        deleteImage(publicId, [folder], { invalidate: true, resourceType }),
+        deadlineMs,
+      );
+      if (result === 'ok') {
+        deleted += 1;
+      } else if (result !== 'not found') {
+        throw new Error(`Avatar folder delete: a file stayed on the cloud (${result})`);
+      }
+    }
+  }
+  return { complete: true, deleted };
 };
 
 /**
