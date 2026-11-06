@@ -289,9 +289,11 @@ describe('Отказы партнёру вне карточки: исходни�
       expect(unreadMessageShapes(code)).toEqual([]);
       // Сторож разбора: ответы с текстом нашлись (2 и 2 на 20.10.2026).
       expect(messageTexts(code).length).toBeGreaterThanOrEqual(2);
-      // Суточный лимит загрузок — одна фраза у всех загрузчиков.
-      expect(notFrom('AVATAR_REFUSALS', messageTexts(code), { allowed: ['UPLOAD_REFUSALS.dailyLimit'] }))
-        .toEqual([]);
+      // Суточный лимит загрузок — одна фраза у всех загрузчиков; «учётная запись не
+      // найдена» — одна фраза у всех ответов профиля (authController).
+      expect(notFrom('AVATAR_REFUSALS', messageTexts(code), {
+        allowed: ['UPLOAD_REFUSALS.dailyLimit', 'AUTH_REFUSALS.accountNotFound'],
+      })).toEqual([]);
     }
     // Прочие отказы multer маршрут отдаёт обработчику ошибок фразой формы
     // (1 AppError на 20.10.2026; до того — английский текст multer).
