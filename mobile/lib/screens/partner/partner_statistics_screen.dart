@@ -129,6 +129,7 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
                         _buildViewsSection(establishment, overview, trends),
                         _buildDivider(),
                         _buildCallsSection(overview),
+                        _buildSharesSection(overview),
                         _buildFavoritesSection(establishment, overview),
                         _buildRatingsSection(establishment),
                         _buildReviewsButton(context, establishment),
@@ -568,6 +569,19 @@ class _PartnerStatisticsScreenState extends State<PartnerStatisticsScreen> {
       title: 'Звонки',
       value: callsInPeriod,
       changePercent: overview?.calls.changePercent,
+    );
+  }
+
+  // ============================================================================
+  // Shares Section
+  // ============================================================================
+
+  /// Сколько раз за период карточку отправили через меню «Поделиться».
+  Widget _buildSharesSection(EstablishmentOverview? overview) {
+    return _buildStatSection(
+      title: 'Поделились',
+      value: overview?.shares.inPeriod ?? 0,
+      changePercent: overview?.shares.changePercent,
     );
   }
 

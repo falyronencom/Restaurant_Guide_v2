@@ -11,6 +11,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { shareCountOf, shareTotalOf } from './shareCountSql.js';
 
 // ============================================================================
 // Event Tracking (UPSERT into establishment_analytics)
@@ -82,6 +83,28 @@ export const trackCall = async (establishmentId) => {
     await pool.query(query, [establishmentId]);
   } catch (error) {
     logger.error('Error tracking call in analytics', {
+      error: error.message,
+      establishmentId,
+    });
+  }
+};
+
+/**
+ * UPSERT a share event: someone sent the card on through the app's menu.
+ *
+ * @param {string} establishmentId - UUID
+ */
+export const trackShare = async (establishmentId) => {
+  const query = `
+    INSERT INTO establishment_analytics (establishment_id, date, share_count)
+    VALUES ($1, CURRENT_DATE, 1)
+    ON CONFLICT (establishment_id, date)
+    DO UPDATE SET share_count = establishment_analytics.share_count + 1
+  `;
+  try {
+    await pool.query(query, [establishmentId]);
+  } catch (error) {
+    logger.error('Error tracking share in analytics', {
       error: error.message,
       establishmentId,
     });
@@ -166,7 +189,7 @@ export const trackBookingConfirmed = async (establishmentId) => {
  * @param {string[]} establishmentIds - UUIDs
  * @param {Date} startDate
  * @param {Date} endDate
- * @returns {Object} Map of establishment_id → { views, favorites, calls }
+ * @returns {Object} Map of establishment_id → { views, favorites, calls, shares }
  */
 export const getMetricsInPeriod = async (establishmentIds, startDate, endDate) => {
   if (establishmentIds.length === 0) return {};
@@ -176,8 +199,9 @@ export const getMetricsInPeriod = async (establishmentIds, startDate, endDate) =
       establishment_id,
       COALESCE(SUM(view_count), 0)::int AS views,
       COALESCE(SUM(favorite_count), 0)::int AS favorites,
-      COALESCE(SUM(call_count), 0)::int AS calls
-    FROM establishment_analytics
+      COALESCE(SUM(call_count), 0)::int AS calls,
+      COALESCE(SUM(${shareCountOf('ea')}), 0)::int AS shares
+    FROM establishment_analytics ea
     WHERE establishment_id = ANY($1)
       AND date >= $2 AND date < $3
     GROUP BY establishment_id
@@ -190,6 +214,7 @@ export const getMetricsInPeriod = async (establishmentIds, startDate, endDate) =
         views: row.views,
         favorites: row.favorites,
         calls: row.calls,
+        shares: row.shares,
       };
     }
     return map;
@@ -355,7 +380,7 @@ export const getRatingDistribution = async (establishmentId) => {
  * Used by analytics service to scope queries to partner-owned establishments.
  *
  * @param {string} partnerId
- * @returns {Array<{ id: string, name: string, view_count: number, favorite_count: number, review_count: number, average_rating: number }>}
+ * @returns {Array<{ id: string, name: string, view_count: number, favorite_count: number, review_count: number, average_rating: number, share_count: number }>}
  */
 export const getPartnerEstablishments = async (partnerId) => {
   const query = `
@@ -365,7 +390,8 @@ export const getPartnerEstablishments = async (partnerId) => {
       view_count,
       favorite_count,
       review_count,
-      COALESCE(average_rating::DECIMAL(3,2), 0) AS average_rating
+      COALESCE(average_rating::DECIMAL(3,2), 0) AS average_rating,
+      ${shareTotalOf('establishments.id')} AS share_count
     FROM establishments
     WHERE partner_id = $1
       AND status IN ('active', 'suspended')

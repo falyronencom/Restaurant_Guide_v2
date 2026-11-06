@@ -20,6 +20,7 @@ import { jest } from '@jest/globals';
 
 const mockModel = {
   trackCall: jest.fn(),
+  trackShare: jest.fn(),
   getPartnerEstablishments: jest.fn(),
   getMetricsInPeriod: jest.fn(),
   getReviewMetricsInPeriod: jest.fn(),
@@ -55,6 +56,7 @@ jest.unstable_mockModule('../../models/analyticsModel.js', () => ({}));
 
 const {
   trackCall,
+  trackShare,
   getOverview,
   getTrends,
   getRatings,
@@ -81,6 +83,14 @@ describe('trackCall', () => {
     mockModel.trackCall.mockResolvedValue();
     await trackCall(EST_ID_1);
     expect(mockModel.trackCall).toHaveBeenCalledWith(EST_ID_1);
+  });
+});
+
+describe('trackShare', () => {
+  it('delegates to model.trackShare', async () => {
+    mockModel.trackShare.mockResolvedValue();
+    await trackShare(EST_ID_1);
+    expect(mockModel.trackShare).toHaveBeenCalledWith(EST_ID_1);
   });
 });
 
@@ -173,7 +183,29 @@ describe('getOverview', () => {
     expect(est.views.in_period).toBe(0);
     expect(est.favorites.in_period).toBe(0);
     expect(est.calls.in_period).toBe(0);
+    expect(est.shares.in_period).toBe(0);
     expect(est.reviews.in_period).toBe(0);
+  });
+
+  it('shares: period value, all-time total and change to the previous period', async () => {
+    mockModel.getPartnerEstablishments.mockResolvedValue([
+      { id: EST_ID_1, name: 'A', view_count: 0, favorite_count: 0, review_count: 0, average_rating: '0', share_count: 40 },
+    ]);
+    mockModel.getMetricsInPeriod.mockResolvedValueOnce({
+      [EST_ID_1]: { views: 0, favorites: 0, calls: 0, shares: 6 },
+    });
+    mockModel.getMetricsInPeriod.mockResolvedValueOnce({
+      [EST_ID_1]: { views: 0, favorites: 0, calls: 0, shares: 3 },
+    });
+    mockModel.getReviewMetricsInPeriod.mockResolvedValue({});
+
+    const { establishments } = await getOverview(PARTNER_ID, { period: '7d' });
+
+    expect(establishments[0].shares).toEqual({
+      total: 40,
+      in_period: 6,
+      change_percent: 100,
+    });
   });
 });
 

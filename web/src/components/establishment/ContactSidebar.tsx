@@ -20,6 +20,7 @@ import {
 } from '@/lib/establishment-helpers';
 
 import { MapPreview } from './MapPreview';
+import { PhoneCallLink } from './PhoneCallLink';
 
 export function ContactSidebar({
   establishment,
@@ -55,13 +56,14 @@ export function ContactSidebar({
         ) : null}
 
         {establishment.phone ? (
-          <a
-            href={`tel:${establishment.phone.replace(/\s/g, '')}`}
+          <PhoneCallLink
+            establishmentId={establishment.id}
+            phone={establishment.phone}
             className='inline-flex items-center justify-center gap-2 rounded-[14px] bg-brand px-l py-3.5 text-headline-s font-semibold text-text-on-primary transition-opacity hover:opacity-90'
           >
             <Phone className='size-5' aria-hidden='true' />
             {establishment.phone}
-          </a>
+          </PhoneCallLink>
         ) : null}
 
         {establishment.website ? (

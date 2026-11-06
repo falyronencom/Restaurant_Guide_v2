@@ -19,6 +19,7 @@
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 import { likeContains } from '../utils/likePattern.js';
+import { shareTotalOf } from './shareCountSql.js';
 
 /**
  * Calculate completeness score (base_score) for an establishment.
@@ -358,6 +359,7 @@ export const getEstablishmentsByPartner = async (partnerId, filters = {}) => {
       e.updated_at,
       e.published_at,
       e.moderation_notes,
+      ${shareTotalOf('e.id')} AS share_count,
       (
         SELECT json_build_object(
           'url', url,

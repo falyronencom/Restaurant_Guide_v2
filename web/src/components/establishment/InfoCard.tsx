@@ -7,6 +7,10 @@
  * today's hours, and it opens to the full grouped week (no JS). The rating /
  * reviews / open-status live in the page title block.
  *
+ * The phone is a link: on a phone this card is the only place with the number
+ * (ContactSidebar and its button are desktop-only), and the tap is what the
+ * partner's «Звонки» counts.
+ *
  * Server Component. `new Date()` for «Сегодня» renders at ISR (re)generation —
  * the day can be up to a revalidate-window stale around midnight.
  */
@@ -21,6 +25,8 @@ import {
 } from '@/lib/establishment-helpers';
 // Price tier → check description: one source with the filters and the wizard.
 import { PRICE_DESCRIPTION } from '@/lib/price-range';
+
+import { PhoneCallLink } from './PhoneCallLink';
 
 const DAY_KEYS = [
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
@@ -58,7 +64,15 @@ export function InfoCard({
           <Fact
             tile={<Phone className='size-5' aria-hidden='true' />}
             label='Телефон'
-            value={establishment.phone}
+            value={
+              <PhoneCallLink
+                establishmentId={establishment.id}
+                phone={establishment.phone}
+                className='underline decoration-brand underline-offset-2'
+              >
+                {establishment.phone}
+              </PhoneCallLink>
+            }
           />
         ) : null}
       </div>
@@ -75,7 +89,7 @@ function Fact({
 }: {
   tile: ReactNode;
   label: string;
-  value: string;
+  value: ReactNode;
 }) {
   return (
     <div className='flex items-center gap-3'>
