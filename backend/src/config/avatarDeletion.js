@@ -26,10 +26,22 @@ export const TICK_INTERVAL_MS = 60 * 1000;
 export const CLAIM_LEASE_MS = 10 * 60 * 1000;
 
 /**
+ * How long a new task waits before its first attempt. An avatar upload already
+ * under way when the account is deleted lands in the folder afterwards, and a task
+ * closed by then would never see that file. A request lives at most 300 s (Node's
+ * requestTimeout: the body comes first) and the upload after it at most 60 s
+ * (cloudinary/lib/uploader.js), so ten minutes outlast it. The answer to the person
+ * does not wait for this.
+ */
+export const FIRST_ATTEMPT_DELAY_MS = 10 * 60 * 1000;
+
+/**
  * The pause after each failed attempt; when they run out, the task is failed
  * and stays in the table. Nine attempts over about three days: a short outage
- * of the cloud passes on the first steps, and three days leave time to notice a
- * wrong key, the one failure that lasts (keys were changed on 22–25.10.2026).
+ * of the cloud passes on the first steps. A wrong key is the one failure that
+ * lasts (keys were changed on 22–25.10.2026); it also stops every upload, so it
+ * does not go unnoticed for long, and after it the header of migration 040 has
+ * the statement that returns failed rows to the queue.
  */
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -66,6 +78,9 @@ export const resolveAvatarDeletionPolicy = (env = {}) => {
     enabled = raw === 'true';
   } else if (raw !== '') {
     warnings.push(`AVATAR_DELETION_ENABLED is neither true nor false: the default is used (${enabled})`);
+  }
+  if (env.NODE_ENV === 'production' && !enabled) {
+    warnings.push('is switched off on production: the pictures of deleted accounts wait on the cloud');
   }
 
   return { enabled, intervalMs: TICK_INTERVAL_MS, warnings };

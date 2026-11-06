@@ -13,11 +13,19 @@
 -- from the deletion, and the operator's script gets it the same way. The loop
 -- services/avatarDeletionLoop.js works through it.
 --
--- status: pending — due at next_attempt_at; done — the folder was emptied;
--- failed — the attempts ran out: the row stays, and the journal has its line.
+-- status: pending — due at next_attempt_at; done — the folder was emptied,
+-- files_deleted says how many went; failed — the attempts ran out: the row stays,
+-- and the journal has its line.
 -- To try a failed row again:
 --   UPDATE avatar_deletions SET status = 'pending', attempts = 0,
 --     next_attempt_at = NOW() WHERE status = 'failed';
+--
+-- Accounts deleted while the table was not there have no task, and a later request
+-- writes none: it stops at «already deleted». Their folders follow from the journal:
+--   INSERT INTO avatar_deletions (user_id)
+--   SELECT DISTINCT a.entity_id FROM audit_log a JOIN users u ON u.id = a.entity_id
+--    WHERE a.entity_type = 'user' AND a.action = 'user_delete_account'
+--   ON CONFLICT (user_id) DO NOTHING;
 --
 -- Times are TIMESTAMPTZ and only ever compared with the database's own NOW().
 --
@@ -49,6 +57,7 @@ CREATE TABLE IF NOT EXISTS avatar_deletions (
     attempts INTEGER NOT NULL DEFAULT 0,
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_error TEXT,
+    files_deleted INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     finished_at TIMESTAMPTZ
 );

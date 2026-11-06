@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { jest } from '@jest/globals';
 import {
   CLAIM_LEASE_MS,
+  FIRST_ATTEMPT_DELAY_MS,
   RETRY_PAUSES_MS,
   TICK_INTERVAL_MS,
   resolveAvatarDeletionPolicy,
@@ -24,7 +25,7 @@ describe('включена или нет', () => {
     ['прод без настройки', { NODE_ENV: 'production' }, true, 0],
     ['локально без настройки', { NODE_ENV: 'development' }, false, 0],
     ['в тестах без настройки', { NODE_ENV: 'test' }, false, 0],
-    ['прод: выключена словом', { NODE_ENV: 'production', AVATAR_DELETION_ENABLED: 'false' }, false, 0],
+    ['прод: выключена словом, и журнал старта об этом говорит', { NODE_ENV: 'production', AVATAR_DELETION_ENABLED: 'false' }, false, 1],
     ['локально: включена словом', { NODE_ENV: 'development', AVATAR_DELETION_ENABLED: 'true' }, true, 0],
     ['пустая строка — как без настройки', { NODE_ENV: 'production', AVATAR_DELETION_ENABLED: ' ' }, true, 0],
     ['опечатка на проде: умолчание и предупреждение', { NODE_ENV: 'production', AVATAR_DELETION_ENABLED: 'no' }, true, 1],
@@ -50,10 +51,9 @@ describe('значения', () => {
     expect(Math.round(hours)).toBe(70);
   });
 
-  test('задача возвращается позже, чем длится самая долгая обычная работа', () => {
-    // Три списка и файлы папки, каждый вызов до 20 с: 10 минут хватает на 27 файлов
-    // при облаке на грани срока; короче обещанного повторы безвредны, но лишни.
+  test('срок занятости задачи и пауза перед первой попыткой — по 10 минут', () => {
     expect(CLAIM_LEASE_MS).toBe(600000);
+    expect(FIRST_ATTEMPT_DELAY_MS).toBe(600000);
   });
 });
 
@@ -85,6 +85,23 @@ describe('запуск и остановка', () => {
     expect(policy.enabled).toBe(false);
     expect(avatarDeletionLoop.status()).toEqual({ running: false, working: false });
     expect(interval).not.toHaveBeenCalled();
+  });
+
+  test('включённая: таймер раз в минуту и первый проход сразу, stop всё снимает', async () => {
+    // Первый проход идёт в настоящую базу. Новая задача — через 10 минут, поэтому
+    // до облака он не дойдёт, даже если в базе что-то осталось от другого файла.
+    const interval = jest.spyOn(global, 'setInterval');
+
+    const policy = avatarDeletionLoop.start({ env: { NODE_ENV: 'production' } });
+
+    expect(policy.enabled).toBe(true);
+    expect(interval).toHaveBeenCalledWith(expect.any(Function), 60000);
+    // Уже идёт, до единого await этого теста: проход принадлежит самому start().
+    expect(avatarDeletionLoop.status()).toEqual({ running: true, working: true });
+
+    await avatarDeletionLoop.stop();
+
+    expect(avatarDeletionLoop.status()).toEqual({ running: false, working: false });
   });
 
   test('stop без запуска — не ошибка', async () => {

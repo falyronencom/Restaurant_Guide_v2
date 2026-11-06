@@ -23,7 +23,8 @@
  *     on production and 30 s without the drain variable (config/shutdown.js). A
  *     task cut short this way needs no marking: it comes due when its claim ends;
  *   - without the table (the window before migration 040) a tick does nothing and
- *     says nothing.
+ *     says one line at info level per process: the deploy's journal shows it, and
+ *     nothing else would.
  *
  * Whether it runs at all: config/avatarDeletion.js. It must not start under
  * NODE_ENV=test: tests call tick() directly, with the cloud stubbed.
@@ -51,17 +52,15 @@ let intervalId = null;
 let tickPromise = null;
 let stopRequested = false;
 let lastHeartbeatAt = null;
+let saidTableAbsent = false;
 
 /**
- * What goes into the table and the journal from a failure. The cloud's refusal
- * of a key may quote the key's number, so long runs of digits are hidden.
+ * What goes into the table and the journal from a failure.
  *
  * @param {Error} error
  * @returns {string}
  */
-const failureText = (error) => String(error?.message ?? error)
-  .replace(/\d{10,}/g, '[digits hidden]')
-  .slice(0, LAST_ERROR_MAX_LENGTH);
+const failureText = (error) => String(error?.message ?? error).slice(0, LAST_ERROR_MAX_LENGTH);
 
 /**
  * Count the failed attempt: wait for the next pause, or give up.
@@ -93,11 +92,20 @@ const settleFailure = async (task, error) => {
   });
 };
 
-/** The one proof the loop is alive, once an hour: a silent minute says nothing. */
+/**
+ * The one proof the loop is alive, once an hour: a silent minute says nothing. With
+ * given-up tasks the line goes at error level: the single line of giving up leaves
+ * the journal in days, and the files stay until someone returns the rows.
+ */
 const heartbeat = async () => {
   if (lastHeartbeatAt !== null && Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
   lastHeartbeatAt = Date.now();
-  logger.info('Avatar deletion: loop alive', await countOpen());
+  const counts = await countOpen();
+  if (counts.failed > 0) {
+    logger.error('Avatar deletion: loop alive, tasks given up', counts);
+  } else {
+    logger.info('Avatar deletion: loop alive', counts);
+  }
 };
 
 /**
@@ -108,7 +116,13 @@ const heartbeat = async () => {
 const runTick = async () => {
   stopRequested = false;
   try {
-    if (!(await avatarDeletionTableExists())) return;
+    if (!(await avatarDeletionTableExists())) {
+      if (!saidTableAbsent) {
+        saidTableAbsent = true;
+        logger.info('Avatar deletion: no table yet (migration 040), nothing to do');
+      }
+      return;
+    }
     await heartbeat();
 
     const task = await claimNextDue(CLAIM_LEASE_MS);
@@ -129,7 +143,7 @@ const runTick = async () => {
       return;
     }
 
-    await markDone(task.user_id);
+    await markDone(task.user_id, outcome.deleted);
     logger.info('Avatar deletion: folder emptied', { userId: task.user_id, files: outcome.deleted });
   } catch (error) {
     // The database, not the cloud. A claimed task comes back by itself.

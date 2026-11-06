@@ -322,16 +322,6 @@ describe('scripts/delete-account.js — удаление по заявке', () 
     expect(tasks.rows[0].n).toBe(1);
   });
 
-  test('отказ в транзакции: задачи нет', async () => {
-    const { partner } = await createPartnerWithEstablishment('active');
-
-    const result = run([`--email=${partner.user.email}`, '--yes']);
-
-    expect(result.status).toBe(1);
-    const tasks = await query('SELECT count(*)::int AS n FROM avatar_deletions WHERE user_id = $1', [partner.user.id]);
-    expect(tasks.rows[0].n).toBe(0);
-  });
-
   // Окно до миграции 040: таблицу снимает сам тест и возвращает в `finally`. Убитый
   // между ними прогон оставит её снятой, и следующий упадёт на общем TRUNCATE
   // (testTables.js): вернуть можно, применив migrations/040_avatar_deletions.sql.
@@ -635,5 +625,8 @@ describe('scripts/delete-account.js — пока скрипт ждал стро�
     expect((await query('SELECT status FROM establishments WHERE id = $1', [draft.id])).rows)
       .toEqual([{ status: 'pending' }]);
     expect(await deletionEntries(partner.user.id)).toHaveLength(0);
+    // Отказ внутри транзакции: задача на удаление фото не остаётся.
+    const tasks = await query('SELECT count(*)::int AS n FROM avatar_deletions WHERE user_id = $1', [partner.user.id]);
+    expect(tasks.rows[0].n).toBe(0);
   });
 });

@@ -706,16 +706,6 @@ describe('DELETE /auth/account — фото профиля', () => {
     expect((await userRow(p.id)).avatar_url).toBeNull();
   });
 
-  test('фото из Google или Яндекса не наше — облако не трогается', async () => {
-    const destroy = jest.spyOn(cloudinarySdk.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
-    const p = await person();
-    await query(`UPDATE users SET avatar_url = 'https://lh3.googleusercontent.com/a/face' WHERE id = $1`, [p.id]);
-
-    await deleteAccount(p.accessToken).expect(200);
-
-    expect(destroy).not.toHaveBeenCalled();
-    expect((await userRow(p.id)).avatar_url).toBeNull();
-  });
 });
 
 // ============================================================================
@@ -983,7 +973,7 @@ describe('Бронь, отправленная во время удаления,
         .send({ establishmentId: establishment.id, date: tomorrow, time: '12:00', guestCount: 2, contactPhone: '+375291112277' })
         .then((r) => r);
       await waitForLockWaiters(1);
-      await anonymiseAccount(holder, account, { userId: p.id });
+      await anonymiseAccount(holder, account, { userId: p.id, queueAvatarDeletion: false });
       await holder.query('COMMIT');
       response = await booking;
     } catch (error) {

@@ -3,8 +3,8 @@
 -- The code keeps working (it checks for the table before use): a deletion goes
 -- back to destroying the current picture once, without a retry, and the loop
 -- stays silent. Rows still open are lost with the table; the folders stay
--- derivable from the journal (audit_log, action user_delete_account). Look at
--- them first:
+-- derivable from the journal: the INSERT in the header of 040, run after 040 is
+-- applied again, gives every deleted account a task. Look at them first:
 --   SELECT status, count(*) FROM avatar_deletions GROUP BY status;
 
 BEGIN;

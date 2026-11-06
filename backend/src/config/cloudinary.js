@@ -205,14 +205,19 @@ const PDF_PREVIEW_CONFIG = {
  * an answer with an error body rejects with `{ message, http_code }`; an
  * unexpected status with `{ message, http_code, name: 'UnexpectedResponse' }`;
  * a request that failed or timed out with `{ error: { message, http_code? } }`
- * — 499 is the SDK's own timeout, 60 s without an answer.
+ * — 499 is the SDK's own timeout, 60 s without an answer. The cloud's refusal of
+ * a key may quote the key's number, and this text goes into the journal and into
+ * avatar_deletions: long runs of digits are hidden.
  *
  * @param {Object} error - The SDK's rejection
  * @returns {{ message: string|undefined, httpCode: number|undefined }}
  */
 const uploadFailureOf = (error) => {
   const inner = error?.error ?? error;
-  return { message: inner?.message, httpCode: inner?.http_code };
+  const message = typeof inner?.message === 'string'
+    ? inner.message.replace(/\d{10,}/g, '[digits hidden]')
+    : inner?.message;
+  return { message, httpCode: inner?.http_code };
 };
 
 /**

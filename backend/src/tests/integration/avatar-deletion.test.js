@@ -57,7 +57,7 @@ const deleteAccount = (token) => request(app)
   .send({ confirmation: WORD });
 
 const taskOf = async (userId) => (await query(
-  `SELECT status, attempts, last_error, finished_at IS NOT NULL AS finished,
+  `SELECT status, attempts, last_error, files_deleted, finished_at IS NOT NULL AS finished,
           EXTRACT(EPOCH FROM (next_attempt_at - NOW())) AS due_in
      FROM avatar_deletions WHERE user_id = $1`,
   [userId],
@@ -68,6 +68,12 @@ const makeDue = (userId) => query(
   "UPDATE avatar_deletions SET next_attempt_at = NOW() - INTERVAL '1 second' WHERE user_id = $1",
   [userId],
 );
+
+/** Удалил, и первая пауза прошла: задача к сроку. */
+const deletedAndDue = async (p) => {
+  await deleteAccount(p.accessToken).expect(200);
+  await makeDue(p.id);
+};
 
 /** Выход в сеть из петли — провал теста: настоящего облака здесь быть не может. */
 const noNetwork = () => jest.spyOn(https, 'request').mockImplementation(() => {
@@ -184,6 +190,21 @@ describe('задача на удаление папки пишется в тра
     expect(rows[0]).toEqual({ is_active: true, email: p.email });
   });
 
+  test('забытый вызывающим флаг таблицы — отказ, а не молчаливое удаление без задачи', async () => {
+    const p = await person();
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      const account = await lockAccount(client, p.id);
+      await expect(anonymiseAccount(client, account, { userId: p.id })).rejects.toThrow('queueAvatarDeletion');
+      await client.query('ROLLBACK');
+    } finally {
+      client.release();
+    }
+    const { rows } = await query('SELECT is_active FROM users WHERE id = $1', [p.id]);
+    expect(rows[0].is_active).toBe(true);
+  });
+
   test('транзакция откатилась у вызывающего: задачи нет', async () => {
     const p = await person();
     const client = await getClient();
@@ -233,7 +254,7 @@ describe('петля доводит задачу до конца', () => {
   test('успех: файлы текущего и старого аватара удалены, чужие целы, задача закрыта', async () => {
     const network = noNetwork();
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     const current = `avatars/${p.id}/current`;
     const old = `avatars/${p.id}/old`;
     const neighbour = `avatars/${p.id}0/face`;
@@ -247,13 +268,45 @@ describe('петля доводит задачу до конца', () => {
       [current, { invalidate: true, resource_type: 'image' }],
       [old, { invalidate: true, resource_type: 'image' }],
     ]);
-    expect(await taskOf(p.id)).toMatchObject({ status: 'done', attempts: 0, last_error: null, finished: true });
+    expect(await taskOf(p.id)).toMatchObject({
+      status: 'done', attempts: 0, last_error: null, finished: true, files_deleted: 2,
+    });
     expect(network).not.toHaveBeenCalled();
+  });
+
+  test('первая попытка — через 10 минут: файл загрузки, догнавшей удаление, тоже уходит', async () => {
+    const p = await person();
+    await deleteAccount(p.accessToken).expect(200);
+    const task = await taskOf(p.id);
+    expect(Number(task.due_in)).toBeGreaterThan(590);
+    expect(Number(task.due_in)).toBeLessThanOrEqual(600);
+    const { left, resources } = fakeCloud([]);
+
+    await avatarDeletionLoop.tick();
+    expect(resources).not.toHaveBeenCalled();
+
+    // Загрузка, начатая до удаления, легла в папку уже после него.
+    left.add(`avatars/${p.id}/late`);
+    await makeDue(p.id);
+    await avatarDeletionLoop.tick();
+
+    expect(left.size).toBe(0);
+    expect(await taskOf(p.id)).toMatchObject({ status: 'done', files_deleted: 1 });
+  });
+
+  test('пустая папка: задача закрыта с нулём файлов, этот ноль виден', async () => {
+    const p = await person();
+    await deletedAndDue(p);
+    fakeCloud([]);
+
+    await avatarDeletionLoop.tick();
+
+    expect(await taskOf(p.id)).toMatchObject({ status: 'done', files_deleted: 0 });
   });
 
   test('закрытая задача не повторяется: второй проход облако не зовёт', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     const { resources } = fakeCloud([]);
     await avatarDeletionLoop.tick();
     const callsAfterFirst = resources.mock.calls.length;
@@ -268,8 +321,8 @@ describe('петля доводит задачу до конца', () => {
   test('один проход — один человек: так петля держит лимит в час', async () => {
     const first = await person();
     const second = await person();
-    await deleteAccount(first.accessToken).expect(200);
-    await deleteAccount(second.accessToken).expect(200);
+    await deletedAndDue(first);
+    await deletedAndDue(second);
     const { resources } = fakeCloud([]);
 
     await avatarDeletionLoop.tick();
@@ -281,7 +334,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('сбой облака: задача жива, ждёт паузу, не берётся раньше и после паузы закрывается', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     const warnings = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     brokenCloud('Сломалось');
 
@@ -319,7 +372,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('предел попыток: запись осталась, ошибка в журнале, больше не берётся; снимается одной строкой', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     const errors = errorLines();
     brokenCloud('Ключ не подходит');
@@ -358,7 +411,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('перезапуск между COMMIT и обработкой: новый процесс берёт задачу из таблицы', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     await avatarDeletionLoop.stop();
 
     // Новая копия модуля, как в новом процессе: память прежней ни при чём.
@@ -374,7 +427,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('процесс умер посреди задачи: попытка не списана, задача вернётся после срока занятости', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     // Как умер: задача взята и больше ничего.
     await query(
       `UPDATE avatar_deletions SET next_attempt_at = NOW() + INTERVAL '10 minutes' WHERE user_id = $1`,
@@ -395,7 +448,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('взятие задачи отодвигает её на 10 минут: второй процесс её не возьмёт', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     let release;
     const hold = new Promise((resolve) => { release = resolve; });
     let markReached;
@@ -424,7 +477,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('stop посреди задачи: дожидается текущего вызова, следующего не делает, попытка не списана', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     let release;
     const hold = new Promise((resolve) => { release = resolve; });
     let markReached;
@@ -453,7 +506,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('цифры ключа в отказе облака не доходят ни до таблицы, ни до журнала', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     const warnings = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     brokenCloud('Unknown API key 123456789012345');
 
@@ -466,7 +519,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('длинный текст отказа укорочен: таблица не копит чужие простыни', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     brokenCloud('x'.repeat(5000));
 
@@ -477,7 +530,7 @@ describe('петля доводит задачу до конца', () => {
 
   test('сбой базы: проход не падает, строка в журнале, задача на месте', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
+    await deletedAndDue(p);
     const errors = errorLines();
     const { resources } = fakeCloud([]);
     intercept((text) => text.includes('UPDATE avatar_deletions'), async () => {
@@ -493,19 +546,54 @@ describe('петля доводит задачу до конца', () => {
 
   test('раз в час петля говорит, что жива, и сколько задач открыто', async () => {
     const p = await person();
-    await deleteAccount(p.accessToken).expect(200);
-    const failedPerson = await person();
-    await query(`INSERT INTO avatar_deletions (user_id, status) VALUES ($1, 'failed')`, [failedPerson.id]);
+    await deletedAndDue(p);
     fakeCloud([]);
     const info = jest.spyOn(logger, 'info').mockImplementation(() => logger);
+    const errors = errorLines();
     const fresh = await import('../../services/avatarDeletionLoop.js?restart=3');
 
     await fresh.tick();
 
-    expect(info).toHaveBeenCalledWith('Avatar deletion: loop alive', { pending: 1, failed: 1 });
+    expect(info).toHaveBeenCalledWith('Avatar deletion: loop alive', { pending: 1, failed: 0 });
+    expect(errors).not.toHaveBeenCalled();
     info.mockClear();
     await fresh.tick();
     expect(info).not.toHaveBeenCalledWith('Avatar deletion: loop alive', expect.anything());
+  });
+
+  test('есть брошенные задачи: та же строка раз в час уже на уровне ошибки', async () => {
+    const failedPerson = await person();
+    await query(`INSERT INTO avatar_deletions (user_id, status) VALUES ($1, 'failed')`, [failedPerson.id]);
+    fakeCloud([]);
+    const errors = errorLines();
+    const fresh = await import('../../services/avatarDeletionLoop.js?restart=4');
+
+    await fresh.tick();
+
+    expect(errors).toHaveBeenCalledWith('Avatar deletion: loop alive, tasks given up', { pending: 0, failed: 1 });
+  });
+
+  test('разовая запись задач из шапки миграции: только удалённые, готовые не трогает', async () => {
+    const without = await person();
+    await deleteAccount(without.accessToken).expect(200);
+    await query('DELETE FROM avatar_deletions WHERE user_id = $1', [without.id]);
+    const closed = await person();
+    await deleteAccount(closed.accessToken).expect(200);
+    await query(`UPDATE avatar_deletions SET status = 'done' WHERE user_id = $1`, [closed.id]);
+    const alive = await person();
+
+    await query(
+      `INSERT INTO avatar_deletions (user_id)
+       SELECT DISTINCT a.entity_id FROM audit_log a JOIN users u ON u.id = a.entity_id
+        WHERE a.entity_type = 'user' AND a.action = 'user_delete_account'
+       ON CONFLICT (user_id) DO NOTHING`,
+    );
+
+    expect(await taskOf(without.id)).toMatchObject({ status: 'pending', attempts: 0 });
+    expect(await taskOf(closed.id)).toMatchObject({ status: 'done' });
+    expect(await taskOf(alive.id)).toBeUndefined();
+    // К сроку сразу: это прошлые удаления, ждать загрузок в полёте незачем.
+    expect(Number((await taskOf(without.id)).due_in)).toBeLessThanOrEqual(0);
   });
 });
 
@@ -542,11 +630,38 @@ describe('схема без таблицы: окно между выкаткой
       // Журнал запроса тут ни при чём (в тестах лимитер пишет про Redis): молчит петля.
       errors.mockClear();
       warnings.mockClear();
-      await avatarDeletionLoop.tick();
+      const info = jest.spyOn(logger, 'info').mockImplementation(() => logger);
+      const fresh = await import('../../services/avatarDeletionLoop.js?restart=5');
+      await fresh.tick();
+      await fresh.tick();
 
       expect(resources).not.toHaveBeenCalled();
       expect(errors).not.toHaveBeenCalled();
       expect(warnings).not.toHaveBeenCalled();
+      // Одна строка на процесс: журнал выкатки показывает, что миграции ещё нет.
+      expect(info.mock.calls.filter(([line]) => line.startsWith('Avatar deletion')))
+        .toEqual([['Avatar deletion: no table yet (migration 040), nothing to do']]);
+    } finally {
+      await query(readFileSync(MIGRATION, 'utf8'));
+    }
+  });
+
+  test.each([
+    ['фото из Google: не наше, облако не зовётся', () => 'https://lh3.googleusercontent.com/a/face'],
+    ['ссылка в чужую папку: чужое, облако не зовётся', (id) => `https://res.cloudinary.com/test/image/upload/v1/avatars/${id}/face0001.jpg`],
+  ])('%s', async (_name, link) => {
+    const p = await person();
+    const stranger = randomUUID();
+    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [p.id, link(stranger)]);
+    const { destroy } = fakeCloud([]);
+
+    await query('DROP TABLE avatar_deletions');
+    try {
+      await deleteAccount(p.accessToken).expect(200);
+
+      expect(destroy).not.toHaveBeenCalled();
+      const { rows } = await query('SELECT avatar_url FROM users WHERE id = $1', [p.id]);
+      expect(rows[0].avatar_url).toBeNull();
     } finally {
       await query(readFileSync(MIGRATION, 'utf8'));
     }

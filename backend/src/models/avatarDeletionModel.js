@@ -6,6 +6,7 @@
  * a pause goes in as milliseconds. No JS Date crosses this boundary.
  */
 
+import { FIRST_ATTEMPT_DELAY_MS } from '../config/avatarDeletion.js';
 import { pool } from '../config/database.js';
 
 /**
@@ -25,7 +26,8 @@ export const avatarDeletionTableExists = async (db = pool) => {
 
 /**
  * Add the task, inside the caller's transaction: the deletion and its task are
- * one write.
+ * one write. First due after FIRST_ATTEMPT_DELAY_MS, so that an upload under way
+ * has landed by then.
  *
  * @param {Object} client - pg client inside a transaction
  * @param {string} userId
@@ -33,8 +35,10 @@ export const avatarDeletionTableExists = async (db = pool) => {
  */
 export const enqueueAvatarDeletion = async (client, userId) => {
   await client.query(
-    'INSERT INTO avatar_deletions (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING',
-    [userId],
+    `INSERT INTO avatar_deletions (user_id, next_attempt_at)
+     VALUES ($1, NOW() + ($2::int * INTERVAL '1 millisecond'))
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId, FIRST_ATTEMPT_DELAY_MS],
   );
 };
 
@@ -65,17 +69,19 @@ export const claimNextDue = async (leaseMs) => {
 };
 
 /**
- * The folder is empty: the task is closed. The row stays as the record.
+ * The folder is empty: the task is closed. The row stays as the record, with the
+ * number of files: `done` with zero is told apart from the job done.
  *
  * @param {string} userId
+ * @param {number} filesDeleted - files this run destroyed
  * @returns {Promise<void>}
  */
-export const markDone = async (userId) => {
+export const markDone = async (userId, filesDeleted) => {
   await pool.query(
     `UPDATE avatar_deletions
-        SET status = 'done', finished_at = NOW(), last_error = NULL
+        SET status = 'done', finished_at = NOW(), last_error = NULL, files_deleted = $2
       WHERE user_id = $1`,
-    [userId],
+    [userId, filesDeleted],
   );
 };
 

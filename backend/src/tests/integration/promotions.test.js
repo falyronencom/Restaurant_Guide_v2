@@ -25,6 +25,8 @@ let pool;
 let cloudinary;
 
 jest.unstable_mockModule('../../config/cloudinary.js', () => ({
+  // Named-imported by services/avatarDeletionLoop.js, which server.js loads.
+  deleteAvatarFolder: jest.fn(),
   // Named-imported by services/uploadAllowance.js (the daily upload allowance):
   // the cloud never refuses here.
   cloudRefusedUpload: jest.fn(() => false),

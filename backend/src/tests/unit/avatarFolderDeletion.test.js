@@ -16,6 +16,7 @@
 import https from 'https';
 import { jest } from '@jest/globals';
 import cloudinary, { deleteAvatarFolder, deleteImage } from '../../config/cloudinary.js';
+import logger from '../../utils/logger.js';
 
 const OWNER = '7f3c2b1a-0d4e-4f6a-8b9c-1a2b3c4d5e6f';
 const OTHER = '0a1b2c3d-4e5f-4a6b-8c7d-9e8f7a6b5c4d';
@@ -218,6 +219,27 @@ describe('сбой облака', () => {
 
     expect(error.message).toBe('Failed to delete image: Server error');
     expect(error.httpCode).toBe(500);
+  });
+
+  test('файл raw с расширением в public_id: сверка владельца его не пропускает, это громкий сбой, а не тихий успех', async () => {
+    // Сюда такие файлы никто не кладёт: аватар всегда картинка (uploadAvatar).
+    const { left, destroy } = fakeCloud([{ id: `${FOLDER}note.txt`, type: 'raw' }]);
+
+    await expect(deleteAvatarFolder(OWNER)).rejects.toThrow('a file stayed on the cloud (refused)');
+
+    expect(destroy).not.toHaveBeenCalled();
+    expect(left.size).toBe(1);
+  });
+
+  test('цифры ключа в отказе при удалении файла скрыты, как и в отказе списка', async () => {
+    fakeCloud([{ id: `${FOLDER}face` }]);
+    const errors = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+    cloudinary.uploader.destroy.mockRejectedValue({ message: 'Unknown API key 123456789012345', http_code: 401 });
+
+    const error = await deleteAvatarFolder(OWNER).catch((rejection) => rejection);
+
+    expect(error.message).toBe('Failed to delete image: Unknown API key [digits hidden]');
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('123456789012345');
   });
 
   test('облако ответило непонятно — файл считается оставшимся', async () => {

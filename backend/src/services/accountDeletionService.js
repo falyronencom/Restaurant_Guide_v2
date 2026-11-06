@@ -316,16 +316,20 @@ export const lockAccount = async (client, userId) =>
  * @param {Object} client - pg client inside a transaction
  * @param {Object} account - the locked row (lockAccount)
  * @param {Object} by - { userId } the person; { userId: null, label } a script;
- *   queueAvatarDeletion: the avatar_deletions table is there (asked before BEGIN
- *   with avatarDeletionTableExists), write the task
+ *   queueAvatarDeletion: required, whether the avatar_deletions table is there
+ *   (asked before BEGIN with avatarDeletionTableExists) and the task goes in. A
+ *   caller that forgot it would leave the person's pictures on the cloud unnoticed
  * @returns {Promise<{counts: Object, cancelled: Array<Object>}>} the counts as
  *   journalled; the bookings it cancelled, for the notices after COMMIT
  */
 export const anonymiseAccount = async (
   client,
   account,
-  { userId: actorId = null, label = null, queueAvatarDeletion = false } = {},
+  { userId: actorId = null, label = null, queueAvatarDeletion } = {},
 ) => {
+  if (typeof queueAvatarDeletion !== 'boolean') {
+    throw new TypeError('anonymiseAccount: queueAvatarDeletion must say whether the task table is there');
+  }
   const userId = account.id;
 
   // Unfinished cards go first — the rule of the partner's own delete, in the
