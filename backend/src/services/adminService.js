@@ -424,8 +424,11 @@ export const moderateEstablishment = async (establishmentId, params) => {
     // Idempotency in OcrJobModel.enqueue protects against duplicates for
     // already-pending/processing jobs; hasCompletedJobForMedia filters out
     // finished ones so we never re-process done media on repeated approvals.
+    // Before the answer: a card holds at most 32 menu files (30 photos, 2 PDFs)
+    // at 3 statements each, with no Redis and no allowance, which a moderator
+    // does not notice. A failure is logged and does not undo the approval.
     if (action === 'approve') {
-      (async () => {
+      await (async () => {
         try {
           const eligibleMedia = await MediaModel.getOcrEligibleMedia(establishmentId);
           for (const media of eligibleMedia) {

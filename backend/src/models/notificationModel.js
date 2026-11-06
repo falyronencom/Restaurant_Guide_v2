@@ -91,6 +91,89 @@ export const create = async (data) => {
 };
 
 /**
+ * One notice about an establishment to each user who keeps it in favorites, in
+ * one statement: a mailing as one insert a row each would put in the pool as many
+ * statements at once, and everyone else's requests would queue behind them. The
+ * feed takes no account of notification preferences: those govern the push only.
+ *
+ * @param {Object} data
+ * @param {string} data.establishmentId
+ * @param {string} data.type
+ * @param {string} data.title
+ * @param {string} data.message
+ * @returns {Promise<string[]>} The users written to
+ */
+export const createForEstablishmentFavorites = async ({ establishmentId, type, title, message }) => {
+  const query = `
+    INSERT INTO notifications (user_id, type, title, message, establishment_id)
+    SELECT user_id, $2::text, $3::text, $4::text, establishment_id
+    FROM favorites
+    WHERE establishment_id = $1
+    RETURNING user_id
+  `;
+
+  try {
+    const result = await pool.query(query, [establishmentId, type, title, message]);
+    return result.rows.map((row) => row.user_id);
+  } catch (error) {
+    logger.error('Error creating notifications for favorites', {
+      error: error.message,
+      establishmentId,
+      type,
+    });
+    throw error;
+  }
+};
+
+/**
+ * One notice to the author of each of the given reviews, in one statement. The
+ * same reading as one notice at a time: a review with no author is passed over
+ * (ReviewModel.findReviewById joins users), and the message names the review's
+ * establishment, or `fallbackName` if it has no name or is gone.
+ *
+ * @param {Object} data
+ * @param {string[]} data.reviewIds
+ * @param {string} data.type
+ * @param {string} data.title
+ * @param {string} data.messageTemplate - The message, with `nameSlot` for the name
+ * @param {string} data.nameSlot
+ * @param {string} data.fallbackName
+ * @returns {Promise<number>} Notices written
+ */
+export const createForReviewAuthors = async ({
+  reviewIds, type, title, messageTemplate, nameSlot, fallbackName,
+}) => {
+  const query = `
+    INSERT INTO notifications (user_id, type, title, message, establishment_id, review_id)
+    SELECT
+      r.user_id,
+      $2::text,
+      $3::text,
+      replace($4::text, $5::text, COALESCE(NULLIF(e.name, ''), $6::text)),
+      r.establishment_id,
+      r.id
+    FROM reviews r
+    JOIN users u ON u.id = r.user_id
+    LEFT JOIN establishments e ON e.id = r.establishment_id
+    WHERE r.id = ANY($1::uuid[])
+  `;
+
+  try {
+    const result = await pool.query(query, [
+      reviewIds, type, title, messageTemplate, nameSlot, fallbackName,
+    ]);
+    return result.rowCount;
+  } catch (error) {
+    logger.error('Error creating notifications for review authors', {
+      error: error.message,
+      count: reviewIds.length,
+      type,
+    });
+    throw error;
+  }
+};
+
+/**
  * Whether the user already has a notification of this type and title about
  * this establishment, created since the given OCR job was enqueued — the
  * jobs of one upload batch are enqueued together, so a notice written for

@@ -52,9 +52,6 @@ const guestNotifications = async () => {
   return rows[0].n;
 };
 
-/** Уведомление гостю уходит после ответа («огнём и забыл») — дать хвосту лечь. */
-const settleTails = () => new Promise((resolve) => setTimeout(resolve, 500));
-
 beforeAll(async () => {
   const owner = await createUserAndGetTokens({
     email: 'idor-victim-partner@test.com', phone: phone(), password: 'Partner123!@#', name: 'Victim Partner', role: 'partner',
@@ -98,7 +95,6 @@ describe('чужой партнёр', () => {
       .put(`/api/v1/partner/bookings/${est.id}/${bookingId}/decline`)
       .set('Authorization', `Bearer ${attackerToken}`)
       .send({ reason: 'мест нет' });
-    await settleTails();
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('FORBIDDEN');
@@ -112,7 +108,6 @@ describe('чужой партнёр', () => {
     const res = await request(app)
       .put(`/api/v1/partner/bookings/${est.id}/${bookingId}/confirm`)
       .set('Authorization', `Bearer ${attackerToken}`);
-    await settleTails();
 
     expect(res.status).toBe(403);
     expect((await bookingRow(bookingId)).status).toBe('pending');
@@ -198,7 +193,6 @@ describe('владелец', () => {
     expect((await put(toDecline, 'decline', { reason: 'Мест нет' })).status).toBe(200);
     expect((await put(toNoShow, 'no-show')).status).toBe(200);
     expect((await put(toComplete, 'complete')).status).toBe(200);
-    await settleTails();
 
     expect((await bookingRow(toConfirm)).status).toBe('confirmed');
     expect(await bookingRow(toDecline)).toEqual({ status: 'declined', decline_reason: 'Мест нет' });

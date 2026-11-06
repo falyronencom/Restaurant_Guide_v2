@@ -218,7 +218,10 @@ export const getPublicEstablishmentById = async (id) => {
  * @returns {Promise<Object>} Full public projection with media[] and promotions[]
  */
 const assembleEstablishmentDetail = async (row) => {
-  // Fire-and-forget view tracking — preserves behaviour of legacy
+  // View tracking is deliberately not waited for (Coordinator's decision,
+  // 05.11.2026): every view of a card goes through one row, and a popular card
+  // would make its guests queue for the lock; a lost view is one view.
+  // Preserves behaviour of legacy
   // /search/establishments/:id endpoint. Public web bot crawls will inflate
   // view_count; bot filtering is deferred to a future Brief per directive.
   // Defensive .catch keeps the detail request safe even if the inner

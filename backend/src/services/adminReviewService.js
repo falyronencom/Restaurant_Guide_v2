@@ -334,9 +334,10 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
 
     result = { ...result, changed: true };
 
-    // Notify review author only when hiding (non-blocking)
+    // Notify review author only when hiding: after the COMMIT, before the
+    // answer. The notifier logs its own failure, which does not undo the hide.
     if (!result.is_visible) {
-      NotificationService.notifyReviewModerated(reviewId, 'hidden')
+      await NotificationService.notifyReviewModerated(reviewId, 'hidden')
         .catch(() => {});
     }
 
@@ -385,8 +386,8 @@ export const deleteReview = async (reviewId, adminUserId, rawReason, { ipAddress
     // Recalculate establishment aggregates (rating/count)
     await ReviewModel.updateEstablishmentAggregates(review.establishment_id);
 
-    // Notify review author (non-blocking)
-    NotificationService.notifyReviewModerated(reviewId, 'deleted')
+    // Notify review author, before the answer (see setVisibility)
+    await NotificationService.notifyReviewModerated(reviewId, 'deleted')
       .catch(() => {});
 
     // Audit log — awaited for determinism and parity with the other admin
@@ -482,10 +483,12 @@ export const hideReviewsBatch = async (rawIds, rawReason, adminUserId, { ipAddre
     client.release();
   }
 
-  // The author learns of each hidden review the way a single hide tells them.
-  for (const row of hidden) {
-    NotificationService.notifyReviewModerated(row.id, 'hidden').catch(() => {});
-  }
+  // Each author learns of each hidden review the way a single hide tells them:
+  // one statement for the whole batch, after the COMMIT and before the answer.
+  // A batch is up to HIDE_BATCH_MAX reviews, and a notice each would be up to 300
+  // statements on the moderator's answer. The notifier logs its own failure,
+  // which does not undo the hide.
+  await NotificationService.notifyReviewsHidden(hidden.map((row) => row.id)).catch(() => {});
 
   logger.info('Admin hid reviews in a batch', {
     adminId: adminUserId,

@@ -2,14 +2,16 @@
  * Notification Service
  *
  * Core notification methods + trigger helpers called from other services.
- * Trigger helpers are NON-BLOCKING — they catch errors internally
- * and never break the primary operation (same pattern as audit log).
+ * Trigger helpers catch errors internally and never break the primary operation
+ * (same pattern as audit log). What they write to the feed is a short database
+ * write, and the callers wait for it: a restart cannot lose it, and no write
+ * outlives the request. The push is the network: it stays in the background,
+ * inside the helper, and no caller waits for it.
  */
 
 import * as NotificationModel from '../models/notificationModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
-import * as FavoriteModel from '../models/favoriteModel.js';
 import * as MenuItemModel from '../models/menuItemModel.js';
 import * as PushService from './pushService.js';
 import logger from '../utils/logger.js';
@@ -150,7 +152,7 @@ const extractRejectionReason = (reason) => {
 };
 
 // ============================================================================
-// Trigger helpers (NON-BLOCKING — called without await from other services)
+// Trigger helpers (never throw; the push stays in the background)
 // ============================================================================
 
 /**
@@ -314,6 +316,11 @@ export const notifyPartnerResponse = async (reviewId, establishmentId) => {
   }
 };
 
+/** What a moderation action tells the review's author. */
+const reviewModeratedMessage = (name, action) => (action === 'hidden'
+  ? `Ваш отзыв на «${name}» скрыт модератором`
+  : `Ваш отзыв на «${name}» удалён модератором`);
+
 /**
  * Notify review author about moderation action (hide/delete)
  * Called after: setVisibility (hide only), deleteReview
@@ -334,9 +341,7 @@ export const notifyReviewModerated = async (reviewId, action) => {
     );
     const name = establishment ? (establishment.name || 'Заведение') : 'Заведение';
 
-    const message = action === 'hidden'
-      ? `Ваш отзыв на «${name}» скрыт модератором`
-      : `Ваш отзыв на «${name}» удалён модератором`;
+    const message = reviewModeratedMessage(name, action);
 
     await NotificationModel.create({
       userId: review.user_id,
@@ -351,6 +356,34 @@ export const notifyReviewModerated = async (reviewId, action) => {
       error: error.message,
       reviewId,
       action,
+    });
+  }
+};
+
+/**
+ * Notify the authors of a batch of hidden reviews, one notice per review, as
+ * notifyReviewModerated tells them of a single hide, in one statement.
+ * Called after: adminReviewService.hideReviewsBatch, past its COMMIT.
+ *
+ * @param {string[]} reviewIds
+ */
+export const notifyReviewsHidden = async (reviewIds) => {
+  if (reviewIds.length === 0) return;
+
+  const nameSlot = '{name}';
+  try {
+    await NotificationModel.createForReviewAuthors({
+      reviewIds,
+      type: 'review_hidden',
+      title: TITLES.review_hidden,
+      messageTemplate: reviewModeratedMessage(nameSlot, 'hidden'),
+      nameSlot,
+      fallbackName: 'Заведение',
+    });
+  } catch (error) {
+    logger.error('Failed to create batch review moderation notifications', {
+      error: error.message,
+      count: reviewIds.length,
     });
   }
 };
@@ -625,14 +658,59 @@ export const notifyBookingCancelled = async (partnerId, bookingData, establishme
 };
 
 // ============================================================================
-// Promotion notification helpers (NON-BLOCKING)
+// Promotion notification helpers
 // ============================================================================
+
+/**
+ * How many pushes of one mailing go out at a time. Each starts with two reads of
+ * the database (sendPush: preferences, device tokens), so this keeps half of the
+ * pool's default 10 connections free for everyone else's requests, however many
+ * subscribers the establishment has. The mailing takes longer, in the background.
+ */
+const PROMOTION_PUSH_CONCURRENCY = 5;
+
+/**
+ * Send one push to each user, at most PROMOTION_PUSH_CONCURRENCY at a time. One
+ * user's failure does not stop the others.
+ *
+ * @param {string[]} userIds
+ * @param {Object} payload - PushService.sendPush
+ * @param {string} establishmentId
+ * @returns {Promise<void>}
+ */
+const sendPromotionPushes = async (userIds, payload, establishmentId) => {
+  const queue = [...userIds];
+  let failures = 0;
+
+  const sendInTurn = async () => {
+    while (queue.length > 0) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await PushService.sendPush(queue.shift(), payload);
+      } catch {
+        failures += 1;
+      }
+    }
+  };
+
+  const senders = Array.from({ length: PROMOTION_PUSH_CONCURRENCY }, () => sendInTurn());
+  await Promise.all(senders);
+
+  if (failures > 0) {
+    logger.warn('Some promotion notifications failed', {
+      establishmentId,
+      totalUsers: userIds.length,
+      failures,
+    });
+  }
+};
 
 /**
  * Notify all users who favorited an establishment about a new promotion.
  * Called after: promotionService.createPromotion (status = 'active')
  *
- * Uses Promise.allSettled for batch delivery — one user's failure doesn't block others.
+ * The feed is one statement, which the caller waits for; the pushes go on in the
+ * background within a limit.
  *
  * @param {string} establishmentId
  * @param {string} promotionTitle
@@ -645,35 +723,18 @@ export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
     const name = establishment.name || 'Заведение';
     const message = `Новая акция в «${name}»: ${promotionTitle}`;
 
-    const userIds = await FavoriteModel.getUserIdsByEstablishment(establishmentId);
-    if (userIds.length === 0) return;
+    const userIds = await NotificationModel.createForEstablishmentFavorites({
+      establishmentId,
+      type: 'promotion_new',
+      title: TITLES.promotion_new,
+      message,
+    });
 
-    // Batch: create in-app notifications + push for all users
-    const tasks = userIds.flatMap((userId) => [
-      NotificationModel.create({
-        userId,
-        type: 'promotion_new',
-        title: TITLES.promotion_new,
-        message,
-        establishmentId,
-      }),
-      PushService.sendPush(userId, {
-        title: TITLES.promotion_new,
-        message,
-        data: { type: 'promotion_new', establishmentId },
-      }),
-    ]);
-
-    const results = await Promise.allSettled(tasks);
-
-    const failures = results.filter((r) => r.status === 'rejected');
-    if (failures.length > 0) {
-      logger.warn('Some promotion notifications failed', {
-        establishmentId,
-        totalUsers: userIds.length,
-        failures: failures.length,
-      });
-    }
+    sendPromotionPushes(userIds, {
+      title: TITLES.promotion_new,
+      message,
+      data: { type: 'promotion_new', establishmentId },
+    }, establishmentId).catch((err) => logger.error('Push failed for new promotion', { error: err.message }));
   } catch (error) {
     logger.error('Failed to create promotion notifications', {
       error: error.message,
