@@ -198,11 +198,23 @@ describe('workingHoursSanity.checkWorkingHours (pure)', () => {
     ['time out of range', { is_open: true, open: '25:99', close: '22:00' }],
     ['not a time', { open: 'abc', close: 'def' }],
     ['time is not a string', { open: 10, close: 22 }],
+    ['seconds that do not exist', { open: '10:00:99', close: '22:00' }],
     ['empty string', ''],
     ['a number', 42],
   ])('open day without proper times is malformed: %s', (_case, day) => {
     expect(checkWorkingHours({ monday: day, tuesday: '10:00-22:00' }))
       .toEqual({ malformed: true, allClosed: false });
+  });
+
+  // The app and the site read these as filled; the refusal must not name such a day.
+  test.each([
+    ['one-digit hour', { open: '9:00', close: '22:00' }],
+    ['seconds', { open: '10:00:00', close: '22:00:30' }],
+    ['seconds in a string', '10:00:00-22:00:00'],
+  ])('a time the clients read is not malformed: %s', (_case, day) => {
+    expect(checkWorkingHours({ monday: day }))
+      .toEqual({ malformed: false, allClosed: false });
+    expect(incompleteOpenDays({ monday: day })).toEqual([]);
   });
 
   test('a closed day keeps being closed whatever times it carries', () => {

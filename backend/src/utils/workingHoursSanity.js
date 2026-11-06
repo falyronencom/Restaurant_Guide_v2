@@ -22,8 +22,10 @@ const DAY_KEYS = [
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
 ];
 
-// HH:MM in 00:00–23:59; 1-or-2-digit hour (seed writes 2-digit, parser tolerates 1).
-const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+// HH:MM in 00:00–23:59; 1-or-2-digit hour (seed writes 2-digit, parser tolerates 1),
+// optional seconds — the same reading as the app and the site (clockMinutes): a
+// partner must not be refused for a day their screen shows as filled.
+const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
 const isValidTime = (value) => typeof value === 'string' && TIME_RE.test(value.trim());
 
