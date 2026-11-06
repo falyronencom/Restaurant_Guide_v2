@@ -27,6 +27,9 @@ const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
 const isValidTime = (value) => typeof value === 'string' && TIME_RE.test(value.trim());
 
+const isWeekObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
+
 /**
  * Classify a single day entry.
  * @returns {'open' | 'closed' | 'malformed'}
@@ -61,7 +64,7 @@ const classifyDay = (entry) => {
  * (FP>FN: conservative, to avoid false alarms on valid partial weeks).
  */
 export const checkWorkingHours = (workingHours) => {
-  if (workingHours === null || typeof workingHours !== 'object' || Array.isArray(workingHours)) {
+  if (!isWeekObject(workingHours)) {
     return { malformed: true, allClosed: false };
   }
 
@@ -76,4 +79,26 @@ export const checkWorkingHours = (workingHours) => {
   }
 
   return { malformed: anyMalformed, allClosed: !anyOpen };
+};
+
+/**
+ * Days present in the hours but unparseable — above all an open day without a
+ * proper opening and closing time ({ is_open: true, open: '', close: '' }, what
+ * the site's cabinet used to send). In week order. The same days the monitor
+ * above counts as malformed and the guest reads as «Не указано»; the partner's
+ * refusal names them (establishmentService).
+ */
+export const incompleteOpenDays = (workingHours) => {
+  if (!isWeekObject(workingHours)) return [];
+  return DAY_KEYS.filter(
+    (day) => day in workingHours && classifyDay(workingHours[day]) === 'malformed',
+  );
+};
+
+/** At least one day the place works, with both times. */
+export const hasOpenDay = (workingHours) => {
+  if (!isWeekObject(workingHours)) return false;
+  return DAY_KEYS.some(
+    (day) => day in workingHours && classifyDay(workingHours[day]) === 'open',
+  );
 };

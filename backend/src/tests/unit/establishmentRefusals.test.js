@@ -55,6 +55,10 @@ const CALLS = {
     // Поле, которого нет в списке названий, не должно выйти к партнёру по-английски.
     [['some_future_field']],
   ],
+  workingHoursIncomplete: [
+    [['monday']],
+    [['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']],
+  ],
 };
 
 const texts = () => Object.entries(ESTABLISHMENT_REFUSALS).flatMap(([key, value]) => {

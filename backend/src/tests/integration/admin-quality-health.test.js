@@ -26,7 +26,7 @@ import { createUserAndGetTokens } from '../utils/auth.js';
 import { createAdminAndGetToken, createPartnerWithEstablishment } from '../utils/adminTestHelpers.js';
 import * as qualityHealthModel from '../../models/qualityHealthModel.js';
 import * as qualityHealthService from '../../services/qualityHealthService.js';
-import { checkWorkingHours } from '../../utils/workingHoursSanity.js';
+import { checkWorkingHours, hasOpenDay, incompleteOpenDays } from '../../utils/workingHoursSanity.js';
 
 const HEALTH_URL = '/api/v1/admin/quality/health';
 
@@ -189,6 +189,27 @@ describe('workingHoursSanity.checkWorkingHours (pure)', () => {
     expect(checkWorkingHours({ monday: '25:00-30:00' }).malformed).toBe(true);
   });
 
+  // The day the site's cabinet used to send when the partner turned a day on
+  // and typed no time: it must reach the panel's counter.
+  test.each([
+    ['empty times', { is_open: true, open: '', close: '' }],
+    ['one time missing', { is_open: true, open: '10:00' }],
+    ['marked open, no times at all', { is_open: true }],
+    ['time out of range', { is_open: true, open: '25:99', close: '22:00' }],
+    ['not a time', { open: 'abc', close: 'def' }],
+    ['time is not a string', { open: 10, close: 22 }],
+    ['empty string', ''],
+    ['a number', 42],
+  ])('open day without proper times is malformed: %s', (_case, day) => {
+    expect(checkWorkingHours({ monday: day, tuesday: '10:00-22:00' }))
+      .toEqual({ malformed: true, allClosed: false });
+  });
+
+  test('a closed day keeps being closed whatever times it carries', () => {
+    expect(checkWorkingHours({ monday: { is_open: false, open: '', close: '' }, tuesday: '10:00-22:00' }))
+      .toEqual({ malformed: false, allClosed: false });
+  });
+
   test('empty object and explicit-closed week resolve to all-closed', () => {
     expect(checkWorkingHours({})).toEqual({ malformed: false, allClosed: true });
     expect(checkWorkingHours({ monday: { is_open: false } }))
@@ -199,6 +220,38 @@ describe('workingHoursSanity.checkWorkingHours (pure)', () => {
     expect(checkWorkingHours(null)).toEqual({ malformed: true, allClosed: false });
     expect(checkWorkingHours('nope')).toEqual({ malformed: true, allClosed: false });
     expect(checkWorkingHours([1, 2])).toEqual({ malformed: true, allClosed: false });
+  });
+});
+
+describe('workingHoursSanity.incompleteOpenDays / hasOpenDay (pure)', () => {
+  test('days in week order, whatever the order of the keys', () => {
+    expect(incompleteOpenDays({
+      sunday: { is_open: true, open: '', close: '' },
+      tuesday: 'garbage',
+      monday: '10:00-22:00',
+      friday: { is_open: false },
+    })).toEqual(['tuesday', 'sunday']);
+  });
+
+  test('a day that is absent is not named', () => {
+    expect(incompleteOpenDays({ monday: '10:00-22:00' })).toEqual([]);
+    expect(incompleteOpenDays({})).toEqual([]);
+  });
+
+  test('a value that is not a week names nothing and has no working day', () => {
+    for (const value of [null, undefined, 'nope', [1, 2], 42]) {
+      expect(incompleteOpenDays(value)).toEqual([]);
+      expect(hasOpenDay(value)).toBe(false);
+    }
+  });
+
+  test('a working day needs both proper times', () => {
+    expect(hasOpenDay({ monday: '10:00-22:00' })).toBe(true);
+    expect(hasOpenDay({ monday: { open: '10:00', close: '22:00' } })).toBe(true);
+    expect(hasOpenDay({ monday: '14:00-03:00' })).toBe(true);
+    expect(hasOpenDay({ monday: { is_open: true, open: '', close: '' } })).toBe(false);
+    expect(hasOpenDay({ monday: { is_open: false } })).toBe(false);
+    expect(hasOpenDay({})).toBe(false);
   });
 });
 

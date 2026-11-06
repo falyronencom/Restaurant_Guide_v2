@@ -28,6 +28,17 @@ const MISSING_FIELD_NAMES = {
   working_hours: 'часы работы',
 };
 
+/** Days named in the hours refusal, in the accusative («на понедельник»). */
+const DAY_NAMES_ACCUSATIVE = {
+  monday: 'понедельник',
+  tuesday: 'вторник',
+  wednesday: 'среду',
+  thursday: 'четверг',
+  friday: 'пятницу',
+  saturday: 'субботу',
+  sunday: 'воскресенье',
+};
+
 /** Photo buckets named in the limit refusal. */
 const PHOTO_BUCKET_NAMES = {
   interior: 'фото интерьера',
@@ -80,6 +91,18 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
     `Карточка приостановлена до решения модератора: кому она принадлежит. До этого решения отправить её на модерацию нельзя. Если заведение ваше, напишите в поддержку: ${SUPPORT_EMAIL}`,
   editOwnershipDispute:
     `Карточка приостановлена до решения модератора: кому она принадлежит. До этого решения изменить её нельзя. Если заведение ваше, напишите в поддержку: ${SUPPORT_EMAIL}`,
+
+  // A day marked open without a proper opening and closing time: refused when
+  // the card goes to moderation and when a card that is not a draft is saved.
+  // Approved by the Coordinator, 06.11.2026 («Да на 1–6», window of the thread
+  // on working hours).
+  workingHoursIncomplete: (days) => {
+    const names = days.map((day) => DAY_NAMES_ACCUSATIVE[day]).join(', ');
+    const choice = days.length === 1
+      ? 'отметьте этот день выходным'
+      : 'отметьте эти дни выходными';
+    return `Часы работы заполнены не до конца. Укажите время открытия и закрытия на ${names} или ${choice}.`;
+  },
 
   // The legal details of the step «Ваши данные» (create and edit), checked
   // before anything is written: a value longer than its column had been lost
