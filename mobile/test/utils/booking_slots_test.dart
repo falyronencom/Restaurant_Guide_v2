@@ -156,5 +156,27 @@ void main() {
       expect(day.isClosed, isFalse);
       expect(day.slots, isEmpty);
     });
+
+    // Та же запись, что роняла список (проверка 06.11.2026): форма брони читает
+    // её тем же разбором, и время вне суток слотами не становится.
+    for (final entry in <String, Object>{
+      'пустое время': {'is_open': true, 'open': '', 'close': ''},
+      'время, которого нет': {'open': '25:99', 'close': '22:00'},
+      'закрытие, которого нет': {'open': '10:00', 'close': '25:99'},
+      'время буквами': {'open': 'abc', 'close': 'def'},
+      'время числом': {'open': 10, 'close': 22},
+    }.entries) {
+      test('${entry.key} — без слотов, без падения', () {
+        final day = bookingSlotsFor(everyDay(entry.value), monday);
+
+        expect(day.isClosed, isFalse);
+        expect(day.slots, isEmpty);
+      });
+    }
+
+    test('запись, в которой не читается ничего, — как дня нет', () {
+      expect(bookingSlotsFor(everyDay('25:99-abc'), monday).isClosed, isTrue);
+      expect(bookingSlotsFor(everyDay(42), monday).isClosed, isTrue);
+    });
   });
 }

@@ -210,14 +210,33 @@ class PartnerRegistrationProvider with ChangeNotifier {
     final description = _data.description ?? '';
     final priceRange = _data.priceRange;
 
-    // Basic requirements: name (2+ chars) and price range selected.
+    // Basic requirements: name (2+ chars), price range and working hours.
     // Description and phone are optional; a phone, once typed, must be one
     // the server accepts — see [phoneError].
     return name.length >= 2 &&
         (description.isEmpty || description.length >= 5) &&
         phoneError == null &&
+        isHoursStepDone &&
         priceRange != null &&
         priceRange.isNotEmpty;
+  }
+
+  /// Подпись под кнопкой часов на шаге «О заведении»: какие дни отмечены
+  /// рабочими без времени. `null`, если таких нет. Объясняет, почему
+  /// «Продолжить» серая, и видна только при загруженной карточке с таким днём:
+  /// экран часов сам такого сохранить не даст.
+  String? get hoursError {
+    final days = _data.weeklyWorkingHours?.incompleteDays ?? const <int>[];
+    return days.isEmpty ? null : incompleteHoursMessage(days);
+  }
+
+  /// Часы заполнены: нет дня без времени и, при создании карточки, есть хотя бы
+  /// один рабочий день (решение Координатора 06.11.2026, п. 6). При правке
+  /// рабочий день не требуем: не трогая часы, партнёр должен суметь поправить
+  /// название, а карточку без рабочего дня не примет отправка на модерацию.
+  bool get isHoursStepDone {
+    if (hoursError != null) return false;
+    return editMode || (_data.weeklyWorkingHours?.hasWorkingDay ?? false);
   }
 
   /// Same rule as the server (backend/src/constants/belarusPhone.js): +375,

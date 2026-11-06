@@ -426,8 +426,8 @@ class WalkPlaceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final establishment = place.establishment;
-    final open = establishment.isCurrentlyOpen;
-    final closing = establishment.todayClosingTime;
+    final status = establishment.currentOpenStatus;
+    final closing = status.closesAt;
     final thumbnail = establishment.thumbnailUrl;
     Widget placeholder() => Container(
           color: AppTheme.gray200,
@@ -494,16 +494,19 @@ class WalkPlaceCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      open
-                          ? 'Открыто${closing != null ? openUntilSuffix(closing) : ''}'
-                          : 'Закрыто',
+                      '${status.label}'
+                      '${closing != null ? openUntilSuffix(closing) : ''}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: AppTheme.fontBodyFamily,
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: open ? AppTheme.statusGreen : AppTheme.errorRed,
+                        color: switch (status.state) {
+                          OpenState.open => AppTheme.statusGreen,
+                          OpenState.closed => AppTheme.errorRed,
+                          OpenState.unknown => AppTheme.gray600,
+                        },
                       ),
                     ),
                   ],

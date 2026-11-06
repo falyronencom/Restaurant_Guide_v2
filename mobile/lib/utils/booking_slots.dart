@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
 
 /// Время, которое форма брони предлагает гостю на выбранную дату.
 ///
@@ -60,25 +61,14 @@ BookingDaySlots bookingSlotsFor(
     return const BookingDaySlots.closed();
   }
 
-  final opens = _minutes(day['open']);
-  final closes = _minutes(day['close']);
+  final opens = clockMinutes(day['open']);
+  final closes = clockMinutes(day['close']);
   if (opens == null || closes == null) return const BookingDaySlots([]);
 
   final closesOnClock = closes <= opens ? closes + _minutesPerDay : closes;
   final last = math.min(closesOnClock - _step, _latestSlot);
 
   return BookingDaySlots([
-    for (var m = opens; m <= last; m += _step) _label(m),
+    for (var m = opens; m <= last; m += _step) clockLabel(m),
   ]);
 }
-
-int? _minutes(Object? value) {
-  if (value is! String) return null;
-  final match =
-      RegExp(r'^(\d{1,2}):(\d{2})(?::\d{2})?$').firstMatch(value.trim());
-  if (match == null) return null;
-  return int.parse(match[1]!) * 60 + int.parse(match[2]!);
-}
-
-String _label(int minutes) => '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-    '${(minutes % 60).toString().padLeft(2, '0')}';

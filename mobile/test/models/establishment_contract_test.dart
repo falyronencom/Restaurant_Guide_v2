@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
 
 import '../support/wire_fixtures.dart';
 
@@ -333,10 +334,12 @@ void main() {
     });
 
     test('окно через полночь: вечер открыт, ночь открыта, утро закрыто', () {
-      // Бар 18:00–02:00. Ветка, ради которой всё выносилось: время закрытия
-      // меньше времени открытия, и обычное сравнение даёт «закрыто всегда».
+      // Бар 18:00–02:00 всю неделю. Ветка, ради которой всё выносилось: время
+      // закрытия меньше времени открытия, и обычное сравнение даёт «закрыто
+      // всегда». Ночь понедельника — хвост воскресной смены, поэтому расписание
+      // на все дни: на один день её не проверить.
       final e = Establishment.fromJson(
-        establishmentRow(workingHours: hours('18:00-02:00')),
+        establishmentRow(workingHours: _everyDay('18:00-02:00')),
       );
 
       expect(e.isOpenAt(DateTime(2026, 9, 7, 23, 30)), isTrue,
@@ -412,16 +415,20 @@ void main() {
       }
     });
 
-    test('расписания нет вовсе — падаем на статус заведения', () {
+    test('расписания нет вовсе — неизвестно; снятое с показа — закрыто', () {
       final active = Establishment.fromJson(
         without(establishmentRow(), 'working_hours'),
       );
-      expect(active.isOpenAt(DateTime(2026, 9, 7, 3, 0)), isTrue);
+      expect(active.openStatusAt(DateTime(2026, 9, 7, 3, 0)).state,
+          OpenState.unknown);
+      expect(active.isOpenAt(DateTime(2026, 9, 7, 3, 0)), isFalse,
+          reason: 'неизвестные часы — не «открыто»: прогулка и метка серые');
 
       final suspended = Establishment.fromJson(
         without(establishmentRow(status: 'suspended'), 'working_hours'),
       );
-      expect(suspended.isOpenAt(DateTime(2026, 9, 7, 13, 0)), isFalse);
+      expect(suspended.openStatusAt(DateTime(2026, 9, 7, 13, 0)).state,
+          OpenState.closed);
     });
 
     test('время закрытия показывается только в рабочий день', () {
@@ -430,21 +437,274 @@ void main() {
         'tuesday': {'is_open': false},
       }));
 
-      expect(e.closingTimeAt(DateTime(2026, 9, 7, 13, 0)), '22:00');
-      expect(e.closingTimeAt(DateTime(2026, 9, 8, 13, 0)), isNull);
+      expect(e.openStatusAt(DateTime(2026, 9, 7, 13, 0)).closesAt, '22:00');
+      expect(e.openStatusAt(DateTime(2026, 9, 8, 13, 0)).closesAt, isNull);
     });
 
-    test('ГРАНИЦА: выходной без времени закрытия защищён дважды', () {
-      // Честная граница этого файла. `closingTimeAt` проверяет `is_open`
-      // отдельно, но проверка недостижима: `parseDayHours` для выходного
-      // возвращает `{'is_open': false}` вообще без ключа `close`, поэтому
-      // снятие внутренней проверки ничего не меняет — мутация её переживает.
-      // Утверждение ниже верно и нужно, но сторожит оно `parseDayHours`, а не
-      // `closingTimeAt`; отличить их данными нельзя, пока форма выходного дня
-      // такая. Записано в отчёт как мёртвая проверка, а не как покрытие.
+    test('разбор роняет время закрытия у выходного дня', () {
       expect(Establishment.parseDayHours({'is_open': false, 'close': '22:00'}),
-          {'is_open': false},
-          reason: 'разбор сам роняет время закрытия у выходного дня');
+          {'is_open': false});
+    });
+  });
+
+  // Пн 07.09.2026 … Вс 13.09.2026. Числа — литералы: день недели берётся из
+  // момента, поэтому ожидания не зависят от часов машины.
+  group('Соседние дни: ночь принадлежит вчерашней смене', () {
+    DateTime at(int daysFromMonday, int hour, [int minute = 0]) =>
+        DateTime(2026, 9, 7 + daysFromMonday, hour, minute);
+
+    Establishment week(Map<String, dynamic> hours) =>
+        Establishment.fromJson(establishmentRow(workingHours: hours));
+
+    test('пятница 01:00: четверг закрылся в 23:00, а пятница откроется в 12:00',
+        () {
+      // Находка № 2 проверки 06.11.2026: писало «Открыто · до 02:00».
+      final e = week({
+        'thursday': '12:00-23:00',
+        'friday': '12:00-02:00',
+      });
+
+      final status = e.openStatusAt(at(4, 1));
+      expect(status.state, OpenState.closed);
+      expect(status.closesAt, isNull);
+    });
+
+    test('воскресенье 01:00: субботняя смена до 02:00 ещё идёт', () {
+      // Обратный случай той же находки: писало «Закрыто».
+      final e = week({
+        'saturday': '12:00-02:00',
+        'sunday': '12:00-23:00',
+      });
+
+      final status = e.openStatusAt(at(6, 1));
+      expect(status.state, OpenState.open);
+      expect(status.closesAt, '02:00', reason: 'закрытие вчерашней смены');
+    });
+
+    test('переход воскресенье → понедельник', () {
+      final e = week({
+        'sunday': '18:00-03:00',
+        'monday': {'is_open': false},
+      });
+
+      final night = e.openStatusAt(at(0, 2, 59));
+      expect(night.state, OpenState.open, reason: 'понедельник, 02:59');
+      expect(night.closesAt, '03:00');
+      expect(e.openStatusAt(at(0, 3)).state, OpenState.closed,
+          reason: 'понедельник, 03:00 — смена кончилась, день выходной');
+    });
+
+    test('сегодня выходной, но вчерашняя смена не кончилась', () {
+      final e = week({
+        'friday': '18:00-02:00',
+        'saturday': {'is_open': false},
+      });
+
+      expect(e.openStatusAt(at(5, 1)).closesAt, '02:00');
+      expect(e.openStatusAt(at(5, 2)).state, OpenState.closed);
+      expect(e.openStatusAt(at(5, 13)).state, OpenState.closed);
+    });
+
+    test('вчера выходной: ночной хвост сегодняшней записи не считается', () {
+      final e = week({
+        'sunday': {'is_open': false},
+        'monday': '18:00-02:00',
+      });
+
+      expect(e.openStatusAt(at(0, 1)).state, OpenState.closed);
+      expect(e.openStatusAt(at(0, 19)).closesAt, '02:00');
+    });
+
+    test('вчера данных нет: решает сегодняшняя запись', () {
+      final e = week({'monday': '18:00-02:00'});
+
+      expect(e.openStatusAt(at(0, 1)).state, OpenState.closed);
+      expect(e.openStatusAt(at(0, 18)).state, OpenState.open);
+    });
+
+    test('вчера запись битая: не падает, решает сегодняшняя запись', () {
+      final e = week({
+        'sunday': {'is_open': true, 'open': '', 'close': ''},
+        'monday': '10:00-22:00',
+      });
+
+      expect(e.openStatusAt(at(0, 1)).state, OpenState.closed);
+      expect(e.openStatusAt(at(0, 12)).closesAt, '22:00');
+    });
+
+    test('сегодня данных нет: пока идёт вчерашняя смена — открыто, потом '
+        'неизвестно', () {
+      final e = week({'monday': '18:00-02:00'});
+
+      expect(e.openStatusAt(at(1, 1)).closesAt, '02:00',
+          reason: 'вторник, 01:00');
+      expect(e.openStatusAt(at(1, 2)).state, OpenState.unknown,
+          reason: 'вторник, 02:00');
+    });
+
+    test('обычная дневная смена вчера не продолжается ночью', () {
+      final e = week({
+        'monday': '10:00-22:00',
+        'tuesday': '10:00-22:00',
+      });
+
+      expect(e.openStatusAt(at(1, 1)).state, OpenState.closed);
+    });
+
+    test('00:00–00:00 — ровно этот день, без хвоста в следующий', () {
+      final e = week({
+        'monday': '00:00-00:00',
+        'tuesday': {'is_open': false},
+      });
+
+      for (final hour in [0, 1, 12, 23]) {
+        expect(e.openStatusAt(at(0, hour)).state, OpenState.open,
+            reason: 'понедельник, $hour:00');
+      }
+      expect(e.openStatusAt(at(1, 0)).state, OpenState.closed,
+          reason: 'вторник, 00:00');
+    });
+
+    test('00:00–00:00 всю неделю — открыто в любой час', () {
+      final e = week(_everyDay('00:00-00:00'));
+
+      for (var day = 0; day < 7; day++) {
+        for (var hour = 0; hour < 24; hour++) {
+          expect(e.openStatusAt(at(day, hour)).state, OpenState.open,
+              reason: 'день $day, $hour:00');
+        }
+      }
+    });
+
+    test('12:00–12:00 — сутки от часа открытия', () {
+      final e = week({
+        'sunday': {'is_open': false},
+        'monday': '12:00-12:00',
+        'tuesday': {'is_open': false},
+      });
+
+      expect(e.openStatusAt(at(0, 11, 59)).state, OpenState.closed,
+          reason: 'понедельник до открытия');
+      expect(e.openStatusAt(at(0, 12)).state, OpenState.open);
+      expect(e.openStatusAt(at(1, 11, 59)).state, OpenState.open,
+          reason: 'вторник до 12:00 — хвост понедельника');
+      expect(e.openStatusAt(at(1, 12)).state, OpenState.closed);
+    });
+  });
+
+  group('Часы, которые нельзя прочитать: неизвестно, а не падение', () {
+    // Находка № 1 проверки 06.11.2026: `int.parse('')` при отрисовке одной
+    // карточки занимал весь список блоком ошибки и оставлял карту без меток.
+    final broken = <String, Object?>{
+      'пустые строки (так присылал кабинет сайта)': {
+        'is_open': true,
+        'open': '',
+        'close': '',
+      },
+      'одно время пустое': {'is_open': true, 'open': '10:00', 'close': ''},
+      'нет ни одного времени': {'is_open': true},
+      'время не существует': {'open': '25:99', 'close': '22:00'},
+      'минуты не существуют': {'open': '10:60', 'close': '22:00'},
+      'секунды не существуют': {'open': '10:00:99', 'close': '22:00'},
+      'буквы': {'open': 'abc', 'close': 'def'},
+      'хвост после времени': {'open': '10:00abc', 'close': '22:00'},
+      'время не строка': {'open': 10, 'close': 22},
+      'время null': {'open': null, 'close': null},
+      'is_open не логическое': {'is_open': 'нет', 'open': '', 'close': ''},
+      'строка без тире': 'abc',
+      'пустая строка': '',
+      'строка с мусором': '25:99-abc',
+      'лишнее тире': '10:00-22:00-23:00',
+      'число': 42,
+      'список': <Object?>[1, 2],
+      'null': null,
+    };
+
+    broken.forEach((name, entry) {
+      test('$name — неизвестно в любой час', () {
+        final e = Establishment.fromJson(establishmentRow(
+          workingHours: {'monday': entry},
+        ));
+
+        for (var hour = 0; hour < 24; hour++) {
+          final status = e.openStatusAt(DateTime(2026, 9, 7, hour));
+          expect(status.state, OpenState.unknown, reason: '$hour:00');
+          expect(status.closesAt, isNull);
+        }
+      });
+    });
+
+    test('день, которого нет в часах, — неизвестно', () {
+      final e = Establishment.fromJson(establishmentRow(workingHours: {
+        'tuesday': '10:00-22:00',
+      }));
+      expect(e.openStatusAt(DateTime(2026, 9, 7, 13)).state, OpenState.unknown);
+    });
+
+    test('пустой объект часов — неизвестно', () {
+      final e = Establishment.fromJson(establishmentRow(workingHours: {}));
+      expect(e.openStatusAt(DateTime(2026, 9, 7, 13)).state, OpenState.unknown);
+    });
+
+    test('часы не объектом: карточка разбирается, статус неизвестен', () {
+      for (final value in <Object>['10:00-22:00', 42, <Object>[]]) {
+        final row = establishmentRow();
+        row['working_hours'] = value;
+
+        final e = Establishment.fromJson(row);
+
+        expect(e.workingHours, isNull);
+        expect(e.openStatusAt(DateTime(2026, 9, 7, 13)).state, OpenState.unknown);
+      }
+    });
+
+    test('подписи статуса — дословно', () {
+      expect(const OpenStatus.open('22:00').label, 'Открыто');
+      expect(const OpenStatus.closed().label, 'Закрыто');
+      expect(const OpenStatus.unknown().label, 'Часы не указаны');
+    });
+
+    test('время приводится к ЧЧ:ММ: «9:00» и секунды читаются', () {
+      expect(
+        Establishment.parseDayHours({'open': '9:00', 'close': '22:00:00'}),
+        {'open': '09:00', 'close': '22:00', 'is_open': true},
+      );
+      final e = Establishment.fromJson(establishmentRow(workingHours: {
+        'monday': {'open': '9:00', 'close': '22:00:00'},
+      }));
+      expect(e.openStatusAt(DateTime(2026, 9, 7, 9)).closesAt, '22:00');
+    });
+
+    test('рабочий день без времени остаётся рабочим: разбор не делает его '
+        'выходным', () {
+      expect(
+        Establishment.parseDayHours({'is_open': true, 'open': '', 'close': ''}),
+        {'open': null, 'close': null, 'is_open': true},
+      );
+      expect(
+        Establishment.parseDayHours({'open': '10:00', 'close': 'abc'}),
+        {'open': '10:00', 'close': null, 'is_open': true},
+      );
+    });
+
+    test('строка, в которой нет времени, — записи нет', () {
+      expect(Establishment.parseDayHours('25:99-abc'), isNull);
+      expect(Establishment.parseDayHours('abc'), isNull);
+      expect(Establishment.parseDayHours(42), isNull);
     });
   });
 }
+
+/// Одни и те же часы на все семь дней.
+Map<String, dynamic> _everyDay(Object hours) => {
+      for (final day in const [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ])
+        day: hours,
+    };
