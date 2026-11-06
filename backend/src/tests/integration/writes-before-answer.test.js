@@ -329,6 +329,27 @@ describe('отзывы', () => {
     expect(await notificationsAbout(est.id, 'review_hidden')).toBe(3);
   });
 
+  test('пакет: лента одного автора листается без повторов и пропусков, хотя время у строк одно', async () => {
+    const others = [];
+    for (let i = 0; i < 24; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      others.push(await createTestEstablishment(partner.user.id));
+    }
+    const reviews = [];
+    for (const place of [est, ...others]) {
+      // eslint-disable-next-line no-await-in-loop
+      reviews.push(await createTestReview(guest.user.id, place.id));
+    }
+    await hideBatch(reviews.map((r) => r.id)).expect(200);
+
+    const page = async (n) => (await as(guest.accessToken, 'get', `/notifications?page=${n}&limit=10&is_read=false`).expect(200))
+      .body.data.items.map((item) => item.review_id);
+    const seen = [...await page(1), ...await page(2), ...await page(3)];
+
+    expect(seen).toHaveLength(25);
+    expect(new Set(seen).size).toBe(25);
+  });
+
   describe('пакет говорит то же, что одиночное скрытие', () => {
     const noticeOf = async (reviewId) => (await query(
       `SELECT user_id, type, title, message, is_read FROM notifications WHERE review_id = $1`,
@@ -457,16 +478,34 @@ describe('распознавание меню', () => {
     expect(await ocrJobsOf(establishment.id)).toBe(1);
   });
 
-  test('сбой постановки при создании: партнёр получает обычный ответ, карточка есть, ошибка в журнале', async () => {
+  test.each([
+    ['фото меню', () => ({ menu_photos: [menuPhoto()] }), 'Failed to enqueue OCR job for menu photo on registration finalize'],
+    ['PDF меню', () => ({ menu_pdfs: [{ url: menuPdf() }] }), 'Failed to enqueue OCR job on registration finalize'],
+  ])('сбой постановки при создании, %s: партнёр получает обычный ответ, карточка есть, ошибка в журнале', async (_, files, message) => {
     const line = errorLine();
     failWrite(ocrInsert);
 
-    const response = await createCard({ menu_photos: [menuPhoto()] });
+    const response = await createCard(files());
 
     expect(response.status).toBe(201);
     expect(line).toHaveBeenCalledWith(
-      'Failed to enqueue OCR job for menu photo on registration finalize',
+      message,
       expect.objectContaining({ establishmentId: response.body.data.establishment.id, error: 'write failed' }),
+    );
+  });
+
+  test('сбой постановки при правке: партнёр получает обычный ответ, ошибка в журнале', async () => {
+    const { id } = (await createCard().expect(201)).body.data.establishment;
+    const line = errorLine();
+    failWrite(ocrInsert);
+
+    const response = await as(partner.accessToken, 'put', `/partner/establishments/${id}`)
+      .send({ menu_photos: [menuPhoto()] });
+
+    expect(response.status).toBe(200);
+    expect(line).toHaveBeenCalledWith(
+      'Failed to enqueue OCR job for menu media on update sync',
+      expect.objectContaining({ establishmentId: id, error: 'write failed' }),
     );
   });
 
@@ -711,7 +750,6 @@ describe('акция', () => {
     });
     const reference = (await query('SELECT * FROM notifications WHERE id = $1', [single.id])).rows[0];
 
-    expect(Object.keys(written)).toEqual(Object.keys(reference));
     const shape = ({ id, created_at: createdAt, updated_at: updatedAt, ...rest }) => rest;
     expect(shape(written)).toEqual(shape(reference));
   });

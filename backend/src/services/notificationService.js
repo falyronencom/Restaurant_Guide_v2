@@ -4,9 +4,9 @@
  * Core notification methods + trigger helpers called from other services.
  * Trigger helpers catch errors internally and never break the primary operation
  * (same pattern as audit log). What they write to the feed is a short database
- * write, and the callers wait for it: a restart cannot lose it, and no write
- * outlives the request. The push is the network: it stays in the background,
- * inside the helper, and no caller waits for it.
+ * write, and a request waits for it before it answers: a restart cannot lose it,
+ * and no write outlives the request. The push is the network: it stays in the
+ * background, inside the helper, and no caller waits for it.
  */
 
 import * as NotificationModel from '../models/notificationModel.js';
@@ -419,7 +419,7 @@ export const notifyEstablishmentClaimed = async (establishmentId, newPartnerId) 
 };
 
 // ============================================================================
-// Booking notification helpers (NON-BLOCKING)
+// Booking notification helpers
 // ============================================================================
 
 /**
@@ -662,46 +662,43 @@ export const notifyBookingCancelled = async (partnerId, bookingData, establishme
 // ============================================================================
 
 /**
- * How many pushes of one mailing go out at a time. Each starts with two reads of
- * the database (sendPush: preferences, device tokens), so this keeps half of the
- * pool's default 10 connections free for everyone else's requests, however many
- * subscribers the establishment has. The mailing takes longer, in the background.
+ * How many pushes of promotion mailings go out at a time, in this process, however
+ * many mailings are under way and however many subscribers they have. Each push
+ * starts with two reads of the database (sendPush: preferences, device tokens),
+ * so this keeps half of the pool's default 10 connections free for everyone else's
+ * requests. A mailing takes longer, in the background.
  */
 const PROMOTION_PUSH_CONCURRENCY = 5;
 
+/** Pushes of promotion mailings waiting for their turn, oldest first. */
+const pendingPromotionPushes = [];
+let promotionPushSenders = 0;
+
+/** Send pending pushes one after another until none is left. */
+const sendPendingPromotionPushes = async () => {
+  promotionPushSenders += 1;
+  while (pendingPromotionPushes.length > 0) {
+    const { userId, payload } = pendingPromotionPushes.shift();
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await PushService.sendPush(userId, payload);
+    } catch (error) {
+      logger.error('Push failed for new promotion', { error: error.message, userId });
+    }
+  }
+  promotionPushSenders -= 1;
+};
+
 /**
- * Send one push to each user, at most PROMOTION_PUSH_CONCURRENCY at a time. One
- * user's failure does not stop the others.
+ * Put one push to each user in line, and start senders up to the limit.
  *
  * @param {string[]} userIds
  * @param {Object} payload - PushService.sendPush
- * @param {string} establishmentId
- * @returns {Promise<void>}
  */
-const sendPromotionPushes = async (userIds, payload, establishmentId) => {
-  const queue = [...userIds];
-  let failures = 0;
-
-  const sendInTurn = async () => {
-    while (queue.length > 0) {
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        await PushService.sendPush(queue.shift(), payload);
-      } catch {
-        failures += 1;
-      }
-    }
-  };
-
-  const senders = Array.from({ length: PROMOTION_PUSH_CONCURRENCY }, () => sendInTurn());
-  await Promise.all(senders);
-
-  if (failures > 0) {
-    logger.warn('Some promotion notifications failed', {
-      establishmentId,
-      totalUsers: userIds.length,
-      failures,
-    });
+const queuePromotionPushes = (userIds, payload) => {
+  userIds.forEach((userId) => pendingPromotionPushes.push({ userId, payload }));
+  while (promotionPushSenders < PROMOTION_PUSH_CONCURRENCY && pendingPromotionPushes.length > 0) {
+    sendPendingPromotionPushes();
   }
 };
 
@@ -730,11 +727,11 @@ export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
       message,
     });
 
-    sendPromotionPushes(userIds, {
+    queuePromotionPushes(userIds, {
       title: TITLES.promotion_new,
       message,
       data: { type: 'promotion_new', establishmentId },
-    }, establishmentId).catch((err) => logger.error('Push failed for new promotion', { error: err.message }));
+    });
   } catch (error) {
     logger.error('Failed to create promotion notifications', {
       error: error.message,
@@ -744,7 +741,7 @@ export const notifyPromotionNew = async (establishmentId, promotionTitle) => {
 };
 
 // ============================================================================
-// Menu / OCR notification helpers (NON-BLOCKING)
+// Menu / OCR notification helpers
 // ============================================================================
 
 /**

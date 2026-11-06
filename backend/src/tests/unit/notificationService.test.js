@@ -983,36 +983,69 @@ describe('notificationService', () => {
       expect(NotificationModel.createForEstablishmentFavorites).not.toHaveBeenCalled();
     });
 
-    test('returns with the pushes still hanging: the answer does not wait for the network', async () => {
-      NotificationModel.createForEstablishmentFavorites.mockResolvedValue([uuidv4()]);
-      PushService.sendPush.mockImplementationOnce(() => new Promise(() => {}));
-
-      await expect(notifyPromotionNew(establishmentId, 'Акция')).resolves.toBeUndefined();
-    });
-
-    test('at most 5 pushes at a time, and every subscriber gets one', async () => {
-      const userIds = Array.from({ length: 12 }, () => uuidv4());
-      NotificationModel.createForEstablishmentFavorites.mockResolvedValue(userIds);
+    /** Pushes that hang until the test lets them go, one at a time. */
+    const holdPushes = () => {
       const hanging = [];
       PushService.sendPush.mockImplementation(() => new Promise((resolve) => { hanging.push(resolve); }));
+      return hanging;
+    };
+
+    /** The line of pushes is shared by the process: leave it empty for the next test. */
+    const releaseAll = async (hanging) => {
+      for (let released = 0; released < hanging.length; released += 1) {
+        hanging[released]();
+        // eslint-disable-next-line no-await-in-loop
+        await flush();
+      }
+    };
+
+    test('returns with the pushes still hanging: the answer does not wait for the network', async () => {
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue([uuidv4()]);
+      const hanging = holdPushes();
+
+      await expect(notifyPromotionNew(establishmentId, 'Акция')).resolves.toBeUndefined();
+
+      await flush();
+      expect(hanging).toHaveLength(1);
+      await releaseAll(hanging);
+    });
+
+    test('at most 5 pushes at a time, and every subscriber gets one, in turn', async () => {
+      const userIds = Array.from({ length: 12 }, () => uuidv4());
+      NotificationModel.createForEstablishmentFavorites.mockResolvedValue(userIds);
+      const hanging = holdPushes();
 
       await notifyPromotionNew(establishmentId, 'Акция');
       await flush();
       expect(hanging).toHaveLength(5);
 
-      for (let released = 0; released < 12; released += 1) {
-        hanging[released]();
-        // eslint-disable-next-line no-await-in-loop
-        await flush();
-        expect(hanging.length - (released + 1)).toBeLessThanOrEqual(5);
-      }
+      hanging[0]();
+      await flush();
+      expect(hanging).toHaveLength(6);
 
+      await releaseAll(hanging);
       expect(hanging).toHaveLength(12);
       expect(PushService.sendPush.mock.calls.map(([uid]) => uid)).toEqual(userIds);
-      PushService.sendPush.mockResolvedValue(undefined);
     });
 
-    test('one failed push does not stop the others and is counted in the log', async () => {
+    test('two mailings at once share the same 5: the limit holds for the process', async () => {
+      const first = Array.from({ length: 4 }, () => uuidv4());
+      const second = Array.from({ length: 4 }, () => uuidv4());
+      NotificationModel.createForEstablishmentFavorites
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second);
+      const hanging = holdPushes();
+
+      await notifyPromotionNew(establishmentId, 'Первая акция');
+      await notifyPromotionNew(establishmentId, 'Вторая акция');
+      await flush();
+      expect(hanging).toHaveLength(5);
+
+      await releaseAll(hanging);
+      expect(PushService.sendPush.mock.calls.map(([uid]) => uid)).toEqual([...first, ...second]);
+    });
+
+    test('a push that fails goes to the log and the others still go out', async () => {
       const userIds = Array.from({ length: 7 }, () => uuidv4());
       NotificationModel.createForEstablishmentFavorites.mockResolvedValue(userIds);
       PushService.sendPush.mockRejectedValueOnce(new Error('FCM refused'));
@@ -1021,10 +1054,9 @@ describe('notificationService', () => {
       await flush();
 
       expect(PushService.sendPush).toHaveBeenCalledTimes(7);
-      expect(logger.warn).toHaveBeenCalledWith('Some promotion notifications failed', {
-        establishmentId,
-        totalUsers: 7,
-        failures: 1,
+      expect(logger.error).toHaveBeenCalledWith('Push failed for new promotion', {
+        error: 'FCM refused',
+        userId: userIds[0],
       });
     });
 
@@ -1108,7 +1140,7 @@ describe('notificationService', () => {
       );
       ReviewModel.findReviewById.mockResolvedValue(createMockReview({ id: reviewId, user_id: userId }));
       NotificationModel.create.mockResolvedValue({ id: uuidv4() });
-      PushService.sendPush.mockImplementationOnce(() => new Promise(() => {}));
+      PushService.sendPush.mockImplementation(() => new Promise(() => {}));
 
       await expect(act()).resolves.toBeUndefined();
 

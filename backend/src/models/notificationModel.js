@@ -129,7 +129,8 @@ export const createForEstablishmentFavorites = async ({ establishmentId, type, t
  * One notice to the author of each of the given reviews, in one statement. The
  * same reading as one notice at a time: a review with no author is passed over
  * (ReviewModel.findReviewById joins users), and the message names the review's
- * establishment, or `fallbackName` if it has no name or is gone.
+ * establishment, or `fallbackName` if it has no name or is gone. All the notices
+ * share one created_at, so the feed orders by id as well (getByUserId).
  *
  * @param {Object} data
  * @param {string[]} data.reviewIds
@@ -241,7 +242,7 @@ export const getByUserId = async (userId, options = {}) => {
       n.is_read, n.created_at
     FROM notifications n
     WHERE ${whereClause}
-    ORDER BY n.created_at DESC
+    ORDER BY n.created_at DESC, n.id DESC
     LIMIT $${paramIndex++} OFFSET $${paramIndex++}
   `;
 

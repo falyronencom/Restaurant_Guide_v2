@@ -354,7 +354,7 @@ describe('Media System - Upload Operations', () => {
         const released = new Promise((resolve) => { release = resolve; });
         let markReached;
         const reached = new Promise((resolve) => { markReached = resolve; });
-        const spy = interceptOcrInsert(async (write) => {
+        interceptOcrInsert(async (write) => {
           markReached();
           await released;
           return write();
@@ -375,7 +375,6 @@ describe('Media System - Upload Operations', () => {
         }
 
         expect((await pending).status).toBe(201);
-        spy.mockRestore();
         expect(await jobs()).toBe(1);
       });
 
@@ -385,7 +384,7 @@ describe('Media System - Upload Operations', () => {
       ])('%s: a failed job leaves the answer as it was and goes to the log', async (_, upload, line) => {
         const { default: logger } = await import('../../utils/logger.js');
         const errorLine = jest.spyOn(logger, 'error').mockImplementation(() => logger);
-        const spy = interceptOcrInsert(async () => { throw new Error('write failed'); });
+        interceptOcrInsert(async () => { throw new Error('write failed'); });
 
         const response = await upload();
 
@@ -395,8 +394,6 @@ describe('Media System - Upload Operations', () => {
           line,
           expect.objectContaining({ establishmentId: establishment.id, error: 'write failed' }),
         );
-        spy.mockRestore();
-        errorLine.mockRestore();
       });
     });
 
