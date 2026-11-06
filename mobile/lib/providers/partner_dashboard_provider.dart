@@ -249,7 +249,11 @@ class PartnerDashboardProvider with ChangeNotifier {
       // Update in local list
       final index = _establishments.indexWhere((e) => e.id == id);
       if (index != -1) {
-        _establishments[index] = updated;
+        // В ответе на правку нет `share_count` (он приходит только со списком):
+        // без этого после сохранения значок на карточке показал бы 0.
+        _establishments[index] = updated.copyWith(
+          stats: updated.stats.withShares(_establishments[index].stats.shares),
+        );
       }
 
       // Update selected if it's the same

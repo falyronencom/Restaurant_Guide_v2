@@ -49,8 +49,17 @@ class _Auth extends AuthProvider {
 /// именно канал, а не обёртка плагина: до него доходит всё, что отправил
 /// плагин, включая рамку кнопки для iPad.
 class _ShareChannel {
-  _ShareChannel({this.fail = false});
+  _ShareChannel({this.fail = false, this.answer = _unavailable});
   final bool fail;
+
+  /// Что отвечает меню: имя выбранного приложения, пустая строка — меню
+  /// закрыли, [_unavailable] — плагин не знает, что сделал человек.
+  final String answer;
+
+  static const _unavailable = 'dev.fluttercommunity.plus/share/unavailable';
+  static const chosenApp = 'com.whatsapp/.ContactPicker';
+  static const closed = '';
+
   final List<Map<Object?, Object?>> calls = [];
 
   static const channel = MethodChannel('dev.fluttercommunity.plus/share');
@@ -64,7 +73,7 @@ class _ShareChannel {
         throw PlatformException(
             code: 'error', message: 'No root view controller found');
       }
-      return 'dev.fluttercommunity.plus/share/unavailable';
+      return answer;
     });
     addTearDown(() => TestDefaultBinaryMessengerBinding
         .instance.defaultBinaryMessenger
@@ -116,8 +125,8 @@ void _useScreen(WidgetTester tester) {
 /// Ответ сервера на отзывы: тест кладёт сюда строки перед `_stand`.
 List<Map<String, dynamic>> _reviews = [];
 
-void _stand(Map<String, dynamic> row) {
-  installWireStand((options) {
+StubAdapter _stand(Map<String, dynamic> row) {
+  return installWireStand((options) {
     final path = options.uri.path;
     if (path == '/api/v1/search/establishments/$_id') {
       return jsonBody({'success': true, 'data': row});
@@ -381,6 +390,80 @@ void main() {
           findsOneWidget,
           reason: 'отказ плагина прошёл без следа — «ничего не происходит»');
       expect(copied, contains('Васильки — ресторан'));
+    });
+
+    // Счётчик партнёра: на сервер уходит только настоящий выбор в меню.
+    group('запись для счётчика «Поделились»', () {
+      const trackPath = '/api/v1/establishments/$_id/track-share';
+
+      Iterable<String> tracked(StubAdapter wire) => wire.requests
+          .where((r) => r.uri.path == trackPath)
+          .map((r) => r.method);
+
+      testWidgets('выбрали приложение в меню — одна запись', (tester) async {
+        _ShareChannel(answer: _ShareChannel.chosenApp).install();
+        final wire = _stand(_row());
+        await _pumpDetail(tester);
+
+        await tester.tap(find.byIcon(Icons.ios_share));
+        await tester.pumpAndSettle();
+
+        expect(tracked(wire), ['POST']);
+      });
+
+      testWidgets('закрыли меню — записи нет', (tester) async {
+        _ShareChannel(answer: _ShareChannel.closed).install();
+        final wire = _stand(_row());
+        await _pumpDetail(tester);
+
+        await tester.tap(find.byIcon(Icons.ios_share));
+        await tester.pumpAndSettle();
+
+        expect(tracked(wire), isEmpty);
+      });
+
+      testWidgets('плагин не знает, что сделал человек, — записи нет',
+          (tester) async {
+        _ShareChannel().install();
+        final wire = _stand(_row());
+        await _pumpDetail(tester);
+
+        await tester.tap(find.byIcon(Icons.ios_share));
+        await tester.pumpAndSettle();
+
+        expect(tracked(wire), isEmpty);
+      });
+
+      testWidgets('меню отказало — записи нет', (tester) async {
+        _ShareChannel(fail: true).install();
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(
+                SystemChannels.platform, (call) async => null);
+        addTearDown(() => TestDefaultBinaryMessengerBinding
+            .instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null));
+        final wire = _stand(_row());
+        await _pumpDetail(tester);
+
+        await tester.tap(find.byIcon(Icons.ios_share));
+        await tester.pumpAndSettle();
+
+        expect(tracked(wire), isEmpty);
+      });
+
+      testWidgets('ссылка на сайт заведения из листа — не отправка карточки',
+          (tester) async {
+        _ShareChannel(answer: _ShareChannel.chosenApp).install();
+        final wire = _stand(_row());
+        await _pumpDetail(tester);
+
+        await tester.tap(find.text('Сайт'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Поделиться'));
+        await tester.pumpAndSettle();
+
+        expect(tracked(wire), isEmpty);
+      });
     });
   });
 

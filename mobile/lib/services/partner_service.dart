@@ -211,6 +211,12 @@ class PartnerService {
     _apiClient.post('/api/v1/establishments/$establishmentId/track-call').ignore();
   }
 
+  /// Записать, что карточку отправили через меню «Поделиться» (без ожидания
+  /// ответа: сбой записи человеку не виден и отправке не мешает).
+  void trackShare(String establishmentId) {
+    _apiClient.post('/api/v1/establishments/$establishmentId/track-share').ignore();
+  }
+
   // ============================================================================
   // Check Partner Status
   // ============================================================================

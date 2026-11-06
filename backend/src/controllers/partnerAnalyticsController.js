@@ -6,6 +6,7 @@
  *
  * Endpoints:
  *   POST /api/v1/establishments/:id/track-call    — record phone tap
+ *   POST /api/v1/establishments/:id/track-share   — record the card sent on
  *   GET  /api/v1/partner/analytics/overview        — per-establishment metrics
  *   GET  /api/v1/partner/analytics/trends          — time-series for charts
  *   GET  /api/v1/partner/analytics/ratings         — rating distribution
@@ -29,7 +30,8 @@ const extractPeriodParams = (query) => ({
  * POST /api/v1/establishments/:id/track-call
  *
  * Lightweight endpoint for recording phone tap events.
- * No auth required (public action triggered from mobile detail page).
+ * No auth required (public action: the mobile detail page and, through its
+ * own route, the site's establishment page).
  */
 export const trackCall = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -39,6 +41,23 @@ export const trackCall = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: { message: 'Call event recorded' },
+  });
+});
+
+/**
+ * POST /api/v1/establishments/:id/track-share
+ *
+ * Lightweight endpoint: someone sent the card on through the app's menu.
+ * No auth required (public action triggered from mobile detail page).
+ */
+export const trackShare = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  await partnerAnalyticsService.trackShare(id);
+
+  res.status(200).json({
+    success: true,
+    data: { message: 'Share event recorded' },
   });
 });
 

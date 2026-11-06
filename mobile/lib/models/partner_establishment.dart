@@ -226,6 +226,19 @@ class EstablishmentStats {
     if (ratingDistribution != null) 'rating_distribution': ratingDistribution!.map((k, v) => MapEntry(k.toString(), v)),
   };
 
+  /// Те же числа с другим счётчиком «Поделились».
+  EstablishmentStats withShares(int value) => EstablishmentStats(
+    views: views,
+    viewsTrend: viewsTrend,
+    shares: value,
+    sharesTrend: sharesTrend,
+    favorites: favorites,
+    favoritesTrend: favoritesTrend,
+    reviews: reviews,
+    averageRating: averageRating,
+    ratingDistribution: ratingDistribution,
+  );
+
   /// Create empty stats
   static const EstablishmentStats empty = EstablishmentStats();
 }
@@ -416,6 +429,7 @@ class PartnerEstablishment {
     } else {
       stats = EstablishmentStats(
         views: _parseIntSafe(json['view_count']),
+        shares: _parseIntSafe(json['share_count']),
         favorites: _parseIntSafe(json['favorite_count']),
         reviews: _parseIntSafe(json['review_count']),
         averageRating: _parseDoubleSafe(json['average_rating']),

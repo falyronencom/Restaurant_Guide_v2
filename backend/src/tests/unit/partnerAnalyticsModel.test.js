@@ -103,6 +103,22 @@ describe('trackCall', () => {
 // Analytics Queries
 // ============================================================================
 
+describe('trackShare', () => {
+  it('executes UPSERT for share_count', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+    await Model.trackShare(EST_ID);
+    const [sql, params] = mockQuery.mock.calls[0];
+    expect(sql).toContain('share_count');
+    expect(sql).toContain('ON CONFLICT');
+    expect(params).toEqual([EST_ID]);
+  });
+
+  it('does not throw on query error (the column may not be there yet)', async () => {
+    mockQuery.mockRejectedValue(new Error('column "share_count" does not exist'));
+    await expect(Model.trackShare(EST_ID)).resolves.toBeUndefined();
+  });
+});
+
 describe('getMetricsInPeriod', () => {
   it('returns empty object for empty ID list', async () => {
     const result = await Model.getMetricsInPeriod([], new Date(), new Date());
@@ -113,13 +129,13 @@ describe('getMetricsInPeriod', () => {
   it('returns map of establishment_id to metrics', async () => {
     mockQuery.mockResolvedValue({
       rows: [
-        { establishment_id: EST_ID, views: 10, favorites: 2, calls: 1 },
+        { establishment_id: EST_ID, views: 10, favorites: 2, calls: 1, shares: 4 },
       ],
     });
     const result = await Model.getMetricsInPeriod(
       [EST_ID], new Date('2026-03-01'), new Date('2026-03-15')
     );
-    expect(result[EST_ID]).toEqual({ views: 10, favorites: 2, calls: 1 });
+    expect(result[EST_ID]).toEqual({ views: 10, favorites: 2, calls: 1, shares: 4 });
   });
 });
 
