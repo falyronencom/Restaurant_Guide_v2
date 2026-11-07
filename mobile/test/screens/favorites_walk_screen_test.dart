@@ -79,12 +79,26 @@ class _AlwaysHereGeolocator extends GeolocatorPlatform {
 
 /// Строка избранного в [meters] к северу от человека; без [meters] — без
 /// координат. Без фото: плейсхолдер CachedNetworkImage крутится вечно.
+/// Круглосуточно: «Открыто сейчас» оставляет только места с известными часами,
+/// а от часов машины тест зависеть не должен.
 Map<String, dynamic> _row(String id, {double? meters}) {
   final row = favoriteRow(id: id, name: 'Место $id');
   final at = meters == null ? null : pointAtDistance(_me, meters, 0);
   row['establishment_latitude'] = at?.latitude;
   row['establishment_longitude'] = at?.longitude;
   row['establishment_primary_image'] = null;
+  row['establishment_working_hours'] = {
+    for (final day in const [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ])
+      day: '00:00-00:00',
+  };
   return row;
 }
 

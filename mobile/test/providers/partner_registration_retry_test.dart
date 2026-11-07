@@ -70,6 +70,9 @@ const _completeCard = PartnerRegistration(
   cuisineTypes: ['european'],
   name: 'Кофейня у моста',
   priceRange: r'$$',
+  weeklyWorkingHours: WeeklyWorkingHours(
+    monday: DayWorkingHours(isOpen: true, openTime: '10:00', closeTime: '22:00'),
+  ),
   interiorPhotos: ['https://res.cloudinary.com/demo/image/upload/a.jpg'],
   menuPhotos: ['https://res.cloudinary.com/demo/image/upload/b.jpg'],
   menuPdfs: [_pdf],
@@ -435,6 +438,7 @@ void main() {
     p.updateCategories(['cafe']);
     p.updateCuisineTypes(['european']);
     p.updateBasicInfo(name: 'Вторая', priceRange: r'$');
+    p.updateWeeklyWorkingHours(_completeCard.weeklyWorkingHours!);
     for (final url in _completeCard.interiorPhotos) {
       p.addInteriorPhoto(url);
     }

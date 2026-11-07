@@ -71,11 +71,47 @@ void main() {
           isNot(base));
       expect(pinContent([_establishment('b'), _establishment('a')]),
           isNot(base));
-      // Без часов работы открытость берётся из статуса: active — открыто.
+      // Без часов работы место не открыто: круглосуточное отличается от него.
       expect(
-          pinContent(
-              [_establishment('a'), _establishment('b', status: 'suspended')]),
+          pinContent([
+            _establishment('a'),
+            _establishment('b', hours: {
+              for (final day in const [
+                'monday',
+                'tuesday',
+                'wednesday',
+                'thursday',
+                'friday',
+                'saturday',
+                'sunday',
+              ])
+                day: '00:00-00:00',
+            }),
+          ]),
           isNot(base));
+    });
+
+    test('битые часы не роняют подсчёт содержимого', () {
+      // Сборка меток считает его до первого пина: падение здесь — пустая карта
+      // и «Не удалось загрузить заведения» при ответе сервера 200.
+      final broken = {
+        for (final day in const [
+          'monday',
+          'tuesday',
+          'wednesday',
+          'thursday',
+          'friday',
+          'saturday',
+          'sunday',
+        ])
+          day: {'is_open': true, 'open': '', 'close': ''},
+      };
+
+      expect(
+        pinContent([_establishment('a', hours: broken)],
+            at: DateTime(2026, 9, 29, 12)),
+        ['a', 53.9, 27.57, false],
+      );
     });
 
     test('те же заведения в другой момент — другое содержимое, если '

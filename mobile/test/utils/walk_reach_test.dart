@@ -268,6 +268,28 @@ void main() {
       expect((open.shown, open.inCircle, open.total), (1, 2, 4));
     });
 
+    test('часы неизвестны или битые: «Открыто сейчас» места не показывает, '
+        'без отбора оно есть (решение Координатора 06.11.2026)', () {
+      final places = [
+        _place('открытое', meters: 200),
+        _place('нет часов', meters: 100).copyWith(workingHours: const {}),
+        _place('без времени', meters: 150).copyWith(workingHours: const {
+          'saturday': {'is_open': true, 'open': '', 'close': ''},
+        }),
+      ];
+      // 17.10.2026 — суббота.
+      final moment = DateTime(2026, 10, 17, 15, 0);
+
+      final all = walkReach(places, from: _me, minutes: 15, at: moment);
+      final open = walkReach(places,
+          from: _me, minutes: 15, openNowOnly: true, at: moment);
+
+      expect(all.places.map((p) => p.establishment.id),
+          ['нет часов', 'без времени', 'открытое']);
+      expect(open.places.map((p) => p.establishment.id), ['открытое']);
+      expect((open.shown, open.inCircle, open.total), (1, 3, 3));
+    });
+
     test('ничего в круге — пустая шторка, M прежнее', () {
       final reach = walkReach(
         [_place('далеко', meters: 5000), _place('без координат')],

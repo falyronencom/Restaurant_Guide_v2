@@ -87,7 +87,7 @@ class SummaryStep extends StatelessWidget {
       ),
       _ChecklistItem(
         title: 'Время работы',
-        isCompleted: _isWorkingHoursCompleted(provider),
+        isCompleted: provider.isHoursStepDone,
       ),
       _ChecklistItem(
         title: 'Заполните адрес',
@@ -238,11 +238,6 @@ class SummaryStep extends StatelessWidget {
     return data.interiorPhotos.isNotEmpty && data.menuPhotos.isNotEmpty;
   }
 
-  bool _isWorkingHoursCompleted(PartnerRegistrationProvider provider) {
-    final hours = provider.data.weeklyWorkingHours;
-    return hours?.hasAnyHours ?? false;
-  }
-
   bool _isAddressCompleted(PartnerRegistrationProvider provider) {
     final data = provider.data;
     return (data.city?.isNotEmpty ?? false) &&
@@ -254,6 +249,7 @@ class SummaryStep extends StatelessWidget {
     return provider.data.categories.isNotEmpty &&
         provider.isCuisineStepDone &&
         _isBasicInfoCompleted(provider) &&
+        provider.isHoursStepDone &&
         _isMediaCompleted(provider) &&
         _isAddressCompleted(provider) &&
         _isLegalInfoCompleted(provider);

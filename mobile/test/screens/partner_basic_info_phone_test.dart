@@ -34,6 +34,10 @@ void main() {
       initialData: const PartnerRegistration(
         name: 'Кофейня у моста',
         priceRange: r'$$',
+        weeklyWorkingHours: WeeklyWorkingHours(
+          monday:
+              DayWorkingHours(isOpen: true, openTime: '10:00', closeTime: '22:00'),
+        ),
       ),
     );
     await tester.pumpWidget(

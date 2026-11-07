@@ -30,6 +30,9 @@ const _completeCard = PartnerRegistration(
   // Итоговый шаг экрана не даёт нажать «Отправить» без телефона.
   phone: '+375291234567',
   priceRange: r'$$',
+  weeklyWorkingHours: WeeklyWorkingHours(
+    monday: DayWorkingHours(isOpen: true, openTime: '10:00', closeTime: '22:00'),
+  ),
   interiorPhotos: ['https://res.cloudinary.com/demo/image/upload/a.jpg'],
   menuPhotos: ['https://res.cloudinary.com/demo/image/upload/b.jpg'],
   primaryPhotoUrl: 'https://res.cloudinary.com/demo/image/upload/a.jpg',

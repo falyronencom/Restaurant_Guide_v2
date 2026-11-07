@@ -661,7 +661,9 @@ class _EstablishmentPreviewScreenState
                 ),
               ),
               Text(
-                '${day.openTime ?? ''} - ${day.closeTime ?? ''}',
+                day.isComplete
+                    ? '${day.openTime} - ${day.closeTime}'
+                    : 'Не указано',
                 style: const TextStyle(
                   fontSize: 16,
                   color: AppTheme.textPrimary,

@@ -3,6 +3,9 @@
 /// Phase 5.1 - Partner Registration Flow
 library partner_registration;
 
+import 'package:restaurant_guide_mobile/models/establishment.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
+
 /// Working hours for a single period (weekdays or weekends)
 class WorkingHoursPeriod {
   final String open;
@@ -85,17 +88,40 @@ class DayWorkingHours {
     this.closeTime,
   });
 
+  /// Выходной заполнен всегда; рабочий день — только с обоими правильными
+  /// временами. Такой день сервер не принимает при отправке на модерацию и при
+  /// правке опубликованной карточки.
+  bool get isComplete =>
+      !isOpen ||
+      (clockMinutes(openTime) != null && clockMinutes(closeTime) != null);
+
   Map<String, dynamic> toJson() => {
         'is_open': isOpen,
         if (openTime != null) 'open': openTime,
         if (closeTime != null) 'close': closeTime,
       };
 
-  factory DayWorkingHours.fromJson(Map<String, dynamic> json) {
+  /// Запись дня с сервера в любом виде: объект, строка импорта «10:00-22:00» или
+  /// мусор. Выходной остаётся выходным. Всё остальное, что не читается как часы,
+  /// — записи на день нет, время пустое (сайт присылал `open: ''`), мусор, — рабочий
+  /// день без времени: партнёр увидит, что день не заполнен, и решит сам. Прочитанный
+  /// как выходной, день без записи при первом сохранении мастера стал бы им
+  /// на сервере, и гость читал бы «Закрыто» про день, который никто не закрывал.
+  factory DayWorkingHours.fromJson(Object? json) {
+    if (json is Map && json['is_open'] == false) {
+      // Время выходного дня хранится: включив день снова, партнёр его увидит.
+      final open = clockMinutes(json['open']);
+      final close = clockMinutes(json['close']);
+      return DayWorkingHours(
+        openTime: open == null ? null : clockLabel(open),
+        closeTime: close == null ? null : clockLabel(close),
+      );
+    }
+    final parsed = Establishment.parseDayHours(json);
     return DayWorkingHours(
-      isOpen: json['is_open'] as bool? ?? false,
-      openTime: json['open'] as String?,
-      closeTime: json['close'] as String?,
+      isOpen: true,
+      openTime: parsed?['open'] as String?,
+      closeTime: parsed?['close'] as String?,
     );
   }
 
@@ -177,6 +203,17 @@ class WeeklyWorkingHours {
       saturday.isOpen ||
       sunday.isOpen;
 
+  /// Номера дней (0 — понедельник), отмеченных рабочими без правильного времени.
+  List<int> get incompleteDays => [
+        for (var i = 0; i < DayNames.days.length; i++)
+          if (!getDay(i).isComplete) i,
+      ];
+
+  /// Есть хотя бы один рабочий день с обоими временами.
+  bool get hasWorkingDay => [
+        for (var i = 0; i < DayNames.days.length; i++) getDay(i),
+      ].any((day) => day.isOpen && day.isComplete);
+
   Map<String, dynamic> toJson() => {
         'monday': monday.toJson(),
         'tuesday': tuesday.toJson(),
@@ -189,27 +226,13 @@ class WeeklyWorkingHours {
 
   factory WeeklyWorkingHours.fromJson(Map<String, dynamic> json) {
     return WeeklyWorkingHours(
-      monday: json['monday'] != null
-          ? DayWorkingHours.fromJson(json['monday'])
-          : const DayWorkingHours(),
-      tuesday: json['tuesday'] != null
-          ? DayWorkingHours.fromJson(json['tuesday'])
-          : const DayWorkingHours(),
-      wednesday: json['wednesday'] != null
-          ? DayWorkingHours.fromJson(json['wednesday'])
-          : const DayWorkingHours(),
-      thursday: json['thursday'] != null
-          ? DayWorkingHours.fromJson(json['thursday'])
-          : const DayWorkingHours(),
-      friday: json['friday'] != null
-          ? DayWorkingHours.fromJson(json['friday'])
-          : const DayWorkingHours(),
-      saturday: json['saturday'] != null
-          ? DayWorkingHours.fromJson(json['saturday'])
-          : const DayWorkingHours(),
-      sunday: json['sunday'] != null
-          ? DayWorkingHours.fromJson(json['sunday'])
-          : const DayWorkingHours(),
+      monday: DayWorkingHours.fromJson(json['monday']),
+      tuesday: DayWorkingHours.fromJson(json['tuesday']),
+      wednesday: DayWorkingHours.fromJson(json['wednesday']),
+      thursday: DayWorkingHours.fromJson(json['thursday']),
+      friday: DayWorkingHours.fromJson(json['friday']),
+      saturday: DayWorkingHours.fromJson(json['saturday']),
+      sunday: DayWorkingHours.fromJson(json['sunday']),
     );
   }
 }
@@ -225,6 +248,29 @@ class DayNames {
     'Суббота',
     'Воскресенье',
   ];
+
+  /// В винительном падеже — для «укажите время на понедельник».
+  static const List<String> daysAccusative = [
+    'понедельник',
+    'вторник',
+    'среду',
+    'четверг',
+    'пятницу',
+    'субботу',
+    'воскресенье',
+  ];
+}
+
+/// Что не так с часами, в которых дни [dayIndexes] отмечены рабочими без
+/// времени. Слова утверждены Координатором 06.11.2026 («Да на 1–6») — те же, что
+/// у отказа сервера (`workingHoursIncomplete` в `establishmentRefusals.js`).
+String incompleteHoursMessage(List<int> dayIndexes) {
+  final names = dayIndexes.map((i) => DayNames.daysAccusative[i]).join(', ');
+  final choice = dayIndexes.length == 1
+      ? 'отметьте этот день выходным'
+      : 'отметьте эти дни выходными';
+  return 'Часы работы заполнены не до конца. Укажите время открытия и закрытия '
+      'на $names или $choice.';
 }
 
 /// Address information for establishment
@@ -406,24 +452,18 @@ class PartnerRegistration {
       attributesObject[attr] = true;
     }
 
-    // Build working hours - use weekly if available, otherwise create default
-    Map<String, dynamic> workingHoursJson;
-    if (weeklyWorkingHours != null) {
-      workingHoursJson = weeklyWorkingHours!.toJson();
-    } else if (workingHours != null) {
-      workingHoursJson = workingHours!.toJson();
-    } else {
-      // Default working hours (required by backend)
-      workingHoursJson = {
-        'monday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
-        'tuesday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
-        'wednesday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
-        'thursday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
-        'friday': {'is_open': true, 'open': '09:00', 'close': '21:00'},
-        'saturday': {'is_open': true, 'open': '10:00', 'close': '22:00'},
-        'sunday': {'is_open': true, 'open': '10:00', 'close': '22:00'},
-      };
-    }
+    // Часов нет — поля нет. Прежде здесь подставлялись Пн–Пт 09:00–21:00 и
+    // Сб–Вс 10:00–22:00: гость видел часы, которых партнёр не указывал, а правка
+    // карточки без часов их записывала (решение Координатора 06.11.2026, п. 6).
+    // Шаг «О заведении» теперь без рабочего дня не пропускает.
+    //
+    // Часы с незаполненным днём — тоже без поля. Правка адреса или фото шлёт всю
+    // карточку, и сервер отказал бы ей целиком: день чинится на экране часов, а
+    // хранимые часы до тех пор не трогаем. Как на сайте (`toUpdatePayload`).
+    final weekly = weeklyWorkingHours;
+    final workingHoursJson = weekly != null && weekly.incompleteDays.isNotEmpty
+        ? null
+        : weekly?.toJson() ?? workingHours?.toJson();
 
     return {
       'name': name,
@@ -439,8 +479,7 @@ class PartnerRegistration {
       // Coordinates
       'latitude': latitude ?? CityOptions.coordinatesFor(city ?? 'Минск').$1,
       'longitude': longitude ?? CityOptions.coordinatesFor(city ?? 'Минск').$2,
-      // Working hours (required)
-      'working_hours': workingHoursJson,
+      if (workingHoursJson != null) 'working_hours': workingHoursJson,
       // Optional fields
       if (phone != null && phone!.isNotEmpty)
         'phone': phone!.replaceAll(' ', ''),
