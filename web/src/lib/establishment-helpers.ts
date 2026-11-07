@@ -5,6 +5,8 @@
  * No DOM, no I/O — safe in both Server and Client components.
  */
 
+import { parseDayHours } from '@/lib/working-hours';
+
 /**
  * How many reviews the establishment detail page shows (the carousel); the rest
  * are on «Все отзывы». Shared by the page and reloadReviewsAction, which
@@ -218,8 +220,9 @@ export function pluralizeReviews(count: number): string {
  *   - Object closed: { is_open: false }
  *
  * Returns null when the input is malformed (defensive — caller renders
- * a 'график не указан' fallback). Mirrors `Establishment.parseDayHours`
- * from mobile/lib/models/establishment.dart:214.
+ * a 'график не указан' fallback). A day comes out only as a day off or with
+ * both proper times (parseDayHours of lib/working-hours); anything else is null,
+ * so a guest and the schema markup never get «25:99» or an empty time.
  */
 export type ParsedDayHours = {
   is_open: boolean;
@@ -248,20 +251,10 @@ export function normalizeWorkingHours(
 }
 
 function parseDay(value: unknown): ParsedDayHours | null {
-  if (value == null) return null;
-  if (typeof value === 'string') {
-    const parts = value.split('-');
-    if (parts.length === 2) {
-      return { is_open: true, open: parts[0].trim(), close: parts[1].trim() };
-    }
-    return null;
-  }
-  if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>;
-    if (obj.is_open === false) return { is_open: false };
-    const open = typeof obj.open === 'string' ? obj.open : undefined;
-    const close = typeof obj.close === 'string' ? obj.close : undefined;
-    if (open && close) return { is_open: true, open, close };
-  }
-  return null;
+  const day = parseDayHours(value);
+  if (!day) return null;
+  if (!day.isOpen) return { is_open: false };
+  return day.open && day.close
+    ? { is_open: true, open: day.open, close: day.close }
+    : null;
 }

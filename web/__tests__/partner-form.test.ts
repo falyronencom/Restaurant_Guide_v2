@@ -112,6 +112,48 @@ describe('toUpdatePayload', () => {
  * стёртое шлётся явно: '' для описания, {} для удобств, null для телефона,
  * почты, сайта и среднего чека — и только если на сервере значение было.
  */
+describe('toUpdatePayload — часы с незаполненным днём', () => {
+  const hours = (tuesday: { isOpen: boolean; open: string; close: string }) => ({
+    ...emptyForm().workingHours,
+    monday: { isOpen: true, open: '10:00', close: '22:00' },
+    tuesday,
+  });
+
+  it('пока у открытого дня нет времени, часы не отправляются, остальное — как обычно', () => {
+    const u = toUpdatePayload({
+      ...emptyForm(),
+      name: 'Бар',
+      description: 'Новое описание',
+      workingHours: hours({ isOpen: true, open: '12:00', close: '' }),
+    });
+
+    expect('working_hours' in u).toBe(false);
+    expect(u.description).toBe('Новое описание');
+  });
+
+  it('день заполнен — часы уходят целиком', () => {
+    const u = toUpdatePayload({
+      ...emptyForm(),
+      name: 'Бар',
+      workingHours: hours({ isOpen: true, open: '12:00', close: '02:00' }),
+    });
+
+    expect(u.working_hours?.monday).toEqual({ is_open: true, open: '10:00', close: '22:00' });
+    expect(u.working_hours?.tuesday).toEqual({ is_open: true, open: '12:00', close: '02:00' });
+    expect(u.working_hours?.sunday).toEqual({ is_open: false });
+  });
+
+  it('день снова выходной — часы уходят: пустое время выходному не мешает', () => {
+    const u = toUpdatePayload({
+      ...emptyForm(),
+      name: 'Бар',
+      workingHours: hours({ isOpen: false, open: '', close: '' }),
+    });
+
+    expect(u.working_hours?.tuesday).toEqual({ is_open: false });
+  });
+});
+
 describe('toUpdatePayload — стёртые поля', () => {
   const filled = (): WizardFormState => ({
     ...emptyForm(),
@@ -225,6 +267,34 @@ describe('fromDetail (edit / copy hydration)', () => {
       close: '18:00',
     });
     expect(f.workingHours.tuesday.isOpen).toBe(false);
+  });
+
+  it.each<[string, unknown]>([
+    ['пустое время (так сохранял кабинет)', { is_open: true, open: '', close: '' }],
+    ['время, которого нет', { is_open: true, open: '25:99', close: 'abc' }],
+    ['время числом', { open: 10, close: 22 }],
+    ['строка с мусором', '25:99-abc'],
+    ['число', 42],
+  ])('%s — открытый день с пустым временем, а не выходной', (_, entry) => {
+    const f = fromDetail(detail({ working_hours: { monday: entry } }));
+    expect(f.workingHours.monday).toEqual({ isOpen: true, open: '', close: '' });
+  });
+
+  it('одно правильное время сохраняется', () => {
+    const f = fromDetail(
+      detail({ working_hours: { monday: { open: '10:00', close: '' } } }),
+    );
+    expect(f.workingHours.monday).toEqual({ isOpen: true, open: '10:00', close: '' });
+  });
+
+  it('дня нет в записи — день не заполнен, а не выходной: автосохранение не должно его закрыть', () => {
+    const blank = { isOpen: true, open: '', close: '' };
+    expect(fromDetail(detail({ working_hours: {} })).workingHours.monday).toEqual(blank);
+    expect(fromDetail(detail({ working_hours: null })).workingHours.monday).toEqual(blank);
+
+    const f = fromDetail(detail({ working_hours: { monday: '10:00-22:00' } }));
+    expect(f.workingHours.tuesday).toEqual(blank);
+    expect('working_hours' in toUpdatePayload(f)).toBe(false);
   });
 
   it('parses legacy string working hours', () => {

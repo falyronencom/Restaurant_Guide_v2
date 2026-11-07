@@ -7,7 +7,7 @@
 import { clientCompleteness } from '@/lib/partner/completeness';
 import { CUISINE_OPTIONAL_CATEGORIES, isCuisineRequired } from '@/lib/partner/constants';
 import { emptyForm, type WizardFormState } from '@/lib/partner/form';
-import { evaluateE1, meetsValidatorMinimum } from '@/lib/partner/validation';
+import { evaluateE1, incompleteDays, meetsValidatorMinimum } from '@/lib/partner/validation';
 
 function photo(i: number) {
   return { url: `https://cdn.example/p${i}.jpg` };
@@ -51,6 +51,18 @@ describe('meetsValidatorMinimum', () => {
   ])('is false when everything but the %s is filled', (_, missing) => {
     expect(meetsValidatorMinimum(complete)).toBe(true); // fixture guard
     expect(meetsValidatorMinimum({ ...complete, ...missing })).toBe(false);
+  });
+
+  it('is false while an open day has no times, however complete another day is', () => {
+    expect(
+      meetsValidatorMinimum({
+        ...complete,
+        workingHours: {
+          ...complete.workingHours,
+          tuesday: { isOpen: true, open: '', close: '' },
+        },
+      }),
+    ).toBe(false);
   });
 
   it('is false for an empty form', () => {
@@ -157,6 +169,49 @@ describe('evaluateE1', () => {
       hours: false,
       passed: false,
     });
+  });
+
+  // The site's own part of finding 1 of 06.11.2026: a day turned on with no time
+  // passed the gate as long as one other day was complete, and the server stored
+  // { is_open: true, open: '', close: '' }.
+  it.each<[string, { open: string; close: string }]>([
+    ['both times empty', { open: '', close: '' }],
+    ['opening empty', { open: '', close: '22:00' }],
+    ['closing empty', { open: '10:00', close: '' }],
+    ['a time that does not exist', { open: '25:99', close: '22:00' }],
+  ])('fails hours (and overall) on an open day with %s, beside a complete day', (_, times) => {
+    const f = {
+      ...ready,
+      workingHours: {
+        ...ready.workingHours,
+        tuesday: { isOpen: true, ...times },
+      },
+    };
+    expect(evaluateE1(ready).hours).toBe(true); // fixture guard
+    expect(evaluateE1(f)).toMatchObject({ hours: false, passed: false });
+    expect(incompleteDays(f)).toEqual(['tuesday']);
+  });
+
+  it('a day off with empty times is complete', () => {
+    const f = {
+      ...ready,
+      workingHours: {
+        ...ready.workingHours,
+        tuesday: { isOpen: false, open: '', close: '' },
+      },
+    };
+    expect(incompleteDays(f)).toEqual([]);
+    expect(evaluateE1(f).hours).toBe(true);
+  });
+
+  it('names every such day in week order', () => {
+    const empty = { isOpen: true, open: '', close: '' };
+    expect(
+      incompleteDays({
+        ...ready,
+        workingHours: { ...ready.workingHours, sunday: empty, tuesday: empty },
+      }),
+    ).toEqual(['tuesday', 'sunday']);
   });
 
   it('menu is satisfied by a PDF alone', () => {

@@ -155,9 +155,13 @@ function HoursFact({ workingHours }: { workingHours: unknown }) {
   );
 }
 
+/**
+ * A day without data is not a day off (Coordinator, 06.11.2026): the status badge
+ * over it reads «Часы не указаны».
+ */
 function formatDay(hours: ParsedDayHours | null): string {
-  if (hours == null || hours.is_open === false) return 'Выходной';
-  if (!hours.open || !hours.close) return 'Выходной';
+  if (hours?.is_open === false) return 'Выходной';
+  if (!hours?.open || !hours.close) return 'Не указано';
   return `${hours.open} – ${hours.close}`;
 }
 
