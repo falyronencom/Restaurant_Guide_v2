@@ -45,6 +45,10 @@ const NOT_FOUND = 'Заведение не найдено — возможно, 
 // Утверждены Координатором 15.10.2026 (форма приложения их не допускает).
 const UNKNOWN_CATEGORY = 'Такой категории нет в списке. Выберите категорию заново.';
 const INTERIOR_LIMIT = 'Можно добавить не больше 30 фото интерьера.';
+// Утверждены Координатором 06.11.2026 («Да на 1–6»).
+const HOURS_ONE_DAY = 'Часы работы заполнены не до конца. Укажите время открытия и закрытия на понедельник или отметьте этот день выходным.';
+const HOURS_TWO_DAYS = 'Часы работы заполнены не до конца. Укажите время открытия и закрытия на понедельник, среду или отметьте эти дни выходными.';
+const FILL_HOURS = 'Перед отправкой на модерацию заполните: часы работы.';
 
 let accountSeq = 0;
 const newPartner = async () => {
@@ -225,6 +229,95 @@ describe('Отказы по карточке — тексты, которые ч
     const photos = Array.from({ length: 31 }, (_, i) => `https://res.cloudinary.com/test/image/upload/v1/establishments/temp/x/p${i}`);
     const res = await as(partner).create({ ...testEstablishments[0], name: 'Много фото', interior_photos: photos });
     expect(refusal(res)).toEqual({ http: 403, code: 'MEDIA_LIMIT_EXCEEDED', message: INTERIOR_LIMIT });
+  });
+});
+
+describe('Часы работы: открытый день без времени (решение Координатора 06.11.2026)', () => {
+  // То, что слал кабинет сайта, когда партнёр включал день и не вводил время.
+  const NO_TIMES = { is_open: true, open: '', close: '' };
+  const FULL_WEEK = { monday: '10:00-22:00', tuesday: { is_open: true, open: '10:00', close: '02:00' }, sunday: { is_open: false } };
+
+  const setHours = (id, hours) => query('UPDATE establishments SET working_hours = $2 WHERE id = $1', [id, JSON.stringify(hours)]);
+  const hoursOf = async (id) => (await query(
+    'SELECT status, working_hours FROM establishments WHERE id = $1',
+    [id],
+  )).rows[0];
+
+  it.each(['active', 'pending', 'rejected'])('правка карточки «%s»: отказ, день назван, часы не тронуты', async (status) => {
+    const id = await card(partner, { status });
+    await setHours(id, FULL_WEEK);
+
+    const res = await as(partner).update(id, {
+      working_hours: { ...FULL_WEEK, monday: NO_TIMES },
+      description: 'Не сохранится',
+    });
+
+    expect(refusal(res)).toEqual({ http: 422, code: 'WORKING_HOURS_INCOMPLETE', message: HOURS_ONE_DAY });
+    expect((await hoursOf(id)).working_hours).toEqual(FULL_WEEK);
+    expect((await stored(id)).description).toBe('Test Description');
+  });
+
+  it('правка карточки, приостановленной модератором: тоже отказ — снятие приостановки вернёт её гостям', async () => {
+    const id = await card(partner, { status: 'suspended', notes: JSON.stringify({ suspend_reason: 'Проверьте меню' }) });
+
+    const res = await as(partner).update(id, { working_hours: { monday: NO_TIMES, wednesday: 'abc' } });
+
+    expect(refusal(res)).toEqual({ http: 422, code: 'WORKING_HOURS_INCOMPLETE', message: HOURS_TWO_DAYS });
+  });
+
+  it('черновик сохраняется с незаполненным днём, отправка на модерацию — нет', async () => {
+    const id = await card(partner, { status: 'draft' });
+
+    const saved = await as(partner).update(id, { working_hours: { ...FULL_WEEK, monday: NO_TIMES, wednesday: NO_TIMES } });
+    expect(saved.status).toBe(200);
+    expect((await hoursOf(id)).working_hours.monday).toEqual(NO_TIMES);
+
+    const sent = await as(partner).submit(id);
+    expect(refusal(sent)).toEqual({ http: 422, code: 'WORKING_HOURS_INCOMPLETE', message: HOURS_TWO_DAYS });
+    expect((await hoursOf(id)).status).toBe('draft');
+  });
+
+  it('создание черновика с незаполненным днём проходит', async () => {
+    const res = await as(partner).create({
+      ...testEstablishments[0],
+      name: 'Черновик без времени',
+      working_hours: { monday: '10:00-22:00', tuesday: NO_TIMES },
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.establishment.status).toBe('draft');
+  });
+
+  it('день заполнен — черновик уходит на модерацию, опубликованная карточка сохраняется', async () => {
+    const draft = await card(partner, { status: 'draft' });
+    await setHours(draft, { ...FULL_WEEK, monday: NO_TIMES });
+    expect((await as(partner).update(draft, { working_hours: FULL_WEEK })).status).toBe(200);
+    expect((await as(partner).submit(draft)).status).toBe(200);
+    expect((await hoursOf(draft)).status).toBe('pending');
+
+    const active = await card(partner, { status: 'active' });
+    expect((await as(partner).update(active, { working_hours: FULL_WEEK })).status).toBe(200);
+    expect((await hoursOf(active)).working_hours).toEqual(FULL_WEEK);
+  });
+
+  it('правка опубликованной карточки без часов в теле их не проверяет', async () => {
+    const id = await card(partner, { status: 'active' });
+    await setHours(id, { monday: NO_TIMES });
+
+    const res = await as(partner).update(id, { description: 'Новое описание' });
+    expect(res.status).toBe(200);
+    expect((await stored(id)).description).toBe('Новое описание');
+  });
+
+  it.each([
+    ['пустые часы', {}],
+    ['все дни выходные', { monday: { is_open: false }, tuesday: { is_open: false } }],
+  ])('отправка на модерацию без единого рабочего дня: %s', async (_case, hours) => {
+    const id = await card(partner, { status: 'draft' });
+    await setHours(id, hours);
+
+    const res = await as(partner).submit(id);
+    expect(refusal(res)).toEqual({ http: 400, code: 'INCOMPLETE_ESTABLISHMENT', message: FILL_HOURS });
+    expect((await hoursOf(id)).status).toBe('draft');
   });
 });
 

@@ -22,10 +22,15 @@ const DAY_KEYS = [
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
 ];
 
-// HH:MM in 00:00–23:59; 1-or-2-digit hour (seed writes 2-digit, parser tolerates 1).
-const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+// HH:MM in 00:00–23:59; 1-or-2-digit hour (seed writes 2-digit, parser tolerates 1),
+// optional seconds — the same reading as the app and the site (clockMinutes): a
+// partner must not be refused for a day their screen shows as filled.
+const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 
 const isValidTime = (value) => typeof value === 'string' && TIME_RE.test(value.trim());
+
+const isWeekObject = (value) =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * Classify a single day entry.
@@ -61,7 +66,7 @@ const classifyDay = (entry) => {
  * (FP>FN: conservative, to avoid false alarms on valid partial weeks).
  */
 export const checkWorkingHours = (workingHours) => {
-  if (workingHours === null || typeof workingHours !== 'object' || Array.isArray(workingHours)) {
+  if (!isWeekObject(workingHours)) {
     return { malformed: true, allClosed: false };
   }
 
@@ -76,4 +81,26 @@ export const checkWorkingHours = (workingHours) => {
   }
 
   return { malformed: anyMalformed, allClosed: !anyOpen };
+};
+
+/**
+ * Days present in the hours but unparseable — above all an open day without a
+ * proper opening and closing time ({ is_open: true, open: '', close: '' }, what
+ * the site's cabinet used to send). In week order. The same days the monitor
+ * above counts as malformed and the guest reads as «Не указано»; the partner's
+ * refusal names them (establishmentService).
+ */
+export const incompleteOpenDays = (workingHours) => {
+  if (!isWeekObject(workingHours)) return [];
+  return DAY_KEYS.filter(
+    (day) => day in workingHours && classifyDay(workingHours[day]) === 'malformed',
+  );
+};
+
+/** At least one day the place works, with both times. */
+export const hasOpenDay = (workingHours) => {
+  if (!isWeekObject(workingHours)) return false;
+  return DAY_KEYS.some(
+    (day) => day in workingHours && classifyDay(workingHours[day]) === 'open',
+  );
 };
