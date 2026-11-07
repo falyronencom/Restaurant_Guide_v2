@@ -30,32 +30,48 @@ describe('OpenStatusBadge — client island', () => {
 
   it('renders the open state with a closing time after mount', () => {
     (computeOpenStatus as jest.Mock).mockReturnValue({
-      isOpen: true,
+      state: 'open',
       closingTime: '22:00',
-      source: 'workingHours',
     });
 
     const { container } = render(
       <OpenStatusBadge workingHours={{}} status="active" />,
     );
 
-    expect(screen.getByText('Открыто')).toBeInTheDocument();
+    expect(screen.getByText('Открыто')).toHaveClass('text-success-status');
     expect(container).toHaveTextContent('Открыто · до 22:00');
   });
 
   it('renders the closed state without a closing time', () => {
     (computeOpenStatus as jest.Mock).mockReturnValue({
-      isOpen: false,
+      state: 'closed',
       closingTime: null,
-      source: 'workingHours',
     });
 
     const { container } = render(
       <OpenStatusBadge workingHours={{}} status="inactive" />,
     );
 
-    expect(screen.getByText('Закрыто')).toBeInTheDocument();
+    expect(screen.getByText('Закрыто')).toHaveClass('text-destructive');
     expect(screen.queryByText('Открыто')).not.toBeInTheDocument();
+    expect(container).not.toHaveTextContent('до');
+  });
+
+  it('renders unknown hours in a neutral colour, not as a green «Открыто»', () => {
+    (computeOpenStatus as jest.Mock).mockReturnValue({
+      state: 'unknown',
+      closingTime: null,
+    });
+
+    const { container } = render(
+      <OpenStatusBadge workingHours={{}} status="active" />,
+    );
+
+    expect(screen.getByText('Часы не указаны')).toHaveClass(
+      'text-muted-foreground',
+    );
+    expect(screen.queryByText('Открыто')).not.toBeInTheDocument();
+    expect(screen.queryByText('Закрыто')).not.toBeInTheDocument();
     expect(container).not.toHaveTextContent('до');
   });
 });

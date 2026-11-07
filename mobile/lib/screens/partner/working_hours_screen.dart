@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/models/partner_registration.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
 
 /// Working Hours Selection Screen
 /// Allows user to set working hours for each day of the week
@@ -26,6 +27,14 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
   static const Color _lightOrange = AppTheme.primaryOrangeLight;
   static const Color _greyStroke = AppTheme.strokeGrey;
   static const Color _greyText = Color(0xFF9D9D9D);
+
+  // Время, которое день получает, когда партнёр его включает: оно сразу видно
+  // на экране и его можно поменять.
+  static const String _defaultOpen = '09:00';
+  static const String _defaultClose = '22:00';
+
+  /// Вместо времени, которого в рабочем дне нет.
+  static const String _noTime = '--:--';
 
   @override
   void initState() {
@@ -185,7 +194,7 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                 Expanded(
                   child: _buildTimePicker(
                     label: 'Открытие',
-                    time: dayHours.openTime ?? '09:00',
+                    time: dayHours.openTime ?? _noTime,
                     onTap: () => _selectTime(dayIndex, true),
                   ),
                 ),
@@ -194,12 +203,22 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
                 Expanded(
                   child: _buildTimePicker(
                     label: 'Закрытие',
-                    time: dayHours.closeTime ?? '22:00',
+                    time: dayHours.closeTime ?? _noTime,
                     onTap: () => _selectTime(dayIndex, false),
                   ),
                 ),
               ],
             ),
+            // Загруженная карточка, где день отмечен рабочим без времени (так
+            // сохранял кабинет сайта). Прежде экран рисовал здесь 09:00 и 22:00,
+            // которых в карточке нет и которые на сервер не уходили.
+            if (!dayHours.isComplete) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Укажите время открытия и закрытия',
+                style: TextStyle(fontSize: 13, color: AppTheme.errorRed),
+              ),
+            ],
           ] else ...[
             const SizedBox(height: 8),
             const Text(
@@ -349,8 +368,8 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
     final currentDay = _hours.getDay(dayIndex);
     final updatedDay = currentDay.copyWith(
       isOpen: isOpen,
-      openTime: isOpen ? (currentDay.openTime ?? '09:00') : null,
-      closeTime: isOpen ? (currentDay.closeTime ?? '22:00') : null,
+      openTime: isOpen ? (currentDay.openTime ?? _defaultOpen) : null,
+      closeTime: isOpen ? (currentDay.closeTime ?? _defaultClose) : null,
     );
 
     setState(() {
@@ -363,10 +382,12 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
     final currentDay = _hours.getDay(dayIndex);
     final currentTimeStr =
         isOpenTime ? currentDay.openTime : currentDay.closeTime;
-    final parts = (currentTimeStr ?? '09:00').split(':');
+    final fallback = isOpenTime ? _defaultOpen : _defaultClose;
+    final initialMinutes =
+        clockMinutes(currentTimeStr) ?? clockMinutes(fallback)!;
     final initialTime = TimeOfDay(
-      hour: int.parse(parts[0]),
-      minute: int.parse(parts[1]),
+      hour: initialMinutes ~/ 60,
+      minute: initialMinutes % 60,
     );
 
     final TimeOfDay? picked = await showTimePicker(
@@ -406,8 +427,22 @@ class _WorkingHoursScreenState extends State<WorkingHoursScreen> {
     }
   }
 
-  /// Save and return to previous screen
+  /// Save and return to previous screen. День, отмеченный рабочим без времени,
+  /// сохранить нельзя: гость не увидел бы его часов, а сервер такое не примет.
   void _saveAndReturn(BuildContext context) {
+    final incomplete = _hours.incompleteDays;
+    if (incomplete.isNotEmpty) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(incompleteHoursMessage(incomplete)),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppTheme.errorRed,
+          ),
+        );
+      return;
+    }
     Navigator.of(context).pop(_hours);
   }
 }

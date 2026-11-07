@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from 'react';
 
-import { computeOpenStatus, type OpenStatus } from '@/lib/working-hours';
+import {
+  computeOpenStatus,
+  type OpenState,
+  type OpenStatus,
+} from '@/lib/working-hours';
+
+const STATE_LOOK: Record<OpenState, { label: string; className: string }> = {
+  open: { label: 'Открыто', className: 'text-success-status' },
+  closed: { label: 'Закрыто', className: 'text-destructive' },
+  unknown: { label: 'Часы не указаны', className: 'text-muted-foreground' },
+};
 
 /**
  * Live open/closed badge — client island.
@@ -25,6 +35,7 @@ import { computeOpenStatus, type OpenStatus } from '@/lib/working-hours';
  * Color mapping (mirrors mobile establishment_card.dart status block):
  *   "Открыто"   → success-status (#34C759, Figma open green)
  *   "Закрыто"   → destructive (mobile uses Colors.red; mapped to shadcn destructive)
+ *   "Часы не указаны" → muted-foreground (hours unknown; Coordinator, 06.11.2026)
  *   "· до HH:MM" → muted-foreground (neutral suffix)
  */
 export function OpenStatusBadge({
@@ -47,16 +58,12 @@ export function OpenStatusBadge({
     );
   }
 
+  const look = STATE_LOOK[openStatus.state];
+
   return (
     <span className='text-body-m font-medium'>
-      <span
-        className={
-          openStatus.isOpen ? 'text-success-status' : 'text-destructive'
-        }
-      >
-        {openStatus.isOpen ? 'Открыто' : 'Закрыто'}
-      </span>
-      {openStatus.isOpen && openStatus.closingTime && (
+      <span className={look.className}>{look.label}</span>
+      {openStatus.closingTime && (
         <span className='font-normal text-muted-foreground'>
           {' · до '}
           {openStatus.closingTime}

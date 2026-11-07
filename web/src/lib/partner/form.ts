@@ -9,7 +9,6 @@
  * media image/PDF separation it needs.
  */
 
-import { normalizeWorkingHours } from '@/lib/establishment-helpers';
 import type {
   CreateEstablishmentPayload,
   DayHours,
@@ -25,6 +24,8 @@ import {
   type DayKey,
 } from '@/lib/partner/constants';
 import { contactValue } from '@/lib/partner/contacts';
+import { incompleteDays } from '@/lib/partner/validation';
+import { parseDayHours } from '@/lib/working-hours';
 
 /** An uploaded establishment/menu photo (temp-upload result, minus PDF fields). */
 export type WizardPhoto = {
@@ -207,6 +208,13 @@ export function toUpdatePayload(
       ...form.menuPdfs.map((p) => p.url),
     ],
   };
+  // Autosave runs while the partner is still typing: a day just turned on has no
+  // times yet. The server would refuse the whole edit of a card that is not a
+  // draft, so until every open day has both times the hours stay in the form and
+  // the stored ones are left alone; everything else is saved as usual. Leaving the
+  // page before that drops the hours edit: the wizard says they are not saved
+  // next to the save state.
+  if (incompleteDays(form).length > 0) delete payload.working_hours;
   if (saved) {
     const erased = (now: string, before: string) =>
       now.trim() === '' && before.trim() !== '';
@@ -236,6 +244,20 @@ function pdfFileName(url: string): string {
 }
 
 /**
+ * A stored day as the form shows it. A day off stays a day off. Anything else that
+ * does not read as hours — no record for the day, empty times, garbage — is an open
+ * day with empty times: the partner sees it unfinished and decides, and until then
+ * the stored hours are left alone (toUpdatePayload). Read as a day off, a day
+ * without a record would be written as one by the autosave that follows simply
+ * opening the page, and guests would read «Закрыто» for a day nobody closed.
+ */
+function dayFromServer(entry: unknown): DayHoursForm {
+  const parsed = parseDayHours(entry);
+  if (parsed && !parsed.isOpen) return { isOpen: false, open: '', close: '' };
+  return { isOpen: true, open: parsed?.open ?? '', close: parsed?.close ?? '' };
+}
+
+/**
  * Hydrate the wizard from an existing establishment (edit mode). The detail's
  * menu_photos mixes images and PDFs (both type='menu'); they are separated by a
  * '.pdf' url heuristic — sufficient because PDFs render as icons (no thumbnail
@@ -244,14 +266,10 @@ function pdfFileName(url: string): string {
  * split). Attributes are filtered to the canon (legacy non-canon keys dropped).
  */
 export function fromDetail(d: PartnerEstablishmentDetail): WizardFormState {
-  const normalized = normalizeWorkingHours(d.working_hours);
+  const storedHours = (d.working_hours ?? {}) as Record<string, unknown>;
   const workingHours = {} as Record<DayKey, DayHoursForm>;
   for (const day of DAY_KEYS) {
-    const parsed = normalized?.[day] ?? null;
-    workingHours[day] =
-      parsed && parsed.is_open
-        ? { isOpen: true, open: parsed.open ?? '', close: parsed.close ?? '' }
-        : { isOpen: false, open: '', close: '' };
+    workingHours[day] = dayFromServer(storedHours[day]);
   }
 
   const attrs = d.attributes ?? {};
