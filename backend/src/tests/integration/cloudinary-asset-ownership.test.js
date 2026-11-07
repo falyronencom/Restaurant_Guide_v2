@@ -108,9 +108,29 @@ describe('Путь A: POST /auth/avatar уничтожает прежний ав
       .expect(200);
 
     expect(destroy).toHaveBeenCalledTimes(1);
-    expect(destroy).toHaveBeenCalledWith(`avatars/${user.id}/oldface0001`);
+    // Со сбросом кэша: после этого файла нет в папке, и удаление учётной записи
+    // копии CDN уже не достанет.
+    expect(destroy).toHaveBeenCalledWith(`avatars/${user.id}/oldface0001`, { invalidate: true });
     expect((await storedUser(user.id)).avatar_url)
       .toBe(`https://res.cloudinary.com/test/image/upload/v1759700000/avatars/${user.id}/fresh0001.jpg`);
+  });
+
+  test('учётную запись отключили, пока шёл запрос: файл в облако не уходит, отказ понятный', async () => {
+    const { user, token } = await newUser();
+    // Статус прочитан и лежит в кеше: следующий запрос пройдёт проверку на входе,
+    // как запрос, который прошёл её раньше, чем учётную запись удалили.
+    await request(app).get('/api/v1/auth/me').set('Authorization', `Bearer ${token}`).expect(200);
+    await query('UPDATE users SET is_active = FALSE WHERE id = $1', [user.id]);
+
+    const response = await request(app)
+      .post('/api/v1/auth/avatar')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('avatar', Buffer.from('fake-jpeg'), JPEG)
+      .expect(404);
+
+    expect(response.body.error.code).toBe('USER_NOT_FOUND');
+    expect(cloudinarySdk.uploader.upload).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
   });
 
   test.each([

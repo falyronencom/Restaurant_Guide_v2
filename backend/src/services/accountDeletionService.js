@@ -55,6 +55,17 @@
  * stamped after that (accountStatus.markSessionsRevoked); the cached status is
  * dropped after COMMIT.
  *
+ * The pictures. Every picture the person uploaded lies in their avatar folder on
+ * the cloud (config/cloudinary.js, uploadAvatar), older ones a replacement failed
+ * to remove included, so the folder goes as a whole. The cloud is slow and may be
+ * down, and the answer does not wait for it: a task goes into avatar_deletions in
+ * the deletion's transaction, whatever the account's link says now (a person who
+ * cleared it or moved to a Google picture may still have files there), and
+ * services/avatarDeletionLoop.js repeats until the cloud has let them go. Until
+ * migration 040 is applied (the window after a deploy) the table is not there:
+ * the question is asked before BEGIN, because inside the transaction a missing
+ * table would fail the whole deletion; the current picture then goes the old way.
+ *
  * The mark of a deleted account is its journal entry, user_delete_account,
  * written in the same transaction — no new column, as the panel's block keeps
  * its list in its own entry (adminUserService). The panel reads it to refuse
@@ -71,6 +82,7 @@ import { deleteImage, ownCloudPublicId, ownedFolders } from '../config/cloudinar
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { writeAuditLogInTransaction } from '../models/auditLogModel.js';
+import { avatarDeletionTableExists, enqueueAvatarDeletion } from '../models/avatarDeletionModel.js';
 import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
 import * as NotificationService from './notificationService.js';
@@ -227,13 +239,20 @@ export const getDeletionCheck = async (userId) => {
 
 /**
  * The establishments to tell about bookings the deletion cancelled — after
- * COMMIT, without blocking the answer, as bookingService.cancelBooking does.
+ * COMMIT and before the answer, as bookingService.cancelBooking does: a deploy
+ * waits for a request in progress, not for what it left behind. The push stays in
+ * the background (notifyBookingCancelled). A failed notice is a line in the
+ * journal: the deletion has already happened and the others still go out.
+ *
+ * Not inside the transaction: the operator's script writes its notices there
+ * itself, and a failure here must not undo a deletion.
  *
  * @param {Array<Object>} cancelled - rows of the cancelling UPDATE
+ * @returns {Promise<void>}
  */
-const notifyCancelledBookings = (cancelled) => {
+const notifyCancelledBookings = async (cancelled) => {
   for (const booking of cancelled) {
-    NotificationService.notifyBookingCancelled(
+    await NotificationService.notifyBookingCancelled(
       booking.partner_id,
       {
         id: booking.id,
@@ -242,7 +261,30 @@ const notifyCancelledBookings = (cancelled) => {
         booking_time: booking.booking_time,
       },
       booking.establishment_id,
-    ).catch(() => {});
+    ).catch((error) => {
+      logger.error('Account deletion: notice of a cancelled booking failed', {
+        bookingId: booking.id,
+        error: error.message,
+      });
+    });
+  }
+};
+
+/**
+ * The window before migration 040: no table, no task. The current picture only —
+ * an asset on our cloud in the person's own avatar folder (a Google or Yandex
+ * picture is not ours to delete) — and the CDN's copies of it; the answer does
+ * not wait for the cloud. Goes away with the check for the table once the
+ * migration is on production.
+ *
+ * @param {Object} account - the locked row, read before the deletion
+ */
+const deleteCurrentAvatarInBackground = (account) => {
+  const avatarPublicId = ownCloudPublicId(account.avatar_url);
+  if (avatarPublicId) {
+    deleteImage(avatarPublicId, [ownedFolders.avatars(account.id)], { invalidate: true }).catch((error) => {
+      logger.warn('Account deletion: avatar left on the cloud', { userId: account.id, error: error.message });
+    });
   }
 };
 
@@ -273,11 +315,21 @@ export const lockAccount = async (client, userId) =>
  *
  * @param {Object} client - pg client inside a transaction
  * @param {Object} account - the locked row (lockAccount)
- * @param {Object} by - { userId } the person; { userId: null, label } a script
+ * @param {Object} by - { userId } the person; { userId: null, label } a script;
+ *   queueAvatarDeletion: required, whether the avatar_deletions table is there
+ *   (asked before BEGIN with avatarDeletionTableExists) and the task goes in. A
+ *   caller that forgot it would leave the person's pictures on the cloud unnoticed
  * @returns {Promise<{counts: Object, cancelled: Array<Object>}>} the counts as
  *   journalled; the bookings it cancelled, for the notices after COMMIT
  */
-export const anonymiseAccount = async (client, account, { userId: actorId = null, label = null } = {}) => {
+export const anonymiseAccount = async (
+  client,
+  account,
+  { userId: actorId = null, label = null, queueAvatarDeletion } = {},
+) => {
+  if (typeof queueAvatarDeletion !== 'boolean') {
+    throw new TypeError('anonymiseAccount: queueAvatarDeletion must say whether the task table is there');
+  }
   const userId = account.id;
 
   // Unfinished cards go first — the rule of the partner's own delete, in the
@@ -403,6 +455,12 @@ export const anonymiseAccount = async (client, account, { userId: actorId = null
     [userId, DELETED_USER_NAME],
   );
 
+  // The pictures leave the cloud after COMMIT, but the task to remove them is
+  // part of the deletion: the two commit or roll back as one.
+  if (queueAvatarDeletion) {
+    await enqueueAvatarDeletion(client, userId);
+  }
+
   // The journal keeps what was done to the account, not who held it: the
   // name a reset replaced (adminUserService.resetUserName, user_name) and
   // the addresses an e-mail change wrote (scripts/lib/accountEmail.js,
@@ -458,6 +516,8 @@ export const deleteAccount = async (userId, rawConfirmation) => {
     throw refuse('CONFIRMATION_REQUIRED', 422);
   }
 
+  const queueAvatarDeletion = await avatarDeletionTableExists();
+
   const client = await getClient();
   let account;
   let outcome;
@@ -475,7 +535,7 @@ export const deleteAccount = async (userId, rawConfirmation) => {
     const refusal = accountRefusal(account);
     if (refusal) throw refuse(refusal, 409);
 
-    outcome = await anonymiseAccount(client, account, { userId });
+    outcome = await anonymiseAccount(client, account, { userId, queueAvatarDeletion });
 
     await client.query('COMMIT');
   } catch (error) {
@@ -488,17 +548,11 @@ export const deleteAccount = async (userId, rawConfirmation) => {
   // The next request of any session reads the switched-off account.
   invalidateAccountStatus(userId);
 
-  // The picture the person uploaded — only an asset on our cloud in their
-  // own avatar folder (a Google or Yandex picture is not ours to delete) —
-  // and the CDN's copies of it, which would otherwise outlive the file.
-  const avatarPublicId = ownCloudPublicId(account.avatar_url);
-  if (avatarPublicId) {
-    deleteImage(avatarPublicId, [ownedFolders.avatars(userId)], { invalidate: true }).catch((error) => {
-      logger.warn('Account deletion: avatar left on the cloud', { userId, error: error.message });
-    });
+  if (!queueAvatarDeletion) {
+    deleteCurrentAvatarInBackground(account);
   }
 
-  notifyCancelledBookings(outcome.cancelled);
+  await notifyCancelledBookings(outcome.cancelled);
 
   logger.info('Account deleted by its holder', { userId, ...outcome.counts });
   return { deleted: true, changed: true };
