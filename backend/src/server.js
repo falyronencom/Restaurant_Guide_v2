@@ -16,6 +16,7 @@ import { requestGuard } from './middleware/requestGuard.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import * as ocrJobPoller from './services/ocr/ocrJobPoller.js';
 import * as refreshTokenPruner from './services/refreshTokenPruner.js';
+import * as avatarDeletionLoop from './services/avatarDeletionLoop.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
@@ -210,7 +211,7 @@ app.use(errorHandler);
 
 /**
  * Graceful shutdown handler. The sequence and its exit code live in
- * utils/gracefulShutdown.js: force-exit timer first, both background loops
+ * utils/gracefulShutdown.js: force-exit timer first, the background loops
  * stopped in parallel with server.close() (stop() waits for the work in
  * flight, which must not queue behind a slow request still draining), then
  * the pool and Redis. Exit code 0 only for a planned stop (SIGTERM, SIGINT);
@@ -231,6 +232,12 @@ const gracefulShutdown = createGracefulShutdown({
     {
       stop: () => refreshTokenPruner.stop(),
       failureMessage: 'Refresh token pruner stop failed during shutdown',
+    },
+    // Waits for one call to the cloud at most, under its own deadline, and one
+    // write: a task cut short comes due again by itself.
+    {
+      stop: () => avatarDeletionLoop.stop(),
+      failureMessage: 'Avatar deletion loop stop failed during shutdown',
     },
   ],
   closePool,
@@ -366,6 +373,18 @@ const startServer = async () => {
     });
     for (const warning of prunePolicy.warnings) {
       logger.warn(`Refresh token pruner: policy ${warning}`);
+    }
+
+    // Start the loop that empties the avatar folders of deleted accounts: on
+    // production unless AVATAR_DELETION_ENABLED says otherwise, because a local
+    // server holds the real keys of the cloud (config/avatarDeletion.js).
+    const avatarDeletionPolicy = avatarDeletionLoop.start();
+    logger.info('Avatar deletion loop: policy resolved', {
+      enabled: avatarDeletionPolicy.enabled,
+      intervalMs: avatarDeletionPolicy.intervalMs,
+    });
+    for (const warning of avatarDeletionPolicy.warnings) {
+      logger.warn(`Avatar deletion loop: policy ${warning}`);
     }
 
     // Start HTTP server

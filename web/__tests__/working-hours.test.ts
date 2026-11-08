@@ -230,16 +230,15 @@ describe('computeOpenStatus', () => {
     // DAY_KEYS runs Mon..Sun while getDay() runs Sun=0..Sat=6, so Sunday needs
     // index 6 and every other day shifts down by one. A map open ONLY on
     // Sunday: the Sunday point catches an unshifted index (it would read
-    // Monday), the Monday point catches a Monday lookup landing on Sunday.
-    // `status: 'inactive'` throughout, so the open verdict can only come from
-    // the schedule.
+    // Monday), the Monday point catches a Monday lookup landing on Sunday:
+    // Monday has no record of its own, so it reads unknown.
     const sundayOnly = { sunday: '10:00-22:00' };
 
-    expect(computeOpenStatus(sundayOnly, 'inactive', sunday(14, 0))).toEqual(
+    expect(computeOpenStatus(sundayOnly, 'active', sunday(14, 0))).toEqual(
       open('22:00'),
     );
-    expect(computeOpenStatus(sundayOnly, 'inactive', monday(14, 0))).toEqual(
-      closed,
+    expect(computeOpenStatus(sundayOnly, 'active', monday(14, 0))).toEqual(
+      unknown,
     );
   });
 
@@ -360,5 +359,22 @@ describe('computeOpenStatus', () => {
         ),
       ).toEqual(closed);
     });
+  });
+
+  describe('a card off the catalog reads «Закрыто» whatever its hours say', () => {
+    // A favourite keeps showing a paused card or one under moderation, and its
+    // schedule may say open now. Coordinator, 08.11.2026 («Да на 1–4»).
+    it.each(['suspended', 'pending', 'draft', 'rejected', 'archived'])(
+      '%s',
+      (status) => {
+        expect(
+          computeOpenStatus(everyDay('00:00-00:00'), status, monday(14, 0)),
+        ).toEqual(closed);
+        // Yesterday's shift running into the night does not open it either.
+        expect(
+          computeOpenStatus(everyDay('18:00-02:00'), status, monday(1, 0)),
+        ).toEqual(closed);
+      },
+    );
   });
 });

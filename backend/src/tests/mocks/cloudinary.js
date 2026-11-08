@@ -50,6 +50,11 @@ export const generateImageUrl = jest.fn((publicId, resolution = 'original') => {
 });
 
 /**
+ * Mock: Empty the avatar folder of a deleted account
+ */
+export const deleteAvatarFolder = jest.fn(async () => ({ complete: true, deleted: 0 }));
+
+/**
  * Mock: Upload avatar to Cloudinary
  * Returns a realistic upload result for user avatars
  */
@@ -137,6 +142,7 @@ export function resetCloudinaryMocks() {
     return `https://res.cloudinary.com/test/image/upload/${size}/f_auto,q_auto,fl_progressive/${publicId || 'test-public-id'}.jpg`;
   });
 
+  deleteAvatarFolder.mockReset().mockResolvedValue({ complete: true, deleted: 0 });
   uploadAvatar.mockReset().mockResolvedValue({
     public_id: 'avatars/test-user-id/test-avatar',
     secure_url: 'https://res.cloudinary.com/test/image/upload/w_256,h_256,c_fill/avatars/test-user-id/test-avatar.jpg',

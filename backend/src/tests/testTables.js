@@ -40,6 +40,7 @@ export const TEST_STATE_TABLES = [
   'menu_item_hidden_names',
   'establishments',
   'refresh_tokens',
+  'avatar_deletions',
   'users',
 ];
 
