@@ -101,8 +101,9 @@ export function parseDayHours(entry: unknown): DayHours | null {
  * Compute open/closed/unknown status from working_hours and current time.
  *
  * @param workingHours - raw JSONB from listing projection (dual format per day)
- * @param status - establishment.status; decides only when the hours are unknown:
- *                 a published card reads unknown, one off the catalog closed
+ * @param status - establishment.status: a card off the catalog (paused, under
+ *                 moderation…) reads closed whatever its hours say — a favourite
+ *                 keeps showing it (Coordinator, 08.11.2026, «Да на 1–4»)
  * @param now - current time (default: new Date()); read with local getters
  * @returns { state, closingTime } — closingTime only when state is 'open'.
  */
@@ -111,6 +112,8 @@ export function computeOpenStatus(
   status: string,
   now: Date = new Date(),
 ): OpenStatus {
+  if (status !== 'active') return { state: 'closed', closingTime: null };
+
   const hours =
     typeof workingHours === 'object' && workingHours !== null
       ? (workingHours as WorkingHoursMap)
@@ -139,10 +142,7 @@ export function computeOpenStatus(
   const openMin = clockMinutes(today?.open);
   const closeMin = clockMinutes(today?.close);
   if (openMin == null || closeMin == null) {
-    return {
-      state: status === 'active' ? 'unknown' : 'closed',
-      closingTime: null,
-    };
+    return { state: 'unknown', closingTime: null };
   }
 
   const inShift =
