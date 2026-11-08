@@ -32,7 +32,11 @@ import {
   toUpdatePayload,
   type WizardFormState,
 } from '@/lib/partner/form';
-import { evaluateE1, meetsValidatorMinimum } from '@/lib/partner/validation';
+import {
+  evaluateE1,
+  incompleteDays,
+  meetsValidatorMinimum,
+} from '@/lib/partner/validation';
 
 import { AddressSection } from './AddressSection';
 import { BasicInfoSection } from './BasicInfoSection';
@@ -474,9 +478,11 @@ export function EstablishmentWizard(props: Props) {
         ? 'Сохранение…'
         : saveState === 'error'
           ? 'Ошибка сохранения'
-          : isEdit
-            ? 'Изменения сохранены'
-            : 'Черновик сохранён';
+          : incompleteDays(form).length > 0
+            ? 'Часы работы заполнены не до конца — они не сохранены'
+            : isEdit
+              ? 'Изменения сохранены'
+              : 'Черновик сохранён';
 
   const title =
     props.mode === 'create'

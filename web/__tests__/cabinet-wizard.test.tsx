@@ -10,7 +10,7 @@
  *   С6 — неверный телефон назван под полем и не держит остальную правку.
  * Сеть подменена на уровне клиентских вызовов (lib/partner/client).
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import { EditWizardLoader } from '@/components/cabinet/wizard/EditWizardLoader';
 import { EstablishmentWizard } from '@/components/cabinet/wizard/EstablishmentWizard';
@@ -84,7 +84,17 @@ function detail(status: PartnerEstablishmentDetail['status']): PartnerEstablishm
     interior_photos: [],
     menu_photos: [],
     primary_photo: null,
-    working_hours: { monday: { is_open: true, open: '09:00', close: '18:00' } },
+    // Все семь дней, как их пишут кабинет и приложение: день без записи форма
+    // показывает незаполненным.
+    working_hours: {
+      monday: { is_open: true, open: '09:00', close: '18:00' },
+      tuesday: { is_open: false },
+      wednesday: { is_open: false },
+      thursday: { is_open: false },
+      friday: { is_open: false },
+      saturday: { is_open: false },
+      sunday: { is_open: false },
+    },
     status,
     moderation_notes: null,
   } as unknown as PartnerEstablishmentDetail;
@@ -223,6 +233,115 @@ describe('С6 — неверный телефон назван и не держ�
     const payload = updateMock.mock.calls.at(-1)![1];
     expect('phone' in payload).toBe(false);
     expect(payload.description).toBe('Ещё уютнее');
+  });
+});
+
+describe('Часы работы: открытый день без времени (проверка 06.11.2026)', () => {
+  const HINT = 'Укажите время открытия и закрытия или отметьте день выходным.';
+
+  /** Строка дня в разделе часов: кнопка «Открыто / Выходной» — первая в ней. */
+  const dayChip = (label: string) =>
+    within(screen.getByText(label).parentElement as HTMLElement).getByRole('button');
+
+  it('включили день: подсказка у дня, часы не отправляются, остальное сохраняется', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    renderEdit();
+    await tick(800);
+
+    fireEvent.click(dayChip('Вторник'));
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Ещё уютнее' } });
+    await tick(800);
+
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+    expect(screen.getByLabelText('Вторник — открытие')).toHaveAttribute('aria-invalid', 'true');
+    const payload = updateMock.mock.calls.at(-1)![1];
+    expect('working_hours' in payload).toBe(false);
+    expect(payload.description).toBe('Ещё уютнее');
+    // «Изменения сохранены» было бы неправдой про часы.
+    expect(
+      screen.getByText('Часы работы заполнены не до конца — они не сохранены'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Изменения сохранены')).not.toBeInTheDocument();
+  });
+
+  it('ввели оба времени: подсказка уходит, часы отправляются', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    renderEdit();
+    await tick(800);
+
+    fireEvent.click(dayChip('Вторник'));
+    fireEvent.change(screen.getByLabelText('Вторник — открытие'), { target: { value: '12:00' } });
+    await tick(800);
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+    expect('working_hours' in updateMock.mock.calls.at(-1)![1]).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Вторник — закрытие'), { target: { value: '02:00' } });
+    await tick(800);
+
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    expect(updateMock.mock.calls.at(-1)![1].working_hours.tuesday).toEqual({
+      is_open: true,
+      open: '12:00',
+      close: '02:00',
+    });
+    expect(screen.getByText('Изменения сохранены')).toBeInTheDocument();
+  });
+
+  it('день снова выходной: подсказка уходит, часы отправляются', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    renderEdit();
+    await tick(800);
+
+    fireEvent.click(dayChip('Вторник'));
+    await tick(800);
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+
+    fireEvent.click(dayChip('Вторник'));
+    await tick(800);
+
+    expect(screen.queryByText(HINT)).not.toBeInTheDocument();
+    expect(updateMock.mock.calls.at(-1)![1].working_hours.tuesday).toEqual({ is_open: false });
+  });
+
+  it('новая карточка: черновик не создаётся, пока у открытого дня нет времени', async () => {
+    createMock.mockResolvedValue({ ok: true, id: 'd1' });
+    updateMock.mockResolvedValue({ ok: true });
+    const form = {
+      ...card(),
+      workingHours: {
+        ...card().workingHours,
+        tuesday: { isOpen: true, open: '', close: '' },
+      },
+    };
+    localStorage.setItem(KEY, JSON.stringify({ form, draftId: null }));
+    render(<EstablishmentWizard mode="create" />);
+    await tick();
+    await tick();
+
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Ещё уютнее' } });
+    await tick(800);
+    expect(createMock).not.toHaveBeenCalled();
+    expect(screen.getByText(HINT)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Вторник — открытие'), { target: { value: '12:00' } });
+    fireEvent.change(screen.getByLabelText('Вторник — закрытие'), { target: { value: '23:00' } });
+    await tick(800);
+
+    expect(createMock).toHaveBeenCalledTimes(1);
+    expect(createMock.mock.calls[0][0].working_hours.tuesday).toEqual({
+      is_open: true,
+      open: '12:00',
+      close: '23:00',
+    });
+  });
+
+  it('отказ сервера про часы показан его текстом', async () => {
+    const refusal = 'Часы работы заполнены не до конца. Укажите время открытия и закрытия на понедельник или отметьте этот день выходным.';
+    updateMock.mockResolvedValue({ ok: false, code: 'WORKING_HOURS_INCOMPLETE', message: refusal });
+    renderEdit();
+    await tick(800);
+
+    expect(screen.getByText(refusal)).toBeInTheDocument();
   });
 });
 

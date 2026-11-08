@@ -37,6 +37,8 @@ import {
   updateEstablishmentAction,
 } from '@/lib/partner/operations';
 
+import { refusalMessage, type Refusal } from '@/lib/partner/errors';
+
 const createMock = createEstablishment as jest.Mock;
 const updateMock = updateEstablishment as jest.Mock;
 const submitMock = submitEstablishment as jest.Mock;
@@ -138,6 +140,17 @@ describe('delete operation', () => {
  * поля проверки (без значений), срок и вид предела.
  */
 describe('refusal envelope — what the cabinet words a refusal from', () => {
+  it('hours refused: the text naming the days reaches the partner whole', async () => {
+    const text =
+      'Часы работы заполнены не до конца. Укажите время открытия и закрытия на понедельник или отметьте этот день выходным.';
+    updateMock.mockRejectedValue(new ApiError(422, text, 'WORKING_HOURS_INCOMPLETE'));
+
+    const r = await updateEstablishmentAction('e1', {});
+
+    expect(r).toEqual({ ok: false, code: 'WORKING_HOURS_INCOMPLETE', message: text });
+    expect(refusalMessage(r as Refusal)).toBe(text);
+  });
+
   it("carries the server's Russian text", async () => {
     updateMock.mockRejectedValue(
       new ApiError(409, 'У вас уже есть заведение с таким названием.', 'DUPLICATE_ESTABLISHMENT'),

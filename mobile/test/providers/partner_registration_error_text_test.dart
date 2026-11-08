@@ -50,6 +50,9 @@ const _completeCard = PartnerRegistration(
   cuisineTypes: ['european'],
   name: 'Кофейня у моста',
   priceRange: r'$$',
+  weeklyWorkingHours: WeeklyWorkingHours(
+    monday: DayWorkingHours(isOpen: true, openTime: '10:00', closeTime: '22:00'),
+  ),
   interiorPhotos: ['https://res.cloudinary.com/demo/image/upload/a.jpg'],
   menuPhotos: ['https://res.cloudinary.com/demo/image/upload/b.jpg'],
   primaryPhotoUrl: 'https://res.cloudinary.com/demo/image/upload/a.jpg',

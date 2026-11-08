@@ -35,6 +35,7 @@ const CABINET_CODES = [
   'ESTABLISHMENT_NOT_DELETABLE',
   'INVALID_STATUS_FOR_SUBMISSION',
   'INCOMPLETE_ESTABLISHMENT',
+  'WORKING_HOURS_INCOMPLETE',
   // Added 18.10.2026 (сверка находок тестировщика с сайтом, С5): the upload
   // to a card answers the PDF limit and a wrong media type in English, and a
   // moderator's suspension refuses «Возобновить».

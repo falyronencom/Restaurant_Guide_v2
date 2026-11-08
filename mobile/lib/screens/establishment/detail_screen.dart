@@ -985,8 +985,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
 
   /// Build status line (Open/Closed with time)
   Widget _buildStatusLine() {
-    final isOpen = _establishment!.isCurrentlyOpen;
-    final closingTime = _establishment!.todayClosingTime;
+    final status = _establishment!.currentOpenStatus;
+    final closingTime = status.closesAt;
 
     // RichText стиль темы не наследует — семейство названо явно.
     return RichText(
@@ -997,13 +997,17 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
         ),
         children: [
           TextSpan(
-            text: isOpen ? 'Открыто' : 'Закрыто',
+            text: status.label,
             style: TextStyle(
-              color: isOpen ? _greenStatus : _closedOnPhoto,
+              color: switch (status.state) {
+                OpenState.open => _greenStatus,
+                OpenState.closed => _closedOnPhoto,
+                OpenState.unknown => _backgroundColor,
+              },
               fontWeight: FontWeight.w500,
             ),
           ),
-          if (closingTime != null && isOpen)
+          if (closingTime != null)
             TextSpan(
               text: openUntilSuffix(closingTime),
               style: const TextStyle(color: _backgroundColor),
@@ -1315,6 +1319,18 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
       });
     }
 
+    // Ни одного дня с известными часами или выходным: та же строка, что и при
+    // отсутствии часов, вместо «Пн-Вс: Не указано».
+    if (dayEntries.every(
+        (day) => _formatDayHours(day['hours']) == _hoursNotSpecified)) {
+      return const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _WorkingHoursRow(label: 'График не указан', time: ''),
+        ],
+      );
+    }
+
     // Group consecutive days with identical hours
     final groups = <Map<String, dynamic>>[];
     int i = 0;
@@ -1357,13 +1373,16 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     );
   }
 
+  /// Строка таблицы для дня без данных: это не выходной (решение Координатора
+  /// 06.11.2026), статус над таблицей в такой день пишет «Часы не указаны».
+  static const String _hoursNotSpecified = 'Не указано';
+
   /// Format parsed day hours into display string
   String _formatDayHours(Map<String, dynamic>? hours) {
-    if (hours == null) return 'Выходной';
-    if (hours['is_open'] == false) return 'Выходной';
-    final open = hours['open'] as String?;
-    final close = hours['close'] as String?;
-    if (open == null || close == null) return 'Выходной';
+    if (hours?['is_open'] == false) return 'Выходной';
+    final open = hours?['open'] as String?;
+    final close = hours?['close'] as String?;
+    if (open == null || close == null) return _hoursNotSpecified;
     return '$open - $close';
   }
 

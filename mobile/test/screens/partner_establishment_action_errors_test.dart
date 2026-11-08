@@ -283,6 +283,36 @@ void main() {
     });
   });
 
+  // Текст утверждён Координатором 06.11.2026; отказ — через errorHandler, код 422
+  // не VALIDATION_ERROR, поэтому `message` не должен потеряться по дороге.
+  group('Отказ: открытый день без времени', () {
+    const refusal = 'Часы работы заполнены не до конца. Укажите время открытия и '
+        'закрытия на понедельник или отметьте этот день выходным.';
+
+    testWidgets('«Время работы»: фраза сервера целиком', (tester) async {
+      action = (_) => jsonBody(
+            _refusal(refusal, 'WORKING_HOURS_INCOMPLETE'),
+            status: 422,
+          );
+
+      await saveHours(tester);
+
+      expect(await snackBarText(tester), refusal);
+    });
+
+    testWidgets('«Отправить повторно на модерацию»: фраза сервера целиком',
+        (tester) async {
+      action = (_) => jsonBody(
+            _refusal(refusal, 'WORKING_HOURS_INCOMPLETE'),
+            status: 422,
+          );
+
+      await resubmit(tester);
+
+      expect(await snackBarText(tester), refusal);
+    });
+  });
+
   group('Сбой сервера: общая фраза по действию', () {
     testWidgets('приостановить', (tester) async {
       action = _serverFailure;

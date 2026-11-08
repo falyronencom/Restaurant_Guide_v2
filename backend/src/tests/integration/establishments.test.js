@@ -2004,7 +2004,7 @@ describe('Establishments System - Slug Lifecycle', () => {
 // тест: в модульных модель подменена заглушкой (замер Crapper 01.11.2026).
 
 describe('Establishments System - Юридические реквизиты партнёра', () => {
-  // Часы — как их шлёт телефон, когда партнёр не трогал расписание.
+  // Часы — в той форме, в которой их шлёт телефон.
   const mobileWorkingHours = {
     monday: { is_open: true, open: '09:00', close: '21:00' },
     tuesday: { is_open: true, open: '09:00', close: '21:00' },

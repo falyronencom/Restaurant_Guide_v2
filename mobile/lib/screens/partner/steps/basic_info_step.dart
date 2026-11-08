@@ -251,8 +251,23 @@ class _BasicInfoStepState extends State<BasicInfoStep> {
                 title: 'Время работы',
                 description:
                     'Укажите время работы вашего заведения по дням недели',
-                isRequired: false,
-                child: _buildWorkingHoursButton(provider),
+                isRequired: true,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildWorkingHoursButton(provider),
+                    if (provider.hoursError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        provider.hoursError!,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.errorRed,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
 
               // Price range

@@ -48,17 +48,20 @@ void main() {
   var withCoords = false;
   // Атрибуты карточки; null — ключ в ответе со значением null (по умолчанию).
   Map<String, dynamic>? attributes;
+  // Часы работы карточки; null — обычные, 10:00–22:00 каждый день.
+  Map<String, dynamic>? hours;
 
   setUp(() {
     withCoords = false;
     attributes = null;
+    hours = null;
     installWireStand((options) {
       final path = options.uri.path;
       if (path == '/api/v1/search/establishments/$id') {
         final row = establishmentRow(
           id: id,
           attributes: attributes,
-          workingHours: {
+          workingHours: hours ?? {
             for (final d in [
               'monday',
               'tuesday',
@@ -403,6 +406,88 @@ void main() {
       expect(find.text('Парковка'), findsOneWidget);
       expect(find.text('Доставка еды'), findsNothing);
       expect(find.text('Терраса'), findsNothing);
+    });
+  });
+
+  // Решение Координатора 06.11.2026. День без данных — не выходной, а статус над
+  // таблицей в такой день — не зелёное «Открыто». До этого на дне без времени
+  // карточка вообще не открывалась: `int.parse('')` при отрисовке.
+  group('часы работы', () {
+    const noTimes = {'is_open': true, 'open': '', 'close': ''};
+    const days = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ];
+
+    Map<String, dynamic> everyDay(Object value) => {
+          for (final day in days) day: value,
+        };
+
+    Finder statusLine(String label) => find.byWidgetPredicate(
+          (w) => w is RichText && w.text.toPlainText().startsWith(label),
+          skipOffstage: false,
+        );
+
+    testWidgets('на всю неделю нет времени: карточка открывается, подпись и '
+        'таблица честные', (tester) async {
+      hours = everyDay(noTimes);
+
+      await pumpDetail(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(statusLine('Часы не указаны'), findsOneWidget);
+      expect(statusLine('Открыто'), findsNothing);
+      // На фото серый не читается: подпись цвета фона страницы, как и хвост
+      // «· до 22:00». Не зелёная и не красная.
+      final line = tester.widget<RichText>(statusLine('Часы не указаны'));
+      final label = (line.text as TextSpan).children!.first as TextSpan;
+      expect(label.style?.color, AppTheme.backgroundWarm);
+      expect(find.text('График не указан', skipOffstage: false), findsOneWidget);
+      expect(find.text('Выходной', skipOffstage: false), findsNothing);
+    });
+
+    testWidgets('в таблице выходной и день без данных — разные строки',
+        (tester) async {
+      hours = {
+        'monday': '10:00-22:00',
+        'tuesday': {'is_open': false},
+        'wednesday': noTimes,
+        'friday': 'abc',
+      };
+
+      await pumpDetail(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Пн:', skipOffstage: false), findsOneWidget);
+      expect(find.text('10:00 - 22:00', skipOffstage: false), findsOneWidget);
+      expect(find.text('Вт:', skipOffstage: false), findsOneWidget);
+      expect(find.text('Выходной', skipOffstage: false), findsOneWidget);
+      expect(find.text('Ср-Вс:', skipOffstage: false), findsOneWidget);
+      expect(find.text('Не указано', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('обычные часы: таблица без «Не указано»', (tester) async {
+      await pumpDetail(tester);
+
+      expect(find.text('Пн-Вс:', skipOffstage: false), findsOneWidget);
+      expect(find.text('10:00 - 22:00', skipOffstage: false), findsOneWidget);
+      expect(find.text('Не указано', skipOffstage: false), findsNothing);
+      expect(find.text('График не указан', skipOffstage: false), findsNothing);
+    });
+
+    testWidgets('неделя выходных — не «График не указан»', (tester) async {
+      hours = everyDay({'is_open': false});
+
+      await pumpDetail(tester);
+
+      expect(statusLine('Закрыто'), findsOneWidget);
+      expect(find.text('Выходной', skipOffstage: false), findsOneWidget);
+      expect(find.text('График не указан', skipOffstage: false), findsNothing);
     });
   });
 }

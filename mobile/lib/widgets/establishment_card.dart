@@ -378,8 +378,8 @@ class EstablishmentCard extends StatelessWidget {
 
   /// Build status with closing time (Figma design)
   Widget _buildStatus() {
-    final isOpen = establishment.isCurrentlyOpen;
-    final closingTime = establishment.todayClosingTime;
+    final status = establishment.currentOpenStatus;
+    final closingTime = status.closesAt;
 
     // RichText, в отличие от Text, стиль темы НЕ наследует: у корневого
     // TextSpan без семейства строка рисуется системным шрифтом. И размер
@@ -399,12 +399,16 @@ class EstablishmentCard extends StatelessWidget {
           ),
           children: [
             TextSpan(
-              text: isOpen ? 'Открыто' : 'Закрыто',
+              text: status.label,
               style: TextStyle(
-                color: isOpen ? _greenColor : Colors.red,
+                color: switch (status.state) {
+                  OpenState.open => _greenColor,
+                  OpenState.closed => Colors.red,
+                  OpenState.unknown => AppTheme.textSecondary,
+                },
               ),
             ),
-            if (closingTime != null && isOpen)
+            if (closingTime != null)
               TextSpan(
                 text: openUntilSuffix(closingTime),
                 style: const TextStyle(
