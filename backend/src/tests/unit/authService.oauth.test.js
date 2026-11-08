@@ -32,6 +32,11 @@ const { generateAccessToken, generateRefreshToken } = await import('../../utils/
 const { authenticateWithOAuth } = await import('../../services/authService.js');
 const logger = (await import('../../utils/logger.js')).default;
 
+// Новая учётка спрашивает суточный предел регистраций; здесь он не исчерпан —
+// граница и ответ лимитера: integration/oauth-registration-limit.test.js.
+const registration = { reserveNewAccount: jest.fn() };
+const signIn = (providerData) => authenticateWithOAuth(providerData, registration);
+
 const yandexProvider = (overrides = {}) => ({
   providerId: 'yx-pid-1',
   email: 'user@yandex.ru',
@@ -79,6 +84,7 @@ describe('authenticateWithOAuth', () => {
     // resetMocks:true wipes return values each test (feedback_jest_resetmocks).
     generateAccessToken.mockReturnValue('access-token');
     generateRefreshToken.mockReturnValue('refresh-token');
+    registration.reserveNewAccount.mockResolvedValue({ granted: true, giveBack: jest.fn() });
   });
 
   const insertedUsers = () =>
@@ -88,7 +94,7 @@ describe('authenticateWithOAuth', () => {
   test('scenario 1 — existing OAuth user logs in (matched on auth_method + provider id)', async () => {
     mockPoolFor({ oauthRows: [userRow()] });
 
-    const result = await authenticateWithOAuth(yandexProvider());
+    const result = await signIn(yandexProvider());
 
     expect(result.user.id).toBe('user-1');
     expect(result.accessToken).toBe('access-token');
@@ -106,7 +112,7 @@ describe('authenticateWithOAuth', () => {
       returnedUser: userRow({ auth_method: 'yandex' }),
     });
 
-    const result = await authenticateWithOAuth(yandexProvider());
+    const result = await signIn(yandexProvider());
 
     expect(result.user.auth_method).toBe('yandex');
     expect(result.accessToken).toBe('access-token');
@@ -116,7 +122,7 @@ describe('authenticateWithOAuth', () => {
   test('scenario 3 — no match creates a new user', async () => {
     mockPoolFor({ oauthRows: [], emailRows: [], returnedUser: userRow({ id: 'new-user' }) });
 
-    const result = await authenticateWithOAuth(yandexProvider());
+    const result = await signIn(yandexProvider());
 
     expect(result.user.id).toBe('new-user');
     expect(insertedUsers()).toBe(true);
@@ -126,7 +132,7 @@ describe('authenticateWithOAuth', () => {
     mockPoolFor({ oauthRows: [], emailRows: [userRow({ auth_method: 'email' })] });
 
     await expect(
-      authenticateWithOAuth(yandexProvider({ emailVerified: false })),
+      signIn(yandexProvider({ emailVerified: false })),
     ).rejects.toThrow('OAUTH_EMAIL_NOT_VERIFIED');
 
     expect(linked()).toBe(false); // no account takeover
@@ -136,13 +142,13 @@ describe('authenticateWithOAuth', () => {
     const dupErr = Object.assign(new Error('duplicate key'), { code: '23505' });
     mockPoolFor({ oauthRows: [], emailRows: [], insertError: dupErr });
 
-    await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('OAUTH_ACCOUNT_CONFLICT');
+    await expect(signIn(yandexProvider())).rejects.toThrow('OAUTH_ACCOUNT_CONFLICT');
   });
 
   test('rejects a deactivated existing OAuth account', async () => {
     mockPoolFor({ oauthRows: [userRow({ is_active: false })] });
 
-    await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
+    await expect(signIn(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
   });
 
   // The gate has a second door: an account found by its e-mail, not by the
@@ -160,7 +166,7 @@ describe('authenticateWithOAuth', () => {
       returnedUser: userRow({ auth_method: 'yandex' }),
     });
 
-    await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
+    await expect(signIn(yandexProvider())).rejects.toThrow('ACCOUNT_DEACTIVATED');
     expect(linked()).toBe(false); // not linked (the pool)
     expect(getClient).not.toHaveBeenCalled(); // not taken over (the takeover runs in a transaction)
   });
@@ -176,6 +182,7 @@ describe('authenticateWithOAuth — the log holds no e-mail', () => {
   beforeEach(() => {
     generateAccessToken.mockReturnValue('access-token');
     generateRefreshToken.mockReturnValue('refresh-token');
+    registration.reserveNewAccount.mockResolvedValue({ granted: true, giveBack: jest.fn() });
   });
 
   /** Every logger call of this test, with the line it wrote. */
@@ -193,7 +200,7 @@ describe('authenticateWithOAuth — the log holds no e-mail', () => {
     mockPoolFor({ oauthRows: [], emailRows: [userRow({ id: 'user-claimed', auth_method: 'email' })] });
 
     await expect(
-      authenticateWithOAuth(yandexProvider({ emailVerified: false })),
+      signIn(yandexProvider({ emailVerified: false })),
     ).rejects.toThrow('OAUTH_EMAIL_NOT_VERIFIED');
 
     expectNoAddress();
@@ -207,7 +214,7 @@ describe('authenticateWithOAuth — the log holds no e-mail', () => {
   test('a new account: its id and the provider', async () => {
     mockPoolFor({ oauthRows: [], emailRows: [], returnedUser: userRow({ id: 'new-user' }) });
 
-    await authenticateWithOAuth(yandexProvider());
+    await signIn(yandexProvider());
 
     expectNoAddress();
     expect(line('OAuth login: new user created').context).toEqual({ userId: 'new-user', provider: 'yandex' });
@@ -222,7 +229,7 @@ describe('authenticateWithOAuth — the log holds no e-mail', () => {
     });
     mockPoolFor({ oauthRows: [], emailRows: [], insertError: dupErr });
 
-    await expect(authenticateWithOAuth(yandexProvider())).rejects.toThrow('OAUTH_ACCOUNT_CONFLICT');
+    await expect(signIn(yandexProvider())).rejects.toThrow('OAUTH_ACCOUNT_CONFLICT');
 
     expectNoAddress();
     expect(line('OAuth signup race condition detected').context).toEqual({
@@ -233,14 +240,14 @@ describe('authenticateWithOAuth — the log holds no e-mail', () => {
 
   test('the other paths (login, link) wrote none before and write none now', async () => {
     mockPoolFor({ oauthRows: [userRow()] });
-    await authenticateWithOAuth(yandexProvider());
+    await signIn(yandexProvider());
 
     mockPoolFor({
       oauthRows: [],
       emailRows: [userRow({ auth_method: 'email', oauth_provider_id: null, email_verified: true })],
       returnedUser: userRow({ auth_method: 'yandex' }),
     });
-    await authenticateWithOAuth(yandexProvider());
+    await signIn(yandexProvider());
 
     expectNoAddress();
     expect(logged().map((call) => call.message)).toEqual(expect.arrayContaining([

@@ -1,18 +1,20 @@
 /* eslint-env jest */
 /* eslint comma-dangle: 0 */
 /**
- * Суточный предел распознавания — решение модуля по значению счётчика
+ * Суточные пределы распознавания — решение модуля по значению счётчика
  * (services/ocrAllowance.js). Redis, база и очередь подменены, часы стоят.
  *
- * Интеграционный тест (daily-ocr-allowance) держит границы через настоящее
- * приложение; здесь — то, что через него не видно или видно лишь с
+ * Интеграционные тесты (daily-ocr-allowance, ocr-page-ceiling) держат границы
+ * через настоящее приложение и настоящий Redis; здесь — то, что через них не видно или видно лишь с
  * вероятностью: решение по значению ПОСЛЕ увеличения (резерв до проверки),
  * база не спрашивается ниже обычного предела, сбой её ответа — обычный
  * предел, файл с заданием в очереди не тратит места, сбой постановки
  * возвращает резерв, ключ и срок — по минским суткам.
  *
  * Ожидаемые числа — литералы предложения 17.10.2026: обычная учётка 100
- * заданий, дом сида 1000.
+ * заданий, дом сида 1000. Страницы — нитка «Общий потолок распознавания»: потолок
+ * всех — число Координатора, учётке 100 и не больше половины потолка,
+ * неподтверждённым 40 на всех и 20 на учётку.
  */
 
 import { jest } from '@jest/globals';
@@ -20,6 +22,7 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('../../config/redis.js', () => ({
   incrementWithExpiry: jest.fn(),
   decrement: jest.fn(),
+  getCounter: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../config/database.js', () => {
@@ -36,16 +39,24 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
   default: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
-const { incrementWithExpiry, decrement } = await import('../../config/redis.js');
+const { incrementWithExpiry, decrement, getCounter } = await import('../../config/redis.js');
 const { default: pool } = await import('../../config/database.js');
 const OcrJobModel = await import('../../models/ocrJobModel.js');
 const { default: logger } = await import('../../utils/logger.js');
 const {
+  RECOGNITION_CEILING,
+  accountPageLimit,
+  dailyOcrPageCeiling,
   reserveDailyOcrJob,
   enqueueWithinDailyAllowance,
+  takePagesForAttempt,
   DailyOcrLimitError,
+  DAILY_OCR_ACCOUNT_PAGE_LIMIT,
   DAILY_OCR_JOB_LIMITS,
+  DAILY_OCR_PAGE_CEILING,
 } = await import('../../services/ocrAllowance.js');
+const { UNCONFIRMED_ACCOUNT_DAILY_LIMITS, UNCONFIRMED_DAILY_LIMITS } = await import('../../services/unconfirmedAllowance.js');
+const { failureReasonOf, RECOGNITION_CEILING_MESSAGE } = await import('../../services/ocr/failureReason.js');
 
 const USER = '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
 const CARD = '0b6e9a52-3f1d-4c8e-9a7b-2d4c6e8f0a1b';
@@ -53,6 +64,11 @@ const MEDIA = 'c3d5e7f9-1a2b-4c3d-8e5f-6a7b8c9d0e1f';
 /** Полдень в Минске, 17.10.2026. */
 const NOON = Date.parse('2026-10-17T09:00:00.000Z');
 const KEY = `ocr:daily:${USER}:2026-10-17:jobs`;
+const OWN_PAGES = `ocr:daily:${USER}:2026-10-17:pages`;
+const CEILING_PAGES = 'ocr:ceiling:2026-10-17:pages';
+const POOL_PAGES = 'unconfirmed:daily:2026-10-17:ocr_pages';
+const SHARE_PAGES = `unconfirmed:daily:2026-10-17:account:${USER}:ocr_pages`;
+const SECONDS_TO_MIDNIGHT = 43200;
 
 const seedHouse = (flag) => {
   pool.query.mockResolvedValue({ rows: [{ is_service_account: flag }] });
@@ -62,6 +78,7 @@ beforeEach(() => {
   jest.spyOn(Date, 'now').mockReturnValue(NOON);
   incrementWithExpiry.mockReset();
   decrement.mockReset();
+  getCounter.mockReset().mockResolvedValue(0);
   pool.query.mockReset();
   OcrJobModel.findActiveJob.mockReset().mockResolvedValue(null);
   OcrJobModel.enqueue.mockReset();
@@ -183,7 +200,7 @@ describe('enqueueWithinDailyAllowance — постановка в очередь
     const result = await enqueueWithinDailyAllowance(request);
 
     expect(result).toEqual({ queued: true, job });
-    expect(OcrJobModel.enqueue).toHaveBeenCalledWith({ establishmentId: CARD, mediaId: MEDIA });
+    expect(OcrJobModel.enqueue).toHaveBeenCalledWith({ establishmentId: CARD, mediaId: MEDIA, countedFor: USER });
     expect(decrement).not.toHaveBeenCalled();
   });
 
@@ -288,8 +305,295 @@ describe('enqueueWithinDailyAllowance — учётка без подтвержд
     await enqueueWithinDailyAllowance(request);
 
     expect(pool.query).toHaveBeenCalledTimes(1);
-    expect(pool.query.mock.calls[0][0]).toMatch(/email_verified OR phone_verified OR/);
+    expect(pool.query.mock.calls[0][0]).toMatch(/email_verified OR phone_verified/);
+    expect(pool.query.mock.calls[0][0]).toMatch(/is_service_account/);
     expect(pool.query.mock.calls[0][1]).toEqual([USER]);
+  });
+});
+
+describe('числа страниц', () => {
+  test('потолок на все обычные учётки — 100 страниц в сутки, одной учётке — не больше 100', () => {
+    expect(DAILY_OCR_PAGE_CEILING).toBe(100);
+    expect(DAILY_OCR_ACCOUNT_PAGE_LIMIT).toBe(100);
+  });
+
+  test('неподтверждённые: 40 страниц на всех и 20 на учётку; задания — прежние 20 и 10', () => {
+    expect(UNCONFIRMED_DAILY_LIMITS).toMatchObject({ ocrPages: 40, ocrJobs: 20 });
+    expect(UNCONFIRMED_ACCOUNT_DAILY_LIMITS).toMatchObject({ ocrPages: 20, ocrJobs: 10 });
+  });
+
+  test.each([
+    [100, 50],
+    [101, 51],
+    [200, 100],
+    [1000, 100],
+    [1, 1],
+  ])('потолок %i — одной учётке не больше половины и не больше ста: %i', (ceiling, limit) => {
+    expect(accountPageLimit(ceiling)).toBe(limit);
+  });
+
+  test.each([
+    ['не задана', {}, 100],
+    ['пустая', { OCR_DAILY_PAGE_CEILING: '' }, 100],
+    ['целое число', { OCR_DAILY_PAGE_CEILING: '250' }, 250],
+    ['с пробелами', { OCR_DAILY_PAGE_CEILING: ' 250 ' }, 250],
+    ['ноль', { OCR_DAILY_PAGE_CEILING: '0' }, 100],
+    ['отрицательное', { OCR_DAILY_PAGE_CEILING: '-5' }, 100],
+    ['дробное', { OCR_DAILY_PAGE_CEILING: '2.5' }, 100],
+    ['с приставкой', { OCR_DAILY_PAGE_CEILING: 'OCR_DAILY_PAGE_CEILING=250' }, 100],
+    ['сверх точного целого', { OCR_DAILY_PAGE_CEILING: '99999999999999999999' }, 100],
+  ])('переменная потолка: %s', (_label, env, expected) => {
+    expect(dailyOcrPageCeiling(env)).toBe(expected);
+  });
+});
+
+describe('дверь смотрит, не потрачены ли страницы дня, и сама их не тратит', () => {
+  const request = { userId: USER, establishmentId: CARD, mediaId: MEDIA };
+
+  const counters = (values) => {
+    getCounter.mockImplementation(async (key) => values[key] ?? 0);
+  };
+  const standing = (row) => {
+    pool.query.mockResolvedValue({ rows: [row] });
+  };
+
+  test('страницы остались (потолок 99 из 100) — задание ставится; счётчики страниц дверь не двигает', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    counters({ [CEILING_PAGES]: 99 });
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-5' });
+
+    const result = await enqueueWithinDailyAllowance(request);
+
+    expect(result.queued).toBe(true);
+    expect(getCounter.mock.calls.map(([key]) => key)).toEqual([OWN_PAGES, CEILING_PAGES]);
+    expect(incrementWithExpiry.mock.calls.map(([key]) => key)).toEqual([KEY]);
+  });
+
+  test('потолок выбран (100 из 100) — задание не ставится, предел заданий не тронут, строка в журнал', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    counters({ [CEILING_PAGES]: 100 });
+
+    const result = await enqueueWithinDailyAllowance(request);
+
+    expect(result).toEqual({
+      queued: false,
+      refusal: {
+        granted: false,
+        pot: 'ceiling',
+        pages: 100,
+        limit: 100,
+        retryAfter: SECONDS_TO_MIDNIGHT,
+        resetAt: '2026-10-17T21:00:00.000Z',
+      },
+    });
+    expect(incrementWithExpiry).not.toHaveBeenCalled();
+    expect(OcrJobModel.enqueue).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith('Recognition pages of the day spent: job not queued', {
+      userId: USER,
+      establishmentId: CARD,
+      mediaId: MEDIA,
+      refusedBy: 'ceiling',
+      pages: 100,
+      pagesLimit: 100,
+    });
+  });
+
+  test('своя граница: половина потолка, 50 страниц — задание не ставится', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    counters({ [OWN_PAGES]: 50 });
+
+    expect(await enqueueWithinDailyAllowance(request)).toMatchObject({
+      queued: false,
+      refusal: { pot: 'account', pages: 50, limit: 50 },
+    });
+  });
+
+  test.each([
+    ['пул неподтверждённых', { [POOL_PAGES]: 40 }, 40],
+    ['доля учётки', { [SHARE_PAGES]: 20 }, 20],
+  ])('неподтверждённая: %s выбран — задание не ставится', async (_label, values, limit) => {
+    standing({ confirmed: false, is_service_account: false });
+    counters(values);
+
+    expect(await enqueueWithinDailyAllowance(request)).toMatchObject({
+      queued: false,
+      refusal: { pot: 'unconfirmed', pages: limit, limit },
+    });
+  });
+
+  test('подтверждённой учётке пул неподтверждённых не мешает и не спрашивается', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    counters({ [POOL_PAGES]: 40, [SHARE_PAGES]: 20 });
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-6' });
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(true);
+    expect(getCounter.mock.calls.map(([key]) => key)).toEqual([OWN_PAGES, CEILING_PAGES]);
+  });
+
+  test('дом сида: страниц не считает и не спрашивает, задание учётки не несёт', async () => {
+    standing({ confirmed: true, is_service_account: true });
+    counters({ [CEILING_PAGES]: 100 });
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-7' });
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(true);
+    expect(getCounter).not.toHaveBeenCalled();
+    expect(OcrJobModel.enqueue).toHaveBeenCalledWith({ establishmentId: CARD, mediaId: MEDIA });
+  });
+
+  test('запрос об учётке упал — строгий ответ: страницы и задания как у неподтверждённой, строка в журнал', async () => {
+    pool.query.mockRejectedValue(new Error('connection terminated'));
+    incrementWithExpiry.mockResolvedValue(1);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-8' });
+
+    await enqueueWithinDailyAllowance(request);
+
+    expect(getCounter.mock.calls.map(([key]) => key)).toEqual([OWN_PAGES, POOL_PAGES, SHARE_PAGES, CEILING_PAGES]);
+    expect(logger.error).toHaveBeenCalledWith(
+      'Recognition allowance: account lookup failed, the limits of an unconfirmed account apply',
+      expect.objectContaining({ userId: USER }),
+    );
+  });
+});
+
+describe('takePagesForAttempt — страницы попытки, когда их число уже известно', () => {
+  const attemptOf = (pages, attempt = 1) => ({
+    userId: USER, pages, attempt, jobId: 'job-9', mediaId: MEDIA,
+  });
+  const standing = (row) => {
+    pool.query.mockResolvedValue({ rows: [row] });
+  };
+  const countersAfter = (...values) => {
+    values.forEach((value) => incrementWithExpiry.mockResolvedValueOnce(value));
+  };
+
+  test('подтверждённая: свой предел и потолок всех, шаг — страницы, срок — до полуночи Минска', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    countersAfter(9, 30);
+
+    await takePagesForAttempt(attemptOf(9));
+
+    expect(incrementWithExpiry.mock.calls).toEqual([
+      [OWN_PAGES, SECONDS_TO_MIDNIGHT, 9],
+      [CEILING_PAGES, SECONDS_TO_MIDNIGHT, 9],
+    ]);
+    expect(decrement).not.toHaveBeenCalled();
+  });
+
+  test('неподтверждённая: ещё общий пул и её доля', async () => {
+    standing({ confirmed: false, is_service_account: false });
+    countersAfter(3, 3, 3, 3);
+
+    await takePagesForAttempt(attemptOf(3));
+
+    expect(incrementWithExpiry.mock.calls.map(([key]) => key)).toEqual([OWN_PAGES, POOL_PAGES, SHARE_PAGES, CEILING_PAGES]);
+  });
+
+  test('после полуночи Минска — ключи нового дня и полные сутки впереди', async () => {
+    Date.now.mockReturnValue(Date.parse('2026-10-17T21:00:00.000Z'));
+    standing({ confirmed: true, is_service_account: false });
+    countersAfter(1, 1);
+
+    await takePagesForAttempt(attemptOf(1));
+
+    expect(incrementWithExpiry.mock.calls).toEqual([
+      [`ocr:daily:${USER}:2026-10-18:pages`, 86400, 1],
+      ['ocr:ceiling:2026-10-18:pages', 86400, 1],
+    ]);
+  });
+
+  test('повторная попытка — снова все страницы', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    countersAfter(9, 18);
+
+    await takePagesForAttempt(attemptOf(9, 2));
+
+    expect(incrementWithExpiry.mock.calls.map(([, , step]) => step)).toEqual([9, 9]);
+  });
+
+  test('повторная попытка сверх предела не отказывает: считается и идёт дальше', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    countersAfter(60, 110);
+
+    await expect(takePagesForAttempt(attemptOf(10, 2))).resolves.toBeUndefined();
+
+    expect(decrement).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  test('100-я страница — можно; 101-я — отказ кодом, взятое возвращено тем же шагом, строка в журнал', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    countersAfter(10, 100);
+    await takePagesForAttempt(attemptOf(10));
+    expect(decrement).not.toHaveBeenCalled();
+
+    countersAfter(20, 110);
+    const failure = await takePagesForAttempt(attemptOf(10)).catch((error) => error);
+
+    expect(failure.code).toBe(RECOGNITION_CEILING);
+    expect(failure.message).toBe(RECOGNITION_CEILING_MESSAGE);
+    expect(decrement.mock.calls).toEqual([[OWN_PAGES, 10], [CEILING_PAGES, 10]]);
+    expect(logger.warn).toHaveBeenCalledWith('Recognition pages of the day do not fit: file not read', {
+      userId: USER,
+      jobId: 'job-9',
+      mediaId: MEDIA,
+      filePages: 10,
+      attempt: 1,
+      refusedBy: 'ceiling',
+      pages: 110,
+      pagesLimit: 100,
+    });
+  });
+
+  test('своя граница: 50 страниц можно, 51-я — отказ, потолка всех не касаясь', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    countersAfter(50, 60);
+    await takePagesForAttempt(attemptOf(1));
+    incrementWithExpiry.mockReset();
+
+    countersAfter(51);
+    const failure = await takePagesForAttempt(attemptOf(1)).catch((error) => error);
+
+    expect(failure.code).toBe(RECOGNITION_CEILING);
+    expect(incrementWithExpiry).toHaveBeenCalledTimes(1);
+    expect(decrement.mock.calls).toEqual([[OWN_PAGES, 1]]);
+  });
+
+  test('неподтверждённая: 40-я на всех и 20-я на учётку — можно', async () => {
+    standing({ confirmed: false, is_service_account: false });
+    countersAfter(20, 40, 20, 90);
+
+    await takePagesForAttempt(attemptOf(1));
+
+    expect(decrement).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['41-я на всех', [5, 41], [[OWN_PAGES, 1], [POOL_PAGES, 1]]],
+    ['21-я одной учётки', [21, 30, 21], [[OWN_PAGES, 1], [POOL_PAGES, 1], [SHARE_PAGES, 1]]],
+  ])('неподтверждённая: %s — отказ', async (_label, values, returned) => {
+    standing({ confirmed: false, is_service_account: false });
+    countersAfter(...values);
+
+    const failure = await takePagesForAttempt(attemptOf(1)).catch((error) => error);
+
+    expect(failure.code).toBe(RECOGNITION_CEILING);
+    expect(decrement.mock.calls).toEqual(returned);
+  });
+
+  test('учётка стала домом сида, пока файл ждал очереди: страницы не считаются', async () => {
+    standing({ confirmed: true, is_service_account: true });
+
+    await takePagesForAttempt(attemptOf(9));
+
+    expect(incrementWithExpiry).not.toHaveBeenCalled();
+  });
+
+  test('текст отказа партнёру — «временно недоступно», в строке нет чисел для запроса пункта реестра', () => {
+    expect(failureReasonOf(RECOGNITION_CEILING_MESSAGE)).toBe('unavailable');
+    expect(RECOGNITION_CEILING_MESSAGE).not.toMatch(/\d/);
   });
 });
 
@@ -309,5 +613,17 @@ describe('DailyOcrLimitError — отказ перезапуска, которо
       reset_at: '2026-10-17T21:00:00.000Z',
     });
     expect(refusal.retryAfter).toBe(43200);
+  });
+
+  test('отказ по страницам называет свой предел', () => {
+    const refusal = new DailyOcrLimitError({
+      granted: false, pot: 'ceiling', pages: 100, limit: 100, retryAfter: 43200, resetAt: '2026-10-17T21:00:00.000Z',
+    });
+
+    expect(refusal.details).toEqual({
+      pages_limit: 100,
+      retry_after: 43200,
+      reset_at: '2026-10-17T21:00:00.000Z',
+    });
   });
 });

@@ -48,6 +48,16 @@ export const UNSUPPORTED_FILE_MESSAGE = 'Unsupported file_type for OCR';
 export const KEY_REFUSED_MESSAGE = 'OpenRouter refused the key';
 
 /**
+ * services/ocrAllowance.js takePagesForAttempt: the pages of this file do not
+ * fit what is left of the day (the ceiling of all accounts, the account's own
+ * limit, the unconfirmed accounts' pool). Nothing was read and the file is not
+ * to blame; the partner restarts recognition after Minsk midnight. No digits
+ * in it: the query of the register's item «Пределы постраничного OCR» looks for
+ * «429» and «402» in this column, and this refusal is not the provider's.
+ */
+export const RECOGNITION_CEILING_MESSAGE = 'Pages of the file do not fit the day of recognition';
+
+/**
  * The cause as the partner's menu answer names it (`recognition.cause`): the
  * app gives advice by it — a restart helps after a failure of the service,
  * not when the file itself cannot be read.
@@ -92,7 +102,9 @@ const KEY_REFUSED = new RegExp(`^(page \\d+ of \\d+: )?${escapeRegExp(KEY_REFUSE
  *   - unavailable — OpenRouter refused the key (KEY_REFUSED_MESSAGE, also
  *     behind «page N of M: »): spent or revoked, not the file's fault. A job
  *     failed by a 401 or 402 before 28.10.2026 kept the old message and stays
- *     serviceFailure;
+ *     serviceFailure. Or the day's pages ran out before the file was read
+ *     (RECOGNITION_CEILING_MESSAGE): to the partner it is the same — not the
+ *     file's fault, try later;
  *   - serviceFailure — anything else: the recognition service failed or timed
  *     out, the attempt was cut short (a deploy, a dead process — the
  *     reaper's and the poller's messages). The file itself may be fine.
@@ -107,6 +119,7 @@ export const failureReasonOf = (errorMessage) => {
   if (OVER_LIMIT.test(message)) return 'overLimit';
   if (UNREADABLE.test(message)) return 'unreadable';
   if (KEY_REFUSED.test(message)) return 'unavailable';
+  if (message.startsWith(RECOGNITION_CEILING_MESSAGE)) return 'unavailable';
   return 'serviceFailure';
 };
 
