@@ -71,6 +71,8 @@ const {
   enqueueWithinDailyAllowance,
 } = await import('../../services/ocrAllowance.js');
 const { unconfirmedAccountKeys, unconfirmedKeys } = await import('../../services/unconfirmedAllowance.js');
+const { getRecognitionHealth } = await import('../../services/ocrCeilingHealth.js');
+const { minskDate, secondsUntilMinskMidnight } = await import('../../utils/minskDay.js');
 
 const REFUSAL_MESSAGE = 'Pages of the file do not fit the day of recognition';
 
@@ -85,6 +87,7 @@ const sweepKeys = async () => {
   const keys = [
     ...await redisClient.keys('ocr:daily:*'),
     ...await redisClient.keys('ocr:ceiling:*'),
+    ...await redisClient.keys('ocr:refusals:*'),
     ...await redisClient.keys('unconfirmed:daily:*'),
   ];
   if (keys.length > 0) await redisClient.del(keys);
@@ -639,6 +642,79 @@ describe('неподтверждённые учётки: PDF тоже в стр�
     expect(calls.vision).toBe(12);
     expect(await count(sharePages(card))).toBe(15);
     expect(await count(ceilingKey())).toBe(12);
+  });
+});
+
+// Нитка «Потолок распознавания: малые правки», находка 3 (вариант Б
+// Координатора, 08.11.2026): отказ потолка виден в блоке recognition проверки
+// здоровья, а не только в журнале; пятничный сторож краснеет на отказах общего
+// потолка. Здесь — настоящие отказы на настоящем Redis и что из них видит табло.
+describe('табло потолка: настоящие отказы видны в блоке recognition', () => {
+  const NO_REFUSALS = { door_ceiling: 0, door_share: 0, door_jobs: 0, reading_ceiling: 0, reading_share: 0 };
+  const todayOnBoard = async () => (await getRecognitionHealth()).days[0];
+
+  test('тихий день: страницы прочитанного файла — на табло, отказов нет, потолок не выбран', async () => {
+    const card = await newCard();
+    const mediaId = await insertMenuFile(card);
+    parser.numpages = 9;
+
+    await askAtDoor(card, mediaId);
+    await runNext();
+
+    const board = await getRecognitionHealth();
+    expect(board).toMatchObject({ ceiling_pages: 100, ceiling_reached: false, redis_ready: true });
+    expect(board.days).toHaveLength(8);
+    expect(board.days[0]).toEqual({ date: minskDate(today()), pages_counted: 9, refusals: NO_REFUSALS });
+  });
+
+  test('при чтении не поместился в общий потолок — reading_ceiling; взятое возвращено, на табло 99', async () => {
+    const card = await newCard();
+    const mediaId = await insertMenuFile(card);
+    parser.numpages = 3;
+    await askAtDoor(card, mediaId);
+    await setCount(ceilingKey(), 99);
+
+    const { job } = await runNext();
+
+    expect(job.status).toBe('failed');
+    expect(await todayOnBoard()).toEqual({
+      date: minskDate(today()), pages_counted: 99, refusals: { ...NO_REFUSALS, reading_ceiling: 1 },
+    });
+  });
+
+  test('у двери: общий потолок выбран — door_ceiling и «выбран»; своя доля выбрана — door_share', async () => {
+    const first = await newCard();
+    const second = await newCard();
+    await setCount(ceilingKey(), 100);
+
+    expect((await askAtDoor(first, await insertMenuFile(first))).queued).toBe(false);
+    await setCount(ceilingKey(), 10);
+    await setCount(ownPages(second), 50);
+    expect((await askAtDoor(second, await insertMenuFile(second))).queued).toBe(false);
+
+    expect(await todayOnBoard()).toMatchObject({ refusals: { ...NO_REFUSALS, door_ceiling: 1, door_share: 1 } });
+    await setCount(ceilingKey(), 100);
+    expect((await getRecognitionHealth()).ceiling_reached).toBe(true);
+  });
+
+  test('счётчик потолка и отказов живёт неделю после своих суток, доля учётки — до полуночи', async () => {
+    const card = await newCard();
+    parser.numpages = 2;
+    await askAtDoor(card, await insertMenuFile(card));
+    await runNext();
+    const second = await newCard();
+    await setCount(ownPages(second), 50);
+    await askAtDoor(second, await insertMenuFile(second));
+
+    const left = secondsUntilMinskMidnight(today());
+    const week = 7 * 24 * 60 * 60;
+    const ceilingTtl = await redisClient.ttl(ceilingKey());
+    const refusalTtl = await redisClient.ttl(`ocr:refusals:${minskDate(today())}:door_share`);
+    expect(ceilingTtl).toBeGreaterThan(left + week - 60);
+    expect(ceilingTtl).toBeLessThanOrEqual(left + week);
+    expect(refusalTtl).toBeGreaterThan(left + week - 60);
+    expect(refusalTtl).toBeLessThanOrEqual(left + week);
+    expect(await redisClient.ttl(ownPages(card))).toBeLessThanOrEqual(left);
   });
 });
 

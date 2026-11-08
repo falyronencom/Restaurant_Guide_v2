@@ -7,6 +7,7 @@
 import * as searchService from '../services/searchService.js';
 import * as smartSearchBudget from '../services/smartSearchBudget.js';
 import { getKeyHealth } from '../services/openRouterKeyStatus.js';
+import { getRecognitionHealth } from '../services/ocrCeilingHealth.js';
 import { isAvailable } from '../config/openrouter.js';
 import { siteRequestTallies } from '../middleware/siteVisitor.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -258,13 +259,20 @@ export async function getEstablishmentById(req, res, next) {
  * (services/openRouterKeyStatus.js) — read by the weekly watchdog
  * (.github/workflows/openrouter-usage.yml). No money, no key; `unknown` with
  * a code when it could not be read. It does not change the status code either.
+ *
+ * `recognition` (thread «Потолок распознавания: малые правки», finding 3,
+ * 08.11.2026): the ceiling of menu recognition, today and the seven days
+ * before — pages counted, refusals by kind (services/ocrCeilingHealth.js); the
+ * same watchdog turns red when the ceiling refused a file in the week.
+ * Aggregates only; the status code stays PostGIS's.
  */
 export async function searchHealth(req, res, next) {
   try {
-    const [health, smartBudget, modelKey] = await Promise.all([
+    const [health, smartBudget, modelKey, recognition] = await Promise.all([
       searchService.checkSearchHealth(),
       smartSearchBudget.getBudgetHealth({ modelAvailable: isAvailable() }),
       getKeyHealth(),
+      getRecognitionHealth(),
     ]);
     const smart = { ...smartBudget, site_requests: siteRequestTallies() };
 
@@ -272,7 +280,7 @@ export async function searchHealth(req, res, next) {
 
     res.status(statusCode).json({
       success: health.healthy,
-      data: { ...health, smart, model_key: modelKey },
+      data: { ...health, smart, model_key: modelKey, recognition },
     });
   } catch (error) {
     next(error);

@@ -30,6 +30,19 @@
  * Защита выкатки — та же, что у соседних сторожей (checkDeployWindow из
  * model-expiry/watch.js): если на коммите ещё идёт другой прогон, красный
  * сторож сорвал бы выкатку Railway, и провал откладывается.
+ *
+ * Потолок распознавания (нитка «Потолок распознавания: малые правки»,
+ * находка 3; выбор Координатора — вариант Б, 08.11.2026). Тот же ключ держит
+ * общий суточный потолок страниц распознавания (backend/src/services/
+ * ocrAllowance.js): когда он выбран, меню партнёров не распознаются до
+ * следующих суток, а видно это было только в журнале сервера. Из того же
+ * ответа сторож читает блок recognition (services/ocrCeilingHealth.js:
+ * сегодня и семь дней до него) и даёт тревогу, если общий потолок хоть раз
+ * не принял файл. Отказы по доле одной учётки — строкой в итоге, без
+ * тревоги: так доля и работает. Нет блока, не прочитан формат или сервер не
+ * спросил свой Redis (без него пределы распознавания не действуют) — сторож
+ * ослеп. Неделя сторожа — восемь суток: отказ утром прошлой пятницы до его
+ * прогона попадёт в два отчёта подряд, зато ни один не пропадёт.
  */
 
 import { checkDeployWindow } from '../model-expiry/watch.js';
@@ -121,15 +134,17 @@ export function parseHealthUrl(raw) {
 }
 
 /**
- * Блок model_key из проверки здоровья сервера. Сервер отвечает 503, когда
- * не здорова база, но блок ключа есть и тогда — он и читается. Сбой сети,
- * 5xx без блока и 429 — повтор; блок с проходящей причиной незнания
- * (PASSING_REASONS) — тоже повтор; прочее — сразу ответ.
+ * Блоки model_key и recognition из проверки здоровья сервера, одним чтением.
+ * Сервер отвечает 503, когда не здорова база, но блоки есть и тогда — они и
+ * читаются. Сбой сети, 5xx без блока ключа и 429 — повтор; блок ключа с
+ * проходящей причиной незнания (PASSING_REASONS) или блок распознавания,
+ * чей Redis на миг не ответил, — тоже повтор; прочее — сразу ответ. Блока
+ * распознавания нет — recognition: null, решает evaluateRecognition.
  *
- * @returns {Promise<object>} блок model_key
+ * @returns {Promise<{ keyBlock: object, recognition: object|null }>}
  * @throws {BlindError}
  */
-export async function fetchKeyBlock({
+export async function fetchHealthBlocks({
   url,
   fetchImpl = globalThis.fetch,
   attempts = ATTEMPTS,
@@ -138,7 +153,7 @@ export async function fetchKeyBlock({
   sleep = sleepMs,
 }) {
   const failures = [];
-  let lastBlock = null;
+  let last = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     let retry = true;
     try {
@@ -154,11 +169,14 @@ export async function fetchKeyBlock({
       }
       const block = body?.data?.model_key;
       if (block && typeof block === 'object' && !Array.isArray(block)) {
-        lastBlock = block;
+        last = { keyBlock: block, recognition: body.data.recognition ?? null };
         if (block.status === 'unknown' && PASSING_REASONS.has(block.unknown_reason)) {
           throw new Error(`сервер ещё не прочитал ключ (${oneLine(block.unknown_reason, 40)})`);
         }
-        return block;
+        if (last.recognition?.redis_ready === false) {
+          throw new Error('сервер не спросил свой Redis о счётчиках распознавания');
+        }
+        return last;
       }
       retry = response.status >= 500 || response.status === 429;
       throw new Error(response.ok ? 'в ответе нет блока model_key — сервер до этой правки?' : `HTTP ${response.status}`);
@@ -168,8 +186,18 @@ export async function fetchKeyBlock({
       if (attempt < attempts) await sleep(retryDelaysMs[Math.min(attempt - 1, retryDelaysMs.length - 1)]);
     }
   }
-  if (lastBlock) return lastBlock;
+  if (last) return last;
   throw new BlindError(`проверка здоровья сервера не ответила (${url}) — ${failures.join('; ')}`);
+}
+
+/**
+ * Блок model_key из проверки здоровья сервера (fetchHealthBlocks).
+ *
+ * @returns {Promise<object>} блок model_key
+ * @throws {BlindError}
+ */
+export async function fetchKeyBlock(options) {
+  return (await fetchHealthBlocks(options)).keyBlock;
 }
 
 const UNKNOWN_TEXT = {
@@ -233,6 +261,98 @@ export function evaluateKey({ block, now, alarmPercent, staleMs = STALE_MS }) {
 }
 
 /**
+ * Виды отказов блока recognition — REFUSAL_KINDS сервера
+ * (backend/src/services/ocrAllowance.js; тест сверяет списки: сторож идёт без
+ * зависимостей и код сервера не подключает). door_* — у двери: файл не
+ * поставлен в очередь; reading_* — при первом запуске задания: файл не
+ * прочитан. *_ceiling — общий потолок, *_share — доля учётки или пределы
+ * неподтверждённых учёток, door_jobs — задания дня.
+ */
+export const REFUSAL_FIELDS = Object.freeze([
+  'door_ceiling', 'door_share', 'door_jobs', 'reading_ceiling', 'reading_share',
+]);
+
+const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
+const isMinskDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/** 2026-11-08 → 08.11 */
+const shortDate = (date) => `${date.slice(8, 10)}.${date.slice(5, 7)}`;
+
+/**
+ * Оценка блока recognition: тревога — общий потолок распознавания не принял
+ * файл хоть раз за дни блока; слепота — блока нет, формат не прочитан или
+ * сервер не спросил свой Redis.
+ *
+ * @param {{ board: object|null }} input
+ * @returns {{ blind: string|null, alarm: boolean, summary: object|null }}
+ *   summary — потолок, число дней, дни с отказами общего потолка, отказы долей
+ *   и заданий за все дни, самые занятые сутки
+ */
+export function evaluateRecognition({ board }) {
+  const blind = (reason) => ({ blind: reason, alarm: false, summary: null });
+  if (board === null || board === undefined) {
+    return blind('в ответе нет блока recognition — сервер до этой правки?');
+  }
+  if (typeof board !== 'object' || Array.isArray(board)) {
+    return blind(`блок recognition не прочитан (${oneLine(JSON.stringify(board), 60)})`);
+  }
+  if (!Number.isSafeInteger(board.ceiling_pages) || board.ceiling_pages <= 0) {
+    return blind(`потолок (ceiling_pages) не прочитан (${oneLine(JSON.stringify(board.ceiling_pages), 40)})`);
+  }
+  if (board.redis_ready !== true || board.days === null) {
+    return blind('сервер не прочитал счётчики распознавания: его Redis не ответил, а без Redis пределы распознавания не действуют');
+  }
+  if (!Array.isArray(board.days) || board.days.length === 0) {
+    return blind(`дни (days) блока recognition не прочитаны (${oneLine(JSON.stringify(board.days), 60)})`);
+  }
+  for (const day of board.days) {
+    const readable = day && isMinskDate(day.date) && isCount(day.pages_counted)
+      && day.refusals && REFUSAL_FIELDS.every((field) => isCount(day.refusals[field]));
+    if (!readable) return blind(`день блока recognition не прочитан (${oneLine(JSON.stringify(day), 80)})`);
+  }
+
+  const days = board.days;
+  const byCeiling = days
+    .map((day) => ({ date: day.date, door: day.refusals.door_ceiling, reading: day.refusals.reading_ceiling }))
+    .filter(({ door, reading }) => door + reading > 0);
+  const sum = (field) => days.reduce((total, day) => total + day.refusals[field], 0);
+  const busiest = days.reduce((top, day) => (day.pages_counted > top.pages_counted ? day : top), days[0]);
+  return {
+    blind: null,
+    alarm: byCeiling.length > 0,
+    summary: {
+      ceiling: board.ceiling_pages,
+      dayCount: days.length,
+      byCeiling,
+      share: sum('door_share') + sum('reading_share'),
+      jobs: sum('door_jobs'),
+      busiest: { date: busiest.date, pages: busiest.pages_counted },
+    },
+  };
+}
+
+/** Строки итога о потолке распознавания: главная (с ✅ или ❌) и, если были, отказы долей и заданий. */
+export function recognitionLines(summary) {
+  const head = `Потолок распознавания (${summary.ceiling} страниц в сутки на всех)`;
+  const lines = [];
+  if (summary.byCeiling.length > 0) {
+    const days = summary.byCeiling.map(({ date, door, reading }) => {
+      const parts = [door > 0 && `у двери ${door}`, reading > 0 && `при чтении ${reading}`].filter(Boolean);
+      return `${shortDate(date)} — ${door + reading} (${parts.join(', ')})`;
+    });
+    lines.push(`❌ ${head}: общий потолок не принял файлы — ${days.join('; ')}`);
+  } else {
+    lines.push(`✅ ${head}: за ${summary.dayCount} сут. общий потолок файлов не отклонял; `
+      + `больше всего страниц за сутки — ${summary.busiest.pages} (${shortDate(summary.busiest.date)})`);
+  }
+  if (summary.share > 0 || summary.jobs > 0) {
+    lines.push(`Отказов по доле одной учётки или пределам неподтверждённых — ${summary.share}, `
+      + `по заданиям дня — ${summary.jobs}: так пределы и работают, тревоги нет.`);
+  }
+  return lines;
+}
+
+/**
  * Код выхода. Провал откладывается только при подтверждённом mayWait
  * защиты выкатки; ошибка защиты провал не откладывает.
  *
@@ -268,6 +388,15 @@ const BLIND_HINT = 'Что делать: открыть адрес провер�
   + 'OpenRouter и переменная OPENROUTER_API_KEY на Railway; разовый сбой сети — следующий запуск покажет; '
   + 'формат изменился — править backend/scripts/openrouter-usage/watch.js и backend/src/services/openRouterKeyStatus.js.';
 
+const RECOGNITION_ALARM_HINT = 'Что делать: открыть адрес проверки здоровья, блок recognition — дни, страницы и отказы. '
+  + 'Партнёр с отказом перезапускает распознавание после полуночи по Минску; одобрение карточки модератором '
+  + 'читает меню без потолка. День выбирают честные партнёры — поднять потолок (переменная OCR_DAILY_PAGE_CEILING '
+  + 'на Railway, без выпуска); одна-две учётки — их видно в журнале сервера, строки «Recognition pages of the day …».';
+
+const RECOGNITION_BLIND_HINT = 'Что делать: открыть адрес проверки здоровья в браузере и посмотреть блок recognition. '
+  + 'Нет блока — на проде сервер до этой правки; redis_ready false — Redis сервера на Railway; формат изменился — '
+  + 'править backend/scripts/openrouter-usage/watch.js и backend/src/services/ocrCeilingHealth.js.';
+
 // Команды workflow GitHub: в данных экранируются %, CR, LF; в свойствах ещё : и ,.
 const escapeData = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
 const escapeProperty = (s) => escapeData(s).replace(/:/g, '%3A').replace(/,/g, '%2C');
@@ -276,9 +405,10 @@ const annotation = (level, title, message) => `::${level} title=${escapeProperty
 /**
  * Отчёт: текст для лога, Markdown для страницы прогона (GITHUB_STEP_SUMMARY)
  * и аннотации GitHub (error — провал, warning — отложенный провал и
- * предупреждения).
+ * предупреждения). recognition — оценка блока recognition (evaluateRecognition)
+ * или null, когда до него не дошло (порог не прочитан, сервер не ответил).
  */
-export function formatReport({ now, alarmPercent, url, evaluation, verdict, guard }) {
+export function formatReport({ now, alarmPercent, url, evaluation, recognition = null, verdict, guard }) {
   const threshold = alarmPercent == null ? 'порог не прочитан' : `тревога при остатке меньше ${alarmPercent} %`;
   const header = `Расход OpenRouter — ${now.toISOString().slice(0, 10)}, ${threshold}`;
   const text = [header];
@@ -289,7 +419,7 @@ export function formatReport({ now, alarmPercent, url, evaluation, verdict, guar
     text.push(...lines);
     md.push(...lines);
   };
-  if (url) both(`Источник: ${url} (блок model_key).`);
+  if (url) both(`Источник: ${url} (блоки model_key и recognition).`);
 
   if (evaluation.blind) {
     text.push('', `❌ Сторож ослеп: ${evaluation.blind}`);
@@ -306,6 +436,20 @@ export function formatReport({ now, alarmPercent, url, evaluation, verdict, guar
     if (evaluation.alarm) {
       annotations.push(annotation(level, 'Ключ OpenRouter у предела', line));
       both('', ALARM_HINT);
+    }
+  }
+
+  if (recognition?.blind) {
+    text.push('', `❌ Сторож не видит потолок распознавания: ${recognition.blind}`);
+    md.push('', `❌ **Сторож не видит потолок распознавания:** ${recognition.blind}`);
+    both('', RECOGNITION_BLIND_HINT);
+    annotations.push(annotation(level, 'Сторож не видит потолок распознавания', recognition.blind));
+  } else if (recognition) {
+    const [head, ...rest] = recognitionLines(recognition.summary);
+    both('', head, ...rest);
+    if (recognition.alarm) {
+      annotations.push(annotation(level, 'Потолок распознавания не принимал файлы', head));
+      both('', RECOGNITION_ALARM_HINT);
     }
   }
   both('', 'Баланс аккаунта сторож не читает: для этого нужен ключ управления (решение Trunk 28.10.2026).');
@@ -328,8 +472,9 @@ export function formatReport({ now, alarmPercent, url, evaluation, verdict, guar
 }
 
 /**
- * Один прогон: порог и адрес → блок model_key → оценка → при провале —
- * защита выкатки → код выхода и отчёт. Защиту спрашивают только перед
+ * Один прогон: порог и адрес → блоки model_key и recognition → оценки → при
+ * провале — защита выкатки → код выхода и отчёт. Слепота любого блока —
+ * слепота прогона, тревога любого — тревога. Защиту спрашивают только перед
  * провалом.
  *
  * @returns {Promise<{ code: number, report: { text: string, markdown: string, annotations: string[] } }>}
@@ -337,26 +482,36 @@ export function formatReport({ now, alarmPercent, url, evaluation, verdict, guar
 export async function runWatch({
   env = process.env,
   now = new Date(),
-  fetchKeyBlockImpl = fetchKeyBlock,
+  fetchHealthImpl = fetchHealthBlocks,
   checkDeployWindowImpl = checkDeployWindow,
 } = {}) {
   let evaluation;
+  let recognition = null;
   let alarmPercent = null;
   let url = null;
   try {
     alarmPercent = parseAlarmPercent(env.ALARM_PERCENT);
     url = parseHealthUrl(env.HEALTH_URL);
-    evaluation = evaluateKey({ block: await fetchKeyBlockImpl({ url }), now, alarmPercent });
+    const blocks = await fetchHealthImpl({ url });
+    evaluation = evaluateKey({ block: blocks.keyBlock, now, alarmPercent });
+    recognition = evaluateRecognition({ board: blocks.recognition });
   } catch (error) {
     if (!(error instanceof BlindError)) throw error;
     evaluation = { blind: error.message, alarm: false, key: null, warnings: [] };
   }
 
+  const outcome = {
+    blind: evaluation.blind ?? recognition?.blind ?? null,
+    alarm: evaluation.alarm || recognition?.alarm === true,
+  };
   let guard = null;
-  let verdict = decideExit({ ...evaluation, guard });
+  let verdict = decideExit({ ...outcome, guard });
   if (verdict.code !== EXIT.OK) {
     guard = await checkDeployWindowImpl({ env });
-    verdict = decideExit({ ...evaluation, guard });
+    verdict = decideExit({ ...outcome, guard });
   }
-  return { code: verdict.code, report: formatReport({ now, alarmPercent, url, evaluation, verdict, guard }) };
+  return {
+    code: verdict.code,
+    report: formatReport({ now, alarmPercent, url, evaluation, recognition, verdict, guard }),
+  };
 }
