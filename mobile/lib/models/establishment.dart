@@ -1,4 +1,5 @@
 import 'package:restaurant_guide_mobile/models/promotion.dart';
+import 'package:restaurant_guide_mobile/utils/open_status.dart';
 
 /// English→Russian mapping for cuisine values (legacy/test data compatibility)
 const _cuisineToRussian = {
@@ -154,7 +155,11 @@ class Establishment {
       longitude: json['longitude'] != null
           ? (json['longitude'] as num).toDouble()
           : null,
-      workingHours: json['working_hours'] as Map<String, dynamic>?,
+      // Не объект — часов просто нет: из-за такой карточки не должен падать
+      // разбор всей выдачи.
+      workingHours: json['working_hours'] is Map
+          ? Map<String, dynamic>.from(json['working_hours'] as Map)
+          : null,
       phone: json['phone'] as String?,
       website: json['website'] as String?,
       attributes: json['attributes'] as Map<String, dynamic>?,
@@ -219,90 +224,92 @@ class Establishment {
     'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
   ];
 
-  /// Parse day hours from two possible formats:
-  /// String: "10:00-22:00" → {'open': '10:00', 'close': '22:00', 'is_open': true}
-  /// Object: {"open": "10:00", "close": "22:00"} → same
-  /// Object closed: {"is_open": false} → {'is_open': false}
+  /// Запись одного дня: `{'open', 'close', 'is_open': true}`, выходной
+  /// `{'is_open': false}` или `null`, если дня нет или запись не читается.
+  ///
+  /// Форматы: строка «10:00-22:00» (так пишет импорт), объект
+  /// `{"open": "10:00", "close": "22:00"}` с необязательным `is_open`. Время
+  /// приводится к «ЧЧ:ММ». Объект рабочего дня без правильного времени остаётся
+  /// рабочим днём, но с `null` вместо времени: кабинет сайта присылал
+  /// `{is_open: true, open: '', close: ''}`, и партнёр должен видеть такой день
+  /// незаполненным, а не выходным. Падать не на чем: на входе бывает что угодно.
   static Map<String, dynamic>? parseDayHours(dynamic dayHours) {
-    if (dayHours == null) return null;
-
     if (dayHours is String) {
       final parts = dayHours.split('-');
-      if (parts.length == 2) {
-        return {'open': parts[0].trim(), 'close': parts[1].trim(), 'is_open': true};
-      }
-      return null;
-    } else if (dayHours is Map) {
-      if (dayHours['is_open'] == false) {
-        return {'is_open': false};
-      }
+      if (parts.length != 2) return null;
+      final open = clockMinutes(parts[0]);
+      final close = clockMinutes(parts[1]);
+      if (open == null || close == null) return null;
       return {
-        'open': dayHours['open'] as String?,
-        'close': dayHours['close'] as String?,
+        'open': clockLabel(open),
+        'close': clockLabel(close),
+        'is_open': true,
+      };
+    }
+    if (dayHours is Map) {
+      if (dayHours['is_open'] == false) return {'is_open': false};
+      final open = clockMinutes(dayHours['open']);
+      final close = clockMinutes(dayHours['close']);
+      return {
+        'open': open == null ? null : clockLabel(open),
+        'close': close == null ? null : clockLabel(close),
         'is_open': true,
       };
     }
     return null;
   }
 
-  /// Часы работы на КОНКРЕТНЫЙ момент — чистая функция от [moment].
+  /// Открыто, закрыто или неизвестно в КОНКРЕТНЫЙ момент — чистая функция от
+  /// [moment], поэтому «через полночь» и смена суток проверяются тестом, а не
+  /// подгонкой под часы машины. Момент один на весь расчёт.
   ///
-  /// Вынесено из `todayHours` ради проверяемости: пока единственным
-  /// источником времени был `DateTime.now()`, ветку «через полночь» нельзя
-  /// было проверить иначе как подгонкой ожидания под часы машины, а это
-  /// вычисляемое ожидание и флейк на границе суток.
-  Map<String, dynamic>? hoursAt(DateTime moment) {
-    if (workingHours == null) return null;
-    final dayKey = _dayKeys[moment.weekday - 1];
-    return parseDayHours(workingHours![dayKey]);
-  }
+  /// Смена дня D идёт от его открытия до закрытия; закрытие в момент открытия
+  /// или раньше — уже следующие сутки (18:00–02:00, а 12:00–12:00 и
+  /// 00:00–00:00 — ровно сутки от часа открытия). Поэтому сначала смотрим хвост
+  /// вчерашней смены, потом сегодняшнюю: ночь пятницы принадлежит четвергу.
+  /// Если вчера нет данных, решает сегодняшняя запись: у места с часами на
+  /// сегодня писать ночью «Часы не указаны» было бы странно.
+  OpenStatus openStatusAt(DateTime moment) {
+    final now = moment.hour * 60 + moment.minute;
+    final today = moment.weekday - 1;
 
-  /// Get today's parsed working hours
-  Map<String, dynamic>? get todayHours => hoursAt(DateTime.now());
-
-  /// Открыто ли заведение в КОНКРЕТНЫЙ момент.
-  ///
-  /// Момент один на весь расчёт — и для выбора дня недели, и для минут.
-  /// Прежняя версия звала `DateTime.now()` дважды (через `todayHours` и
-  /// отдельно), поэтому ровно в полночь могла взять день до перехода, а
-  /// минуты после.
-  bool isOpenAt(DateTime moment) {
-    final hours = hoursAt(moment);
-    if (hours == null) return status == 'active'; // fallback if no hours data
-    if (hours['is_open'] == false) return false;
-
-    final openStr = hours['open'] as String?;
-    final closeStr = hours['close'] as String?;
-    if (openStr == null || closeStr == null) return status == 'active';
-
-    final currentMinutes = moment.hour * 60 + moment.minute;
-
-    final openParts = openStr.split(':');
-    final closeParts = closeStr.split(':');
-    final openMinutes = int.parse(openParts[0]) * 60 + int.parse(openParts[1]);
-    final closeMinutes = int.parse(closeParts[0]) * 60 + int.parse(closeParts[1]);
-
-    // Handle overnight case (e.g., open=18:00, close=02:00)
-    if (closeMinutes <= openMinutes) {
-      return currentMinutes >= openMinutes || currentMinutes < closeMinutes;
+    final yesterday =
+        parseDayHours(workingHours?[_dayKeys[(today + 6) % 7]]);
+    final yesterdayOpens = clockMinutes(yesterday?['open']);
+    final yesterdayCloses = clockMinutes(yesterday?['close']);
+    if (yesterdayOpens != null &&
+        yesterdayCloses != null &&
+        yesterdayCloses <= yesterdayOpens &&
+        now < yesterdayCloses) {
+      return OpenStatus.open(clockLabel(yesterdayCloses));
     }
-    return currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+
+    final hours = parseDayHours(workingHours?[_dayKeys[today]]);
+    if (hours?['is_open'] == false) return const OpenStatus.closed();
+    final opens = clockMinutes(hours?['open']);
+    final closes = clockMinutes(hours?['close']);
+    if (opens == null || closes == null) {
+      // Часы неизвестны: снятое с показа заведение — «Закрыто», как и раньше.
+      return status == 'active'
+          ? const OpenStatus.unknown()
+          : const OpenStatus.closed();
+    }
+
+    final inShift = closes <= opens ? now >= opens : now >= opens && now < closes;
+    return inShift
+        ? OpenStatus.open(clockLabel(closes))
+        : const OpenStatus.closed();
   }
+
+  /// Статус на эту минуту.
+  OpenStatus get currentOpenStatus => openStatusAt(DateTime.now());
+
+  /// Открыто ли заведение точно: неизвестные часы — не «открыто». По этому
+  /// признаку красится метка на карте и работает отбор «Открыто сейчас».
+  bool isOpenAt(DateTime moment) => openStatusAt(moment).isOpen;
 
   /// Check if establishment is currently open based on working hours
   bool get isCurrentlyOpen => isOpenAt(DateTime.now());
-
-  /// Время закрытия на конкретный момент; `null`, если день выходной или
-  /// часов нет.
-  String? closingTimeAt(DateTime moment) {
-    final hours = hoursAt(moment);
-    if (hours == null) return null;
-    if (hours['is_open'] == false) return null;
-    return hours['close'] as String?;
-  }
-
-  /// Get today's closing time string
-  String? get todayClosingTime => closingTimeAt(DateTime.now());
 
   /// Copy with modifications
   Establishment copyWith({

@@ -31,6 +31,7 @@ import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { startSequence } from '../utils/sequence.js';
 import { VALID_CATEGORIES, VALID_CUISINES, isCuisineRequired } from '../constants/establishmentVocab.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
+import { hasOpenDay, incompleteOpenDays } from '../utils/workingHoursSanity.js';
 import {
   extractPublicIdFromUrl,
   fileExtension,
@@ -246,6 +247,13 @@ function buildMenuMediaFields(url) {
  * can change but URL remains stable for SEO and existing links.
  */
 const SLUG_MUTABLE_STATUSES = ['draft', 'pending', 'rejected'];
+
+/** Refuses hours with a day marked open but without a proper time, naming the days. */
+const assertNoIncompleteDays = (days) => {
+  if (days.length > 0) {
+    throw new AppError(ESTABLISHMENT_REFUSALS.workingHoursIncomplete(days), 422, 'WORKING_HOURS_INCOMPLETE');
+  }
+};
 
 /**
  * Valid city values for Belarus
@@ -1058,6 +1066,15 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       }
     }
 
+    // A draft may hold a day marked open without its times while the partner
+    // fills the card in: nobody sees it, and the submit below refuses it. Any
+    // other card does not pass the submit on its way to the guests — an edit of
+    // an approved card goes live without moderation, and a moderator's decision
+    // returns the rest.
+    if (updates.working_hours !== undefined && currentEstablishment.status !== 'draft') {
+      assertNoIncompleteDays(incompleteOpenDays(updates.working_hours));
+    }
+
     // Validate city if being updated
     if (updates.city !== undefined && !VALID_CITIES.includes(updates.city)) {
       throw new AppError(ESTABLISHMENT_REFUSALS.invalidCity, 422, 'INVALID_CITY');
@@ -1464,6 +1481,7 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
  * - Must be in 'draft', 'rejected', or 'suspended' status
  * - Required content fields complete: name, city, address, coordinates,
  *   categories, cuisines (not for a cuisine-optional category), working_hours
+ *   (at least one working day, and no day marked open without its times)
  *
  * Note: media completeness (photo minimums, primary photo) is NOT enforced
  * server-side — it is a procedural gate applied by clients (E1 checklist)
@@ -1522,11 +1540,20 @@ export const submitEstablishmentForModeration = async (establishmentId, partnerI
     // В5, 17.10.2026; widened 19.10.2026, Ш17).
     if ((!establishment.cuisines || establishment.cuisines.length === 0)
       && isCuisineRequired(establishment.categories)) missingFields.push('cuisines');
-    if (!establishment.working_hours) missingFields.push('working_hours');
+    // A card goes to moderation with at least one working day (Coordinator,
+    // 06.11.2026): an empty object is what the model stores for «no hours», and
+    // a week of days off would read «Закрыто» to every guest. A day marked open
+    // without its times is named on its own below — that text says what to do.
+    const incompleteDays = incompleteOpenDays(establishment.working_hours);
+    if (incompleteDays.length === 0 && !hasOpenDay(establishment.working_hours)) {
+      missingFields.push('working_hours');
+    }
 
     if (missingFields.length > 0) {
       throw new AppError(ESTABLISHMENT_REFUSALS.incomplete(missingFields), 400, 'INCOMPLETE_ESTABLISHMENT');
     }
+
+    assertNoIncompleteDays(incompleteDays);
 
     // TODO: Validate media requirements (Phase Two)
     // - At least 1 interior photo

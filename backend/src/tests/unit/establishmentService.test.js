@@ -967,6 +967,80 @@ describe('establishmentService', () => {
       expect(EstablishmentModel.submitForModeration).not.toHaveBeenCalled();
     });
 
+    // Without a single working day the card is not sent (Coordinator,
+    // 06.11.2026): the model stores {} for «no hours», so a null check never
+    // fired, and a week of days off reads «Закрыто» to every guest.
+    test.each([
+      ['empty object', {}],
+      ['a week of days off', { monday: { is_open: false }, sunday: { is_open: false } }],
+    ])('should reject working hours without a working day: %s', async (_case, workingHours) => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'draft',
+        working_hours: workingHours,
+      });
+
+      const refusal = submitEstablishmentForModeration(establishmentId, partnerId);
+      await expect(refusal).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INCOMPLETE_ESTABLISHMENT',
+      });
+      await expect(refusal).rejects.toThrow('часы работы');
+      expect(EstablishmentModel.submitForModeration).not.toHaveBeenCalled();
+    });
+
+    // A working day elsewhere in the week does not excuse the day without
+    // times; the refusal names every such day, in week order.
+    test('should reject a day marked open without its times and name it', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'draft',
+        working_hours: {
+          sunday: { is_open: true, open: '', close: '' },
+          monday: '10:00-22:00',
+          wednesday: { is_open: true, open: '10:00', close: '25:99' },
+          friday: { is_open: false },
+        },
+      });
+
+      const refusal = submitEstablishmentForModeration(establishmentId, partnerId);
+      await expect(refusal).rejects.toMatchObject({
+        statusCode: 422,
+        code: 'WORKING_HOURS_INCOMPLETE',
+      });
+      await expect(refusal).rejects.toThrow('на среду, воскресенье или отметьте эти дни выходными');
+      expect(EstablishmentModel.submitForModeration).not.toHaveBeenCalled();
+    });
+
+    // Another field missing comes first: the partner fixes the list, then the day.
+    test('names missing fields before a day without times', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'draft',
+        name: null,
+        working_hours: { monday: { is_open: true, open: '', close: '' } },
+      });
+
+      await expect(submitEstablishmentForModeration(establishmentId, partnerId))
+        .rejects.toMatchObject({ statusCode: 400, code: 'INCOMPLETE_ESTABLISHMENT' });
+    });
+
+    test('a day marked open without times is the only gap: its refusal, not «заполните часы»', async () => {
+      EstablishmentModel.checkOwnership.mockResolvedValue(true);
+      EstablishmentModel.findEstablishmentById.mockResolvedValue({
+        ...mockEstablishment,
+        status: 'rejected',
+        working_hours: { monday: { is_open: true, open: '', close: '' } },
+      });
+
+      const refusal = submitEstablishmentForModeration(establishmentId, partnerId);
+      await expect(refusal).rejects.toMatchObject({ statusCode: 422, code: 'WORKING_HOURS_INCOMPLETE' });
+      await expect(refusal).rejects.toThrow('на понедельник или отметьте этот день выходным');
+    });
+
     test('should submit draft and return pending status', async () => {
       EstablishmentModel.checkOwnership.mockResolvedValue(true);
       EstablishmentModel.findEstablishmentById.mockResolvedValue({

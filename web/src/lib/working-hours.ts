@@ -1,12 +1,11 @@
 /**
- * Working Hours — pure utilities ported from
- * mobile/lib/models/establishment.dart (parseDayHours / isCurrentlyOpen /
- * todayClosingTime).
+ * Working Hours — pure utilities, the same rule as
+ * mobile/lib/models/establishment.dart (parseDayHours / openStatusAt).
  *
  * Safe in both server and client environments — no I/O, no React, no
  * browser/server-only APIs. Status badge (client island) imports
- * `computeOpenStatus`; server-side rendering of static hours (future use)
- * can import the same parser.
+ * `computeOpenStatus`; the info card, the schema markup and the cabinet form read
+ * the same parser.
  *
  * Dual-format support (matches backend JSONB shape):
  *   string  "10:00-22:00"               → { open: '10:00', close: '22:00', isOpen: true }
@@ -14,8 +13,14 @@
  *   object  { is_open: false }          → closed marker
  *   object  { is_open: true, open, close } → same as { open, close }
  *
- * Overnight handling (close ≤ open): treats as wrap-around — open at 18:00,
- * close at 02:00 → "open" between 18:00 and 23:59 OR 00:00 and 01:59.
+ * Whatever else arrives must not reach a guest: empty strings (the cabinet used
+ * to send { is_open: true, open: '', close: '' }), «25:99», «abc», a number.
+ * A status for such a day is `unknown`, not «Открыто» (Coordinator, 06.11.2026).
+ *
+ * A shift of day D runs from its opening to its closing; a close at or before the
+ * open is on the next day (18:00–02:00; 12:00–12:00 and 00:00–00:00 are a full 24
+ * hours from the opening). So the night belongs to yesterday's shift: yesterday's
+ * tail is looked at first, then today's record.
  */
 
 export type WorkingHoursMap = Record<string, unknown>;
@@ -26,10 +31,12 @@ export type DayHours = {
   isOpen: boolean;
 };
 
+export type OpenState = 'open' | 'closed' | 'unknown';
+
 export type OpenStatus = {
-  isOpen: boolean;
+  state: OpenState;
+  /** The close of the shift under way; null unless the place is open. */
   closingTime: string | null;
-  source: 'workingHours' | 'statusFallback';
 };
 
 const DAY_KEYS = [
@@ -42,130 +49,110 @@ const DAY_KEYS = [
   'sunday',
 ] as const;
 
+const CLOCK_TIME = /^(\d{1,2}):(\d{2})(?::[0-5]\d)?$/;
+
+/** Minutes since midnight of an «HH:MM» time; null for anything that is not one. */
+export function clockMinutes(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = CLOCK_TIME.exec(value.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/** The time in its one form, «09:05»; null when it is not a time. */
+function cleanTime(value: unknown): string | null {
+  const total = clockMinutes(value);
+  if (total == null) return null;
+  const hours = String(Math.floor(total / 60)).padStart(2, '0');
+  const minutes = String(total % 60).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
 /**
  * Parse a single day's working_hours entry into a normalized shape.
- * Returns null when the entry is missing or malformed.
+ * Returns null when the entry is missing or nothing in it reads as hours. An
+ * object marked open keeps being an open day, with null for a time it lacks: the
+ * partner has to see that day as unfinished, not as a day off.
  */
 export function parseDayHours(entry: unknown): DayHours | null {
-  if (entry == null) return null;
-
   if (typeof entry === 'string') {
     const parts = entry.split('-');
     if (parts.length !== 2) return null;
-    const open = parts[0].trim();
-    const close = parts[1].trim();
-    if (!open || !close) return null;
-    return { open, close, isOpen: true };
+    const open = cleanTime(parts[0]);
+    const close = cleanTime(parts[1]);
+    return open && close ? { open, close, isOpen: true } : null;
   }
 
-  if (typeof entry === 'object') {
+  if (typeof entry === 'object' && entry !== null && !Array.isArray(entry)) {
     const obj = entry as Record<string, unknown>;
     if (obj.is_open === false) {
       return { open: null, close: null, isOpen: false };
     }
-    const open = typeof obj.open === 'string' ? obj.open : null;
-    const close = typeof obj.close === 'string' ? obj.close : null;
-    return { open, close, isOpen: true };
+    return { open: cleanTime(obj.open), close: cleanTime(obj.close), isOpen: true };
   }
 
   return null;
 }
 
 /**
- * Get parsed hours for the day matching `now`. JS `getDay()` returns Sun=0,
- * Mon=1, ..., Sat=6; `DAY_KEYS` is ordered Mon..Sun (index 0..6). Convert
- * Sunday to index 6 explicitly; other days shift down by 1.
- */
-function getDayHours(
-  workingHours: WorkingHoursMap | null,
-  now: Date,
-): DayHours | null {
-  if (!workingHours) return null;
-  const jsDay = now.getDay();
-  const dayKeysIndex = jsDay === 0 ? 6 : jsDay - 1;
-  const key = DAY_KEYS[dayKeysIndex];
-  return parseDayHours(workingHours[key]);
-}
-
-function timeToMinutes(time: string): number | null {
-  const parts = time.split(':');
-  if (parts.length !== 2) return null;
-  const h = parseInt(parts[0], 10);
-  const m = parseInt(parts[1], 10);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-
-/**
- * Compute open/closed status from working_hours and current time.
+ * Compute open/closed/unknown status from working_hours and current time.
  *
  * @param workingHours - raw JSONB from listing projection (dual format per day)
- * @param status - establishment.status (used as fallback when hours missing)
- * @param now - current time (default: new Date())
- * @returns { isOpen, closingTime, source } — closingTime is the "close" string
- *          when isOpen=true and hours are known; null otherwise.
+ * @param status - establishment.status; decides only when the hours are unknown:
+ *                 a published card reads unknown, one off the catalog closed
+ * @param now - current time (default: new Date()); read with local getters
+ * @returns { state, closingTime } — closingTime only when state is 'open'.
  */
 export function computeOpenStatus(
   workingHours: unknown,
   status: string,
   now: Date = new Date(),
 ): OpenStatus {
-  const hoursMap =
+  const hours =
     typeof workingHours === 'object' && workingHours !== null
       ? (workingHours as WorkingHoursMap)
       : null;
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  // JS getDay() is Sun=0…Sat=6, DAY_KEYS is Mon…Sun.
+  const todayIdx = (now.getDay() + 6) % 7;
 
-  const today = getDayHours(hoursMap, now);
-
-  // No working_hours data — fall back to status field
-  if (!today) {
-    return {
-      isOpen: status === 'active',
-      closingTime: null,
-      source: 'statusFallback',
-    };
+  // Yesterday's tail first. No data for yesterday: today's record decides —
+  // «Часы не указаны» at night for a place with today's hours would be odd.
+  const yesterday = parseDayHours(hours?.[DAY_KEYS[(todayIdx + 6) % 7]]);
+  const yesterdayOpen = clockMinutes(yesterday?.open);
+  const yesterdayClose = clockMinutes(yesterday?.close);
+  if (
+    yesterdayOpen != null &&
+    yesterdayClose != null &&
+    yesterdayClose <= yesterdayOpen &&
+    nowMin < yesterdayClose
+  ) {
+    return { state: 'open', closingTime: yesterday?.close ?? null };
   }
 
-  if (!today.isOpen) {
-    return { isOpen: false, closingTime: null, source: 'workingHours' };
-  }
+  const today = parseDayHours(hours?.[DAY_KEYS[todayIdx]]);
+  if (today && !today.isOpen) return { state: 'closed', closingTime: null };
 
-  if (!today.open || !today.close) {
-    // Marked open but missing strings → status fallback. Drop closingTime
-    // so the badge doesn't show "/ до null" or pair the fallback's open
-    // verdict with a partial close time (review MEDIUM).
-    return {
-      isOpen: status === 'active',
-      closingTime: null,
-      source: 'statusFallback',
-    };
-  }
-
-  const openMin = timeToMinutes(today.open);
-  const closeMin = timeToMinutes(today.close);
+  const openMin = clockMinutes(today?.open);
+  const closeMin = clockMinutes(today?.close);
   if (openMin == null || closeMin == null) {
     return {
-      isOpen: status === 'active',
+      state: status === 'active' ? 'unknown' : 'closed',
       closingTime: null,
-      source: 'statusFallback',
     };
   }
 
-  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const inShift =
+    closeMin <= openMin
+      ? nowMin >= openMin
+      : nowMin >= openMin && nowMin < closeMin;
 
-  let isOpen: boolean;
-  if (closeMin <= openMin) {
-    // Overnight: open through midnight
-    isOpen = nowMin >= openMin || nowMin < closeMin;
-  } else {
-    isOpen = nowMin >= openMin && nowMin < closeMin;
-  }
-
-  return {
-    isOpen,
-    closingTime: today.close,
-    source: 'workingHours',
-  };
+  return inShift
+    ? { state: 'open', closingTime: today?.close ?? null }
+    : { state: 'closed', closingTime: null };
 }
 
 /**

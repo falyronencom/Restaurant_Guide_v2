@@ -22,6 +22,10 @@ PartnerRegistrationProvider _onBasicInfoStep(String phone) =>
         name: 'Кофейня у моста',
         priceRange: r'$$',
         phone: phone,
+        weeklyWorkingHours: const WeeklyWorkingHours(
+          monday:
+              DayWorkingHours(isOpen: true, openTime: '10:00', closeTime: '22:00'),
+        ),
       ),
     );
 

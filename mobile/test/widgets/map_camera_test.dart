@@ -15,6 +15,16 @@ import 'package:restaurant_guide_mobile/widgets/map/map_marker_generator.dart';
 import 'package:restaurant_guide_mobile/widgets/map/map_preview_dock.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 
+const _roundTheClock = <String, dynamic>{
+  'monday': '00:00-00:00',
+  'tuesday': '00:00-00:00',
+  'wednesday': '00:00-00:00',
+  'thursday': '00:00-00:00',
+  'friday': '00:00-00:00',
+  'saturday': '00:00-00:00',
+  'sunday': '00:00-00:00',
+};
+
 Establishment _place(String id, {double? lat, double? lng}) => Establishment(
       id: id,
       name: 'Место $id',
@@ -210,12 +220,16 @@ void main() {
       // Серый у закрытого и жёлтый у выбранного — картинку пина выбирает
       // генератор по двум признакам места. Картинок в тестах генератор не
       // рисует, а остальные проверки пинов смотрят на id, порядок и слой, —
-      // признаки, которые он получает, не видел никто. Без часов работы
-      // «открыто» — это «карточка активна», от часов машины не зависит.
+      // признаки, которые он получает, не видел никто. Круглосуточно: от часов
+      // машины не зависит.
       final markers = _RecordingMarkers();
-      final open = _place('open', lat: 53.90, lng: 27.50);
-      final closed =
-          _place('closed', lat: 53.91, lng: 27.51).copyWith(status: 'suspended');
+      final open = _place('open', lat: 53.90, lng: 27.50)
+          .copyWith(workingHours: _roundTheClock);
+      final closed = _place('closed', lat: 53.91, lng: 27.51).copyWith(
+        workingHours: {
+          for (final day in _roundTheClock.keys) day: {'is_open': false},
+        },
+      );
 
       buildEstablishmentPins(
         [open, closed],
@@ -227,6 +241,38 @@ void main() {
       expect(markers.calls, [
         (isOpen: false, isSelected: false), // закрытое — серое, выбранное последним
         (isOpen: true, isSelected: true),
+      ]);
+    });
+
+    test('часы неизвестны или битые — пин серый, как у закрытого, и не падает',
+        () {
+      // Решение Координатора 06.11.2026. Такая запись раньше роняла сборку
+      // всех меток: «Не удалось загрузить заведения» при ответе сервера 200.
+      final markers = _RecordingMarkers();
+      final broken = {
+        for (final day in _roundTheClock.keys)
+          day: {'is_open': true, 'open': '', 'close': ''},
+      };
+      final garbage = {for (final day in _roundTheClock.keys) day: '25:99-abc'};
+
+      final pins = buildEstablishmentPins(
+        [
+          _place('нет часов', lat: 53.90, lng: 27.50),
+          _place('пустое время', lat: 53.91, lng: 27.51)
+              .copyWith(workingHours: broken),
+          _place('мусор', lat: 53.92, lng: 27.52)
+              .copyWith(workingHours: garbage),
+        ],
+        selectedId: null,
+        markers: markers,
+        onTap: (_) {},
+      );
+
+      expect(pins, hasLength(3));
+      expect(markers.calls, [
+        (isOpen: false, isSelected: false),
+        (isOpen: false, isSelected: false),
+        (isOpen: false, isSelected: false),
       ]);
     });
 
