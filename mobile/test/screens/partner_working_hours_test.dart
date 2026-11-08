@@ -335,6 +335,43 @@ void main() {
         1,
       );
     });
+
+    // Находка № 4 нитки «Часы работы» (Координатор, 08.11.2026, «Да на 1–4»):
+    // у карточки с меню одним PDF кнопка была серой, нижняя «Отправить» —
+    // работала.
+    testWidgets('меню только PDF — работает', (tester) async {
+      expect(
+        await tapSend(
+          tester,
+          _completeCard.copyWith(
+            weeklyWorkingHours: const WeeklyWorkingHours(monday: _open),
+            menuPhotos: const [],
+            menuPdfs: const [
+              MenuPdf(
+                url: 'https://res.cloudinary.com/demo/raw/upload/menu.pdf',
+                thumbnailUrl: 'https://res.cloudinary.com/demo/image/upload/m.jpg',
+                previewUrl: 'https://res.cloudinary.com/demo/image/upload/m.jpg',
+                fileName: 'menu.pdf',
+              ),
+            ],
+          ),
+        ),
+        1,
+      );
+    });
+
+    testWidgets('меню нет совсем — не работает', (tester) async {
+      expect(
+        await tapSend(
+          tester,
+          _completeCard.copyWith(
+            weeklyWorkingHours: const WeeklyWorkingHours(monday: _open),
+            menuPhotos: const [],
+          ),
+        ),
+        0,
+      );
+    });
   });
 
   group('экран часов', () {
