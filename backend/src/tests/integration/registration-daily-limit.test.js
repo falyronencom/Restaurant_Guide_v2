@@ -20,7 +20,7 @@ import { addressKey } from '../../utils/clientAddress.js';
 import { clearAllData } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 
-const PREFIXES = ['register', 'register-day', 'verify-send', 'verify-send-address', 'forgot-password', 'forgot-password-day'];
+const PREFIXES = ['register', 'register-day', 'new-accounts-day', 'verify-send', 'verify-send-address', 'forgot-password', 'forgot-password-day'];
 
 const sweep = async () => {
   for (const prefix of PREFIXES) {
