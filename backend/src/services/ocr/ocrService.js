@@ -67,17 +67,28 @@ const VISION_FALLBACK_PAGE_LIMIT = 2;
 const PDF_PAGE_LIMIT = 20;
 
 /**
- * The characters of a PDF's text layer the structurer reads at most, when the
- * text layer stands in for a failed image read (the last attempt): it goes to
- * one call as one text, and the page limit bounds its pages, not its length —
- * a call reads whatever it is given, up to the model's context, and is paid
- * for it (review of PR #56 by the lens, finding 2a). The densest menu page read
- * in 2026 (the digital set, 86 pages) carried 7 354 characters, the next
- * 3 416: ten thousand a page, for PDF_PAGE_LIMIT pages. A longer text layer is
- * cut, and the log says so. The cut happens in the parse's child process
- * (pdfTextExtractor maxChars): the API process never receives more.
+ * The characters of a PDF's text layer the structurer reads at most, a page,
+ * when the text layer stands in for a failed image read (the last attempt): it
+ * goes to one call as one text, and the page limit bounds its pages, not its
+ * length — a call reads whatever it is given, up to the model's context, and is
+ * paid for it (review of PR #56 by the lens, finding 2a). The densest menu page
+ * read in 2026 (the digital set, 86 pages) carried 7 354 characters, the next
+ * 3 416: ten thousand a page, for the pages the text layer covers — the pages
+ * counted in the day's pages (services/ocrAllowance.js) for that attempt. A
+ * longer text layer is cut, and the log says so. Until November 2026 the cut
+ * was 200 000 characters for any PDF, one page too: the call of a one-page
+ * file could cost twenty pages (thread «Потолок распознавания: малые правки»,
+ * finding 9).
  */
-const TEXT_LAYER_CHAR_LIMIT = PDF_PAGE_LIMIT * 10000;
+const TEXT_LAYER_CHARS_PER_PAGE = 10000;
+
+/**
+ * The most text the parse's child process sends back (pdfTextExtractor
+ * maxChars): the text layer of PDF_PAGE_LIMIT pages. The child does not know
+ * the page count before it parses, so the cut to the pages read is made here,
+ * in the API process (extractPageTexts).
+ */
+const TEXT_LAYER_CHAR_LIMIT = PDF_PAGE_LIMIT * TEXT_LAYER_CHARS_PER_PAGE;
 
 /**
  * Upper bound of one job's wall-clock time, from the stage timeouts: the PDF
@@ -206,10 +217,12 @@ const readPagesAsImages = async (pageUrls) => {
  * SFB 47/47, MARBL 54/55, Charlie 9/9 against the verified image read).
  *
  * pdf-parse still runs first: its page count decides how many pages are
- * rendered (unknown → VISION_FALLBACK_PAGE_LIMIT, strategy
+ * rendered — the pages the file holds, when it declares more
+ * (pdfTextExtractor.pagesHeld); unknown → VISION_FALLBACK_PAGE_LIMIT, strategy
  * 'vision_pdf_no_metadata'; more than PDF_PAGE_LIMIT → the first
- * PDF_PAGE_LIMIT, the document's count returned as pagesTotal), and its text
- * layer — of those first pages only — is the last resort. An image
+ * PDF_PAGE_LIMIT, the document's count returned as pagesTotal — and its text
+ * layer — of those first pages only, TEXT_LAYER_CHARS_PER_PAGE a page — is the
+ * last resort. An image
  * read that fails — an error or a timeout on any page, or every page blank —
  * fails the attempt like any other error, and the retry usually reads the
  * pages; only on the job's last attempt (`textLayerBackup`) does a usable text
@@ -291,16 +304,20 @@ const extractPageTexts = async (media, { textLayerBackup = false, signal, before
         pageCount: parseResult.pageCount,
         error: error.message,
       });
+      // The pages the text layer covers are the pages this attempt counted
+      // (pageUrls): it costs no more than they do.
+      const charLimit = parseResult.pagesParsed * TEXT_LAYER_CHARS_PER_PAGE;
       const textLength = parseResult.textLength ?? parseResult.text.length;
-      if (textLength > TEXT_LAYER_CHAR_LIMIT) {
+      if (textLength > charLimit) {
         logger.warn('PDF text layer longer than the limit — only its beginning is structured', {
           mediaId: media.id,
           textLength,
-          charLimit: TEXT_LAYER_CHAR_LIMIT,
+          charLimit,
+          pages: parseResult.pagesParsed,
         });
       }
       return {
-        pageTexts: [parseResult.text.slice(0, TEXT_LAYER_CHAR_LIMIT)],
+        pageTexts: [parseResult.text.slice(0, charLimit)],
         strategy: 'pdf_text_layer',
         pagesCount: parseResult.pagesParsed,
         ...(cut && { pagesTotal: pageCount }),
@@ -758,6 +775,7 @@ export {
   notifyPartnerOfFailedJob,
   JOB_DURATION_BOUND_MS,
   PDF_PAGE_LIMIT,
+  TEXT_LAYER_CHARS_PER_PAGE,
   TEXT_LAYER_CHAR_LIMIT,
   VISION_FALLBACK_PAGE_LIMIT,
 };

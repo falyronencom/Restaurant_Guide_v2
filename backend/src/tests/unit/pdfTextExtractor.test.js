@@ -49,6 +49,7 @@ const {
   PDF_FETCH_TIMEOUT_MS,
   PDF_PARSE_TIMEOUT_MS,
   PDF_PARSE_MEMORY_LIMIT_MB,
+  pagesHeld,
   resetPlatformLimitsCheck,
 } = await import('../../services/ocr/pdfTextExtractor.js');
 const { default: mockLogger } = await import('../../utils/logger.js');
@@ -334,6 +335,82 @@ describe('extractText — the page limit', () => {
 
     expect(mockPdfParse).toHaveBeenCalledWith(expect.any(Buffer), expect.objectContaining({ maxPages: 0 }));
     expect(result).toMatchObject({ pageCount: 30, pagesParsed: 30, hasTextLayer: true });
+  });
+});
+
+// Thread «Потолок распознавания: малые правки», finding 10: a file that
+// declares more pages than it holds (pdfParseRunner.test.js shows pdf.js
+// reporting the declared count) is read, and counted in the day's pages, by
+// the pages it holds — a page past them cannot be drawn.
+describe('pagesHeld — the pages a file holds, from the declared count and the last page found', () => {
+  test.each([
+    // [declared, lastPageFound, maxPages, expected]
+    ['declares 20, the last page found is 1', 20, 1, 20, 1],
+    ['declares 2, holds 1 — one page short is caught', 2, 1, 20, 1],
+    ['declares 1, holds 1', 1, 1, 20, 1],
+    ['declares 25, the 20 read were all found — past them nothing is known: the declared count', 25, 20, 20, 25],
+    ['declares 25, the pages end at 19 of the 20 read', 25, 19, 20, 19],
+    ['no page loaded — the declared count, as before', 20, 0, 20, 20],
+    ['the parse did not say — the declared count', 20, undefined, 20, 20],
+    ['every page read (maxPages 0): the pages end at 10 of 30', 30, 10, 0, 10],
+    ['every page read (maxPages 0): all 30 found', 30, 30, 0, 30],
+    ['no pages at all', 0, 0, 20, 0],
+  ])('%s', (_label, declared, lastPageFound, maxPages, expected) => {
+    expect(pagesHeld(declared, lastPageFound, maxPages)).toBe(expected);
+  });
+});
+
+describe('extractText — a file that declares more pages than it holds', () => {
+  const PDF_URL = 'https://res.cloudinary.com/test/image/upload/v1/establishments/x/menu_pdf/menu.pdf';
+  /** 59 characters with digits — one page of a menu's text layer (MIN_AVG_CHARS_PER_PAGE is 50). */
+  const PAGE_TEXT = 'Борщ украинский 15 руб. Салат Цезарь 12 руб. Кофе 4 руб....';
+  const DECLARED_MESSAGE = 'PDF declares more pages than it holds — only the pages it holds are read';
+  let originalFetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      arrayBuffer: async () => new ArrayBuffer(8),
+    }));
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  const declaredWarnings = () => mockLogger.warn.mock.calls.filter(([message]) => message === DECLARED_MESSAGE);
+
+  test('declares 20, holds 1: one page — and its text layer is judged by that page', async () => {
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT, numpages: 20, lastPageFound: 1 });
+
+    const result = await extractText(PDF_URL, { maxPages: 20 });
+
+    // Judged by 20 pages, 59 characters would be under 3 a page: no text layer.
+    expect(result).toMatchObject({ pageCount: 1, pagesParsed: 1, hasTextLayer: true });
+    expect(declaredWarnings()).toEqual([
+      [DECLARED_MESSAGE, { pdfUrl: PDF_URL, pagesDeclared: 20, pagesHeld: 1 }],
+    ]);
+  });
+
+  test('holds the pages it declares: as before, nothing said', async () => {
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(3), numpages: 3, lastPageFound: 3 });
+
+    const result = await extractText(PDF_URL, { maxPages: 20 });
+
+    expect(result).toMatchObject({ pageCount: 3, pagesParsed: 3, hasTextLayer: true });
+    expect(declaredWarnings()).toEqual([]);
+  });
+
+  test('a long file whose 20 pages read were all found: the declared count stands, cut by the caller as before', async () => {
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(20), numpages: 100, lastPageFound: 20 });
+
+    const result = await extractText(PDF_URL, { maxPages: 20 });
+
+    expect(result).toMatchObject({ pageCount: 100, pagesParsed: 20, hasTextLayer: true });
+    expect(declaredWarnings()).toEqual([]);
   });
 });
 

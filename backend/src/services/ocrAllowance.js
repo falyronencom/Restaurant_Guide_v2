@@ -71,13 +71,15 @@
  * here (config/redis.js answers «first increment» and skips the give-back).
  *
  * Accepted: pages are counted before the call and are not given back when it
- * fails, and their number comes from the file itself: the count can be higher
- * than what was paid, the safe side. Two requests queuing the same file at the
+ * fails, and their number comes from the file itself — the pages it holds, not
+ * the count it declares (ocr/pdfTextExtractor.js pagesHeld): the count can be
+ * higher than what was paid, the safe side. Two requests queuing the same file at the
  * same moment can both find no active job and both reserve; the second may then
  * get the first's job back from OcrJobModel.enqueue and keep its reservation — the
  * day's count of that account comes out one higher. On the last attempt a failed
  * image read falls back to the text layer in one structurer call
- * (ocr/ocrService.js), inside the pages already counted.
+ * (ocr/ocrService.js), inside the pages already counted: its text is cut to
+ * ten thousand characters a page counted.
  */
 
 import pool from '../config/database.js';

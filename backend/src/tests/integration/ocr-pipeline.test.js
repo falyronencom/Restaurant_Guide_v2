@@ -1822,14 +1822,22 @@ describe('OCR pipeline integration', () => {
 
       // The text layer goes to one structurer call: the page limit bounds its
       // pages, not its length (review of PR #56 by the lens, finding 2a) — the
-      // structurer reads at most 200 000 characters, 10 000 a page for 20 pages.
+      // structurer reads at most 10 000 characters a page read. Until November
+      // 2026 the bound was 200 000 for any PDF, a one-page one too (thread
+      // «Потолок распознавания: малые правки», finding 9): a one-page file's
+      // call could cost twenty pages.
       test.each([
-        ['200 000 characters — read whole', 200000, 200000],
-        ['200 001 characters — the first 200 000 are read', 200001, 200000],
-      ])('last attempt, a text layer of %s', async (_label, length, read) => {
+        ['one page, 10 000 characters — read whole', 1, 10000, 10000],
+        ['one page, 10 001 characters — the first 10 000 are read', 1, 10001, 10000],
+        ['one page, 200 000 characters — the first 10 000 are read', 1, 200000, 10000],
+        ['3 pages, 30 000 characters — read whole', 3, 30000, 30000],
+        ['3 pages, 30 001 characters — the first 30 000 are read', 3, 30001, 30000],
+        ['20 pages, 200 000 characters — read whole', 20, 200000, 200000],
+        ['20 pages, 200 001 characters — the first 200 000 are read', 20, 200001, 200000],
+      ])('last attempt, a text layer of %s', async (_label, pages, length, read) => {
         const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
         const textLayer = TEXT_LAYER.repeat(Math.ceil(length / TEXT_LAYER.length)).slice(0, length);
-        pdfParseModule.default.mockResolvedValue({ text: textLayer, numpages: 1 });
+        pdfParseModule.default.mockResolvedValue({ text: textLayer, numpages: pages });
         const { fetchMock, calls } = routedFetch({
           visionFails: true,
           itemsByText: new Map([[textLayer.slice(0, read), TEXT_LAYER_ITEMS]]),
@@ -1840,14 +1848,52 @@ describe('OCR pipeline integration', () => {
         const { job } = await runJob(mediaId, { lastAttempt: true });
 
         expect(job.status).toBe('done');
+        expect(calls.vision).toHaveLength(pages);
         expect(calls.structurer.map((text) => text.length)).toEqual([read]);
         expect(calls.structurer[0]).toBe(textLayer.slice(0, read));
-        // The child sent at most the limit; the log still names the full length.
+        expect(job.result_summary).toMatchObject({ strategy: 'pdf_text_layer', pages_count: pages });
+        // The child sent at most the limit for 20 pages; the log still names the full length.
         const cutWarnings = warn.mock.calls
           .filter(([message]) => message === 'PDF text layer longer than the limit — only its beginning is structured');
         expect(cutWarnings).toEqual(length > read
-          ? [[expect.any(String), expect.objectContaining({ textLength: length, charLimit: read })]]
+          ? [[expect.any(String), expect.objectContaining({ textLength: length, charLimit: read, pages })]]
           : []);
+      });
+
+      // Finding 10 of the same thread: a file that declares more pages than it
+      // holds is read by the pages it holds (pdfTextExtractor.pagesHeld) — the
+      // pages past them cannot be drawn. The parse's last page found comes from
+      // the child (unit/pdfParseRunner.test.js reads a real file of that kind).
+      test('a PDF that declares 20 pages and holds 1: one page is read; the summary names no other', async () => {
+        const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 20, lastPageFound: 1 });
+        const { fetchMock, calls } = routedFetch();
+        global.fetch = fetchMock;
+
+        const { job } = await runJob(mediaId);
+
+        expect(calls.vision).toEqual(firstPages(1));
+        expect(job.result_summary).toEqual({
+          strategy: 'vision_pdf',
+          items_count: 4,
+          flagged_count: 0,
+          confidence_avg: 0.95,
+          pages_count: 1,
+          categories_carried: 0,
+        });
+      });
+
+      test('a PDF that declares 30 pages and holds 25: the first 20 are read, the summary names the 30 it declares', async () => {
+        const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+        // Past the 20 pages read nothing is known of the file.
+        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 30, lastPageFound: 20 });
+        const { fetchMock, calls } = routedFetch();
+        global.fetch = fetchMock;
+
+        const { job } = await runJob(mediaId);
+
+        expect(calls.vision).toEqual(firstPages(20));
+        expect(job.result_summary).toMatchObject({ pages_count: 20, pages_total: 30 });
       });
     });
 

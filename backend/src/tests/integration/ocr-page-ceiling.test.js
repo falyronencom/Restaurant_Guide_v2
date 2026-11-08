@@ -23,7 +23,9 @@ import { jest } from '@jest/globals';
 import { randomUUID } from 'crypto';
 
 jest.unstable_mockModule('../../services/ocr/pdfParseRunner.js', () => {
-  const state = { numpages: 1, text: '', fails: false };
+  // lastPageFound — the last page the child found of those read
+  // (pdfParseChild); not set — the parse did not say, the declared count stands.
+  const state = { numpages: 1, text: '', fails: false, lastPageFound: undefined };
   const abortedError = (message = 'PDF parse cut short by shutdown') => Object.assign(
     new Error(message),
     { code: 'PDF_PARSE_ABORTED', reason: 'aborted' },
@@ -35,7 +37,12 @@ jest.unstable_mockModule('../../services/ocr/pdfParseRunner.js', () => {
     __state: state,
     parsePdfIsolated: async () => {
       if (state.fails) throw new Error('bad XRef entry');
-      return { numpages: state.numpages, text: state.text, textLength: state.text.length };
+      return {
+        numpages: state.numpages,
+        text: state.text,
+        textLength: state.text.length,
+        lastPageFound: state.lastPageFound,
+      };
     },
   };
 });
@@ -176,7 +183,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await clearAllData();
   await sweepKeys();
-  Object.assign(parser, { numpages: 1, text: '', fails: false });
+  Object.assign(parser, { numpages: 1, text: '', fails: false, lastPageFound: undefined });
   installFetch();
 });
 
@@ -222,6 +229,44 @@ describe('PDF стоит столько, сколько страниц проч�
 
     expect(calls.vision).toBe(20);
     expect(await count(ceilingKey())).toBe(20);
+  });
+
+  // Нитка «Потолок распознавания: малые правки», находка 10: число страниц —
+  // слово самого файла. Файл заявляет 20 страниц, а в нём одна: страницы
+  // дальше неё облако не нарисует, а потолок их считал.
+  test.each([
+    // [заявлено, последняя найденная, прочитано и стоит]
+    ['заявил 20, в нём одна — читается одна, столько и стоит', 20, 1, 1],
+    ['заявил 2, в нём одна — на страницу меньше тоже видно', 2, 1, 1],
+    ['заявил 2, в нём обе — как прежде', 2, 2, 2],
+  ])('%s', async (_label, declared, lastPageFound, pages) => {
+    const card = await newCard();
+    const mediaId = await insertMenuFile(card);
+    Object.assign(parser, { numpages: declared, lastPageFound });
+
+    await askAtDoor(card, mediaId);
+    const { job } = await runNext();
+
+    expect(job.status).toBe('done');
+    expect(calls.vision).toBe(pages);
+    expect(await count(ceilingKey())).toBe(pages);
+    expect(await count(ownPages(card))).toBe(pages);
+    expect(job.result_summary.pages_count).toBe(pages);
+  });
+
+  test('заявил 20, в нём одна: сбой чтения и повтор — на счётчиках 2, а не 40', async () => {
+    const card = await newCard();
+    const mediaId = await insertMenuFile(card);
+    Object.assign(parser, { numpages: 20, lastPageFound: 1 });
+
+    await askAtDoor(card, mediaId);
+    visionFails = true;
+    expect((await runNext()).job.status).toBe('pending');
+    visionFails = false;
+    const { job } = await runNext();
+
+    expect(job.status).toBe('done');
+    expect(await count(ceilingKey())).toBe(2);
   });
 
   test('разбор не назвал число страниц — читается 2, столько и стоит', async () => {

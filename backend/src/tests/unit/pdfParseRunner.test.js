@@ -140,6 +140,46 @@ describe('an ordinary PDF parses in the child as it did in the API process', () 
   }, 15000);
 });
 
+// Thread «Потолок распознавания: малые правки», finding 10: the page count a
+// PDF declares is the file's own word. pdf.js 1.10 takes it from the page
+// tree's /Count, and a page past the pages the file holds does not load — so
+// the child reports the last page that loaded, of the pages read.
+describe('the pages a file holds, beside the count it declares', () => {
+  test.each([
+    // [declared, held, maxPages, numpages, lastPageFound]
+    ['declares 20, holds 1', 20, 1, 20, 20, 1],
+    ['declares 2, holds 1 — one page short', 2, 1, 20, 2, 1],
+    ['declares 1, holds 1', 1, 1, 20, 1, 1],
+    ['declares 3, holds 3', 3, 3, 20, 3, 3],
+    ['holds 25, 20 read — the last page read', 25, 25, 20, 25, 20],
+    ['declares 25, holds 19 — the pages end before the 20 read', 25, 19, 20, 25, 19],
+  ])('%s: numpages is the declared count, lastPageFound the last page that loaded', async (
+    _label, declaredPages, pages, maxPages, numpages, lastPageFound,
+  ) => {
+    const pdf = buildSyntheticPdf({ pages, linesPerPage: 3, declaredPages });
+
+    const result = await parsePdfIsolated(pdf, { maxPages, ...PRODUCTION_LIMITS });
+
+    expect(result).toMatchObject({ numpages, lastPageFound });
+    expect(result.text).toContain(`Page ${lastPageFound} line 3: Borsch 13 rub`);
+    expect(result.text).not.toContain(`Page ${lastPageFound + 1} line`);
+  }, 15000);
+
+  test('the text of the pages is pdf-parse\'s own: the child renders them as the library does', async () => {
+    const pdf = buildSyntheticPdf({ pages: 4, linesPerPage: 6, declaredPages: 9 });
+    const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js');
+
+    const own = await pdfParse(new Uint8Array(pdf), { max: 20 });
+    const result = await parsePdfIsolated(pdf, { maxPages: 20, ...PRODUCTION_LIMITS });
+
+    // Line by line: a renderer that joined the lines differently would differ here.
+    expect(own.text.split('\n').length).toBeGreaterThan(4 * 6);
+    expect(result.text).toBe(own.text);
+    expect(own.numpages).toBe(9);
+    expect(result).toMatchObject({ numpages: 9, lastPageFound: 4 });
+  }, 15000);
+});
+
 describe('the deadline', () => {
   test('a parse that never answers is killed at the deadline — PDF_PARSE_LIMIT, reason timeout', async () => {
     const { pids, readResident } = pidRecorder();
