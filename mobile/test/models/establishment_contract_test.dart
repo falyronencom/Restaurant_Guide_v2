@@ -431,6 +431,45 @@ void main() {
           OpenState.closed);
     });
 
+    for (final status in [
+      'suspended',
+      'pending',
+      'draft',
+      'rejected',
+      'archived',
+    ]) {
+      test('снятое с показа ($status) — «Закрыто» при любых часах', () {
+        // Избранное продолжает показывать такую карточку, а расписание
+        // говорит «открыто сейчас». Координатор, 08.11.2026, «Да на 1–4».
+        const days = [
+          'monday',
+          'tuesday',
+          'wednesday',
+          'thursday',
+          'friday',
+          'saturday',
+          'sunday',
+        ];
+        final allDay = Establishment.fromJson(establishmentRow(
+          status: status,
+          workingHours: {for (final d in days) d: '00:00-00:00'},
+        ));
+        final midday = DateTime(2026, 9, 7, 13, 0);
+        expect(allDay.openStatusAt(midday).state, OpenState.closed);
+        expect(allDay.isOpenAt(midday), isFalse,
+            reason: 'по этому признаку «Открыто сейчас» в прогулке и метка');
+
+        final night = Establishment.fromJson(establishmentRow(
+          status: status,
+          workingHours: {for (final d in days) d: '18:00-02:00'},
+        ));
+        final status1am = night.openStatusAt(DateTime(2026, 9, 7, 1, 0));
+        expect(status1am.state, OpenState.closed,
+            reason: 'хвост вчерашней смены его не открывает');
+        expect(status1am.closesAt, isNull);
+      });
+    }
+
     test('время закрытия показывается только в рабочий день', () {
       final e = Establishment.fromJson(establishmentRow(workingHours: {
         'monday': '10:00-22:00',

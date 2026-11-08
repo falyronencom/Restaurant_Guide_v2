@@ -246,6 +246,56 @@ void main() {
       expect(find.byType(EstablishmentCard), findsWidgets);
     });
 
+    testWidgets(
+        'снятое с показа место в избранном — «Закрыто», хотя по часам '
+        'открыто', (tester) async {
+      // Находка нитки «Часы работы»: приостановленная карточка остаётся в
+      // избранном, и её расписание писало «Открыто». Координатор,
+      // 08.11.2026, «Да на 1–4». Круглосуточно — от часов машины не зависит.
+      final allDay = {
+        for (final d in [
+          'monday',
+          'tuesday',
+          'wednesday',
+          'thursday',
+          'friday',
+          'saturday',
+          'sunday',
+        ])
+          d: '00:00-00:00',
+      };
+      envelope = () => favoritesEnvelope(favorites: [
+            _row(1)
+              ..['establishment_name'] = 'Работает'
+              ..['establishment_working_hours'] = allDay,
+            _row(2)
+              ..['establishment_name'] = 'Приостановлено'
+              ..['establishment_status'] = 'suspended'
+              ..['establishment_working_hours'] = allDay,
+          ]);
+      // Окно выше двух карточек: строятся обе.
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pump(tester, signedIn: true);
+
+      String statusOf(String name) {
+        final card = find.ancestor(
+            of: find.text(name), matching: find.byType(EstablishmentCard));
+        final line = find.descendant(
+          of: card,
+          matching: find.byWidgetPredicate((w) =>
+              w is RichText &&
+              RegExp(r'^(Открыто|Закрыто|Часы не указаны)')
+                  .hasMatch(w.text.toPlainText())),
+        );
+        return (tester.widget(line) as RichText).text.toPlainText();
+      }
+
+      expect(statusOf('Работает'), startsWith('Открыто'));
+      expect(statusOf('Приостановлено'), 'Закрыто');
+    });
+
     testWidgets('выбор сортировки меняет подпись чипа', (tester) async {
       envelope = () =>
           favoritesEnvelope(favorites: [for (var i = 0; i < 3; i++) _row(i)]);

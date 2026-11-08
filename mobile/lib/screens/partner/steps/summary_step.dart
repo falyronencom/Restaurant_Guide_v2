@@ -233,9 +233,14 @@ class SummaryStep extends StatelessWidget {
         (data.phone?.isNotEmpty ?? false);
   }
 
+  /// Меню — фото меню или PDF, как у шага «Медиа»
+  /// (`PartnerRegistrationProvider._validateMediaStep`): иначе у карточки с
+  /// меню одним PDF кнопка «Отправить на верификацию» была серой, а нижняя
+  /// «Отправить» работала.
   bool _isMediaCompleted(PartnerRegistrationProvider provider) {
     final data = provider.data;
-    return data.interiorPhotos.isNotEmpty && data.menuPhotos.isNotEmpty;
+    return data.interiorPhotos.isNotEmpty &&
+        (data.menuPhotos.isNotEmpty || data.menuPdfs.isNotEmpty);
   }
 
   bool _isAddressCompleted(PartnerRegistrationProvider provider) {
