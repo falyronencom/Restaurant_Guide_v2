@@ -4,7 +4,9 @@
  * Unit Tests: the email verification code at registration and on resend
  *
  * Runs the real authController and authService; only the database, the code
- * model, the mail sender, argon2 and jwt are mocked.
+ * model, the mail sender, argon2 and jwt are mocked. Redis is not connected:
+ * the day of new accounts lets register through, as every limit does without
+ * Redis (config/redis.js).
  *
  * Registration writes the first code before it responds and leaves only the
  * email running in the background. Until 2026-09-28 the whole send was fired
@@ -57,6 +59,11 @@ jest.unstable_mockModule('../../utils/jwt.js', () => ({
   generateAccessToken: jest.fn(),
   generateRefreshToken: jest.fn(),
   deriveSuccessorRefreshToken: jest.fn(),
+  // middleware/rateLimiter.js imports these two (register spends the day of new
+  // accounts there), and an ES module must find every name when it links. Never
+  // called here: that limit counts by address, not by token.
+  decodeAccessToken: jest.fn(),
+  extractTokenFromHeader: jest.fn(),
 }));
 
 const argon2 = (await import('argon2')).default;

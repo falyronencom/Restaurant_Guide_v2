@@ -6,7 +6,7 @@
  * failed remove). The account client and the favorites Server Actions are
  * mocked; AuthProvider is stubbed authenticated.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { FavoriteListItem } from '@/lib/api/types';
@@ -123,6 +123,34 @@ it('renders reused catalog cards with slug-derived detail links', async () => {
   expect(hrefs).toContain('/minsk/cafes/slug-2');
   // hasNext=false → no load-more control
   expect(screen.queryByRole('button', { name: 'Показать ещё' })).toBeNull();
+});
+
+it('a favourite taken off the catalog reads «Закрыто», even when its hours say open', async () => {
+  // Finding of the hours thread (Coordinator, 08.11.2026, «Да на 1–4»): a paused
+  // card stays in favourites, and its schedule kept it «Открыто».
+  const allDay = Object.fromEntries(
+    ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      .map((day) => [day, '00:00-00:00']),
+  );
+  mockLoadFavorites.mockResolvedValue(
+    readyPage([
+      { ...item(1), establishment_working_hours: allDay },
+      {
+        ...item(2),
+        establishment_status: 'suspended',
+        establishment_working_hours: allDay,
+      },
+    ]),
+  );
+  render(<FavoritesList />);
+
+  const card = async (name: string) =>
+    (await screen.findByText(name)).closest('article')!;
+  // The badge reads the clock after mount: wait for it, past «Часы работы».
+  expect(await within(await card('Кафе 1')).findByText('Открыто')).toBeInTheDocument();
+  const paused = await card('Кафе 2');
+  expect(await within(paused).findByText('Закрыто')).toBeInTheDocument();
+  expect(within(paused).queryByText('Открыто')).toBeNull();
 });
 
 it('removes a card in place when its heart is toggled off; empty state after the last one', async () => {

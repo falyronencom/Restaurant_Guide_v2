@@ -290,6 +290,27 @@ void main() {
       expect((open.shown, open.inCircle, open.total), (1, 3, 3));
     });
 
+    test('снятое с показа место с часами «открыто»: «Открыто сейчас» его не '
+        'показывает, без отбора оно есть (Координатор, 08.11.2026)', () {
+      // Приостановленная карточка остаётся в избранном, и её расписание
+      // выводило её в «Открыто сейчас».
+      final places = [
+        _place('открытое', meters: 200),
+        _place('приостановлено', meters: 100).copyWith(status: 'suspended'),
+        _place('на модерации', meters: 150).copyWith(status: 'pending'),
+      ];
+      final moment = DateTime(2026, 10, 17, 15, 0);
+
+      final all = walkReach(places, from: _me, minutes: 15, at: moment);
+      final open = walkReach(places,
+          from: _me, minutes: 15, openNowOnly: true, at: moment);
+
+      expect(all.places.map((p) => p.establishment.id),
+          ['приостановлено', 'на модерации', 'открытое']);
+      expect(open.places.map((p) => p.establishment.id), ['открытое']);
+      expect((open.shown, open.inCircle, open.total), (1, 3, 3));
+    });
+
     test('ничего в круге — пустая шторка, M прежнее', () {
       final reach = walkReach(
         [_place('далеко', meters: 5000), _place('без координат')],

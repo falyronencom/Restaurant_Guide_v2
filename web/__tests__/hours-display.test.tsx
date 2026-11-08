@@ -6,7 +6,9 @@
  * кабинет: разметка schema.org с таким временем — мусор в выдаче.
  */
 import { render, screen, within } from '@testing-library/react';
-import { renderToStaticMarkup } from 'react-dom/server';
+import { act } from 'react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToStaticMarkup, renderToString } from 'react-dom/server';
 
 import { InfoCard } from '@/components/establishment/InfoCard';
 import { RestaurantSchema } from '@/components/establishment/RestaurantSchema';
@@ -95,6 +97,75 @@ describe('InfoCard — таблица часов', () => {
 
     expect(screen.queryByRole('table', { hidden: true })).not.toBeInTheDocument();
     expect(screen.queryByText('Сегодня')).not.toBeInTheDocument();
+  });
+});
+
+describe('InfoCard — «Сегодня» по часам читателя, не сервера', () => {
+  // Находка нитки «Часы работы», слово Координатора 08.11.2026 «Да на 1–4»:
+  // страницу рисует сервер с часами в UTC и держит до часа, так что с 00:00 до
+  // 03:00 по Минску «Сегодня» показывало вчерашний день. 09.11.2026 — понедельник.
+  const week = {
+    monday: '10:00-22:00',
+    tuesday: { is_open: false },
+    sunday: '12:00-02:00',
+  };
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('страница с сервера не называет «сегодня»: его часы — не часы читателя', () => {
+    const html = renderToStaticMarkup(<InfoCard establishment={establishment(week)} />);
+
+    expect(html).toContain('Часы работы');
+    expect(html).toContain('Показать');
+    expect(html).not.toContain('Сегодня');
+    // Неделя на странице есть, отмеченного дня нет.
+    expect(html).toContain('10:00 – 22:00');
+    expect(html).not.toContain('font-medium text-foreground');
+  });
+
+  it.each<[string, Date, string, string]>([
+    ['понедельник, 01:30', new Date(2026, 10, 9, 1, 30), 'Пн:', '10:00 – 22:00'],
+    ['воскресенье, 23:30', new Date(2026, 10, 8, 23, 30), 'Вс:', '12:00 – 02:00'],
+    ['вторник, 12:00', new Date(2026, 10, 10, 12, 0), 'Вт:', 'Выходной'],
+  ])('в браузере, %s: «Сегодня» — этот день', (_case, now, row, time) => {
+    jest.useFakeTimers({ now });
+
+    render(<InfoCard establishment={establishment(week)} />);
+
+    const label = screen.getByText('Сегодня');
+    expect(label.parentElement!.querySelector('summary')).toHaveTextContent(time);
+    const marked = within(screen.getByRole('table', { hidden: true }))
+      .getAllByRole('row', { hidden: true })
+      .filter((tr) => tr.className.includes('font-medium'));
+    expect(marked.map((tr) => tr.firstElementChild?.textContent)).toEqual([row]);
+  });
+
+  it('страница с сервера после гидрации называет «сегодня» по часам браузера, без расхождения разметки', async () => {
+    // Сервер рисует страницу по своим часам: в 01:30 понедельника по Минску в
+    // UTC ещё 22:30 воскресенья. Браузер гидрирует её в понедельник.
+    jest.useFakeTimers({ now: new Date(2026, 10, 8, 22, 30) });
+    const ui = <InfoCard establishment={establishment(week)} />;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(ui);
+    document.body.appendChild(container);
+    jest.setSystemTime(new Date(2026, 10, 9, 1, 30));
+
+    const recoverable: unknown[] = [];
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, ui, {
+        onRecoverableError: (error) => recoverable.push(error),
+      });
+    });
+
+    // Старое поведение («сегодня» выбирает сервер) расходится здесь с браузером.
+    expect(recoverable).toEqual([]);
+    expect(within(container).getByText('Сегодня')).toBeInTheDocument();
+    expect(container.querySelector('summary')).toHaveTextContent('10:00 – 22:00');
+    act(() => root!.unmount());
+    container.remove();
   });
 });
 

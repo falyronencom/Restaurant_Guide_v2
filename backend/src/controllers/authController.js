@@ -30,6 +30,8 @@ import { discardUnrecordedUpload } from '../services/unrecordedUpload.js';
 import logger from '../utils/logger.js';
 import { NAME_REFUSALS } from '../utils/userName.js';
 import { AUTH_REFUSALS } from '../constants/authRefusals.js';
+import { NEW_ACCOUNTS_DAY_LIMIT } from '../constants/registrationLimit.js';
+import { sendRateLimitRefusal, spendRouteLimit } from '../middleware/rateLimiter.js';
 
 /**
  * A link into the user's own avatar folder on our cloud (the folder layout is
@@ -127,14 +129,26 @@ export async function register(req, res, next) {
       });
     }
     
-    // Create the user account
-    const user = await authService.createUser({
-      email,
-      phone,
-      password,
-      name,
-      authMethod,
-    });
+    // Create the user account, within the address's day of new accounts: a request
+    // that creates nothing (a taken address) gives its place back.
+    const newAccount = await spendRouteLimit(req, NEW_ACCOUNTS_DAY_LIMIT);
+    if (!newAccount.granted) {
+      return sendRateLimitRefusal(res, newAccount);
+    }
+
+    let user;
+    try {
+      user = await authService.createUser({
+        email,
+        phone,
+        password,
+        name,
+        authMethod,
+      });
+    } catch (error) {
+      await newAccount.giveBack();
+      throw error;
+    }
     
     // Generate token pair for immediate login
     const tokens = await authService.generateTokenPair(user);
@@ -612,7 +626,16 @@ export async function uploadAvatar(req, res, next) {
 
     // Fetch current avatar URL to delete old Cloudinary image later
     const currentUser = await authService.findUserById(userId);
-    const oldAvatarUrl = currentUser?.avatar_url;
+    // The account was deleted or switched off after the check at the door (the
+    // status is cached for seconds, and multer read the body in between): nothing
+    // goes up to the cloud for it, where nobody would remove the file.
+    if (!currentUser) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: AUTH_REFUSALS.accountNotFound },
+      });
+    }
+    const oldAvatarUrl = currentUser.avatar_url;
 
     // Upload new avatar to Cloudinary, within the account's daily upload
     // allowance, shared with every uploader (services/uploadAllowance.js): a
@@ -639,10 +662,12 @@ export async function uploadAvatar(req, res, next) {
     // Delete the old avatar from Cloudinary. The stored link is not trusted to
     // name our asset (PUT /auth/profile used to store any URL): only an asset
     // on our cloud inside the caller's own avatar folder is destroyed —
-    // deleteImage refuses the rest (review 02.10.2026, N1).
+    // deleteImage refuses the rest (review 02.10.2026, N1). The CDN's copies go
+    // with it: once the file is gone, the deletion of the account no longer sees
+    // it in the folder and cannot reach them.
     const oldPublicId = ownCloudPublicId(oldAvatarUrl);
     if (oldPublicId) {
-      deleteImage(oldPublicId, [ownedFolders.avatars(userId)]).catch((err) => {
+      deleteImage(oldPublicId, [ownedFolders.avatars(userId)], { invalidate: true }).catch((err) => {
         logger.warn('Failed to delete old avatar from Cloudinary', {
           oldPublicId,
           error: err.message,
@@ -777,8 +802,11 @@ export async function oauthLogin(req, res, next) {
       });
     }
 
-    // Authenticate or create user
-    const result = await authService.authenticateWithOAuth(providerData);
+    // Authenticate or create user: a new account spends the address's day of new
+    // accounts, as POST /auth/register does.
+    const result = await authService.authenticateWithOAuth(providerData, {
+      reserveNewAccount: () => spendRouteLimit(req, NEW_ACCOUNTS_DAY_LIMIT),
+    });
 
     return res.status(200).json({
       success: true,
@@ -801,6 +829,10 @@ export async function oauthLogin(req, res, next) {
     });
 
   } catch (error) {
+    if (error.message === 'OAUTH_REGISTRATION_LIMIT') {
+      return sendRateLimitRefusal(res, error.refusal);
+    }
+
     if (error.message === 'OAUTH_INVALID_TOKEN') {
       return res.status(401).json({
         success: false,

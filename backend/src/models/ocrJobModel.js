@@ -49,12 +49,21 @@ export const findActiveJob = async (mediaId) => {
  * job a partner's request queues) and by the moderator's approval
  * (adminService); tests/unit/ocrEnqueueDoors.test.js holds that list.
  *
+ * `countedFor` — the account whose day of recognition this job's pages come
+ * out of (services/ocrAllowance.js). The number of pages of a PDF is known only
+ * when the job runs, so the row carries the account to it (pagesCountedFor),
+ * in result_summary: empty until the job ends, and read by nothing else before
+ * markDone replaces it. A column would have been the plainer place, at the price
+ * of a migration on production. Without it — the moderator's approval, the
+ * operator's scripts, the seed house — the job's pages are counted nowhere.
+ *
  * @param {Object} params
  * @param {string} params.establishmentId - UUID
  * @param {string} params.mediaId - UUID of establishment_media row
+ * @param {string} [params.countedFor] - UUID of the account the pages count against
  * @returns {Promise<Object>} Job row (either newly created or pre-existing active)
  */
-export const enqueue = async ({ establishmentId, mediaId }) => {
+export const enqueue = async ({ establishmentId, mediaId, countedFor = null }) => {
   const existing = await findActiveJob(mediaId);
 
   if (existing) {
@@ -67,10 +76,10 @@ export const enqueue = async ({ establishmentId, mediaId }) => {
   }
 
   const result = await pool.query(
-    `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts)
-     VALUES ($1, $2, 'pending', 0)
+    `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, result_summary)
+     VALUES ($1, $2, 'pending', 0, $3)
      RETURNING *`,
-    [establishmentId, mediaId],
+    [establishmentId, mediaId, countedFor ? { pages_counted_for: countedFor } : null],
   );
 
   logger.info('OCR job enqueued', {
@@ -81,6 +90,14 @@ export const enqueue = async ({ establishmentId, mediaId }) => {
 
   return result.rows[0];
 };
+
+/**
+ * The account a job's pages count against (enqueue's `countedFor`), or null.
+ *
+ * @param {Object} job - An ocr_jobs row
+ * @returns {string|null}
+ */
+export const pagesCountedFor = (job) => job.result_summary?.pages_counted_for ?? null;
 
 /**
  * Atomically pick the next pending job and mark it as processing.

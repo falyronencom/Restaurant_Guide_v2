@@ -41,6 +41,7 @@ import {
   failureReasonOf,
 } from './failureReason.js';
 import { generatePdfPageImageUrl } from '../../config/cloudinary.js';
+import { RECOGNITION_CEILING, takePagesForAttempt } from '../ocrAllowance.js';
 
 /**
  * Maximum pages to send to vision OCR when pdf-parse failed entirely and we can't
@@ -52,9 +53,9 @@ const VISION_FALLBACK_PAGE_LIMIT = 2;
 /**
  * The pages of a PDF read at most — the first ones (review of PR #56,
  * finding 2). Every page read is a vision call and a structurer call to
- * OpenRouter, about a cent at the price of 17.10.2026, and the daily
- * allowances count files, not pages: without a limit a small file of many
- * pages costs as many calls as it has pages. pdf-parse is held to the same
+ * OpenRouter, about a cent at the price of 06.11.2026, and every one is counted
+ * in the day's pages (services/ocrAllowance.js): without a limit a small file
+ * of many pages could take a whole day. pdf-parse is held to the same
  * pages (pdfTextExtractor, its text layer is the last attempt's backup); the
  * job's summary carries pages_total when pages were left unread.
  *
@@ -227,18 +228,24 @@ const readPagesAsImages = async (pageUrls) => {
  * (PDF_PARSE_ABORTED) is not a parse failure to read around: it ends the
  * attempt here, and processJob settles the job by its code.
  *
+ * `beforeReading` runs once it is known how many pages will be read, before the
+ * first model call: a refusal there (the day's pages, RECOGNITION_CEILING) ends
+ * the attempt without a read, past the fallback to the text layer.
+ *
  * @param {Object} media - establishment_media row
  * @param {Object} [options]
  * @param {boolean} [options.textLayerBackup=false] - Last attempt: a failed
  *   image read of a PDF falls back to its text layer
  * @param {AbortSignal} [options.signal] - Cuts the PDF parse short (shutdown)
+ * @param {(pages: number) => Promise<void>} [options.beforeReading] - Told the
+ *   pages about to be read
  * @returns {Promise<{ pageTexts: string[], strategy: string, pagesCount?: number, pagesTotal?: number, visionError?: string }>}
  *   pageTexts — one text per page read as an image (a photo is one page), or
  *   the whole text layer as one text; pagesCount — PDFs only: the pages read
  *   as images, or the pages the text layer covers; pagesTotal — a PDF longer
  *   than PDF_PAGE_LIMIT: its page count
  */
-const extractPageTexts = async (media, { textLayerBackup = false, signal } = {}) => {
+const extractPageTexts = async (media, { textLayerBackup = false, signal, beforeReading } = {}) => {
   if (media.file_type === 'pdf') {
     let parseResult = null;
     try {
@@ -267,6 +274,7 @@ const extractPageTexts = async (media, { textLayerBackup = false, signal } = {})
     }
 
     const pageUrls = buildPdfPageUrls(media, pageCount);
+    await beforeReading?.(pageUrls.length);
     try {
       return {
         pageTexts: await readPagesAsImages(pageUrls),
@@ -302,6 +310,7 @@ const extractPageTexts = async (media, { textLayerBackup = false, signal } = {})
   }
 
   if (media.file_type === 'image') {
+    await beforeReading?.(1);
     const visionResult = await visionOcrAdapter.extractFromImages([media.url]);
     return { pageTexts: [visionResult.rawText], strategy: 'vision_image' };
   }
@@ -569,7 +578,11 @@ const journalHiddenFromElsewhere = async (rows) => {
  *
  * On success: marks job 'done' and persists menu_items.
  * On any exception: marks job 'failed' (with retry if attempts < max_attempts),
- * with three exceptions by the error's code:
+ * with four exceptions by the error's code:
+ *   - RECOGNITION_CEILING — on its first attempt the file's pages do not fit what
+ *     is left of the day (services/ocrAllowance.js takePagesForAttempt, a job a
+ *     partner's request queued): failed for good at once, nothing read; the partner
+ *     restarts recognition after Minsk midnight, or the moderator's approval reads it;
  *   - PDF_PARSE_LIMIT — the parse of the file broke its time or memory limit
  *     (pdfTextExtractor): failed for good at once, no retry — the same file
  *     breaks it again; the batch is closed as for any permanent failure;
@@ -606,11 +619,21 @@ export const processJob = async (jobId, { signal } = {}) => {
       throw new Error(`Media not found: ${job.media_id}`);
     }
 
+    // The account this job's pages count against: none for what no partner's
+    // request queued — the moderator's approval, the operator's scripts, the
+    // seed house.
+    const countedFor = ocrJobModel.pagesCountedFor(job);
+
     // The text layer of a PDF is the last resort: an image read that fails on
     // an earlier attempt goes back to the queue (markFailed) and is retried.
     const { pageTexts, strategy, pagesCount, pagesTotal, visionError } = await extractPageTexts(media, {
       textLayerBackup: job.attempts >= job.max_attempts,
       signal,
+      ...(countedFor && {
+        beforeReading: (pages) => takePagesForAttempt({
+          userId: countedFor, pages, attempt: job.attempts, jobId, mediaId: job.media_id,
+        }),
+      }),
     });
 
     if (pageTexts.every(isBlank)) {
@@ -669,7 +692,10 @@ export const processJob = async (jobId, { signal } = {}) => {
     return { success: true, jobId, itemCount: flaggedItems.length };
   } catch (error) {
     let failedJob;
-    if (error.code === PDF_PARSE_LIMIT) {
+    if (error.code === RECOGNITION_CEILING) {
+      // takePagesForAttempt has written the line to the log.
+      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
+    } else if (error.code === PDF_PARSE_LIMIT) {
       logger.error('OCR job failed for good: the PDF parse broke its limit', {
         jobId,
         mediaId: job.media_id,
