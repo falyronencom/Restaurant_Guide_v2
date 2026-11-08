@@ -6,16 +6,20 @@
  * Why. The ceiling of pages a Minsk day (services/ocrAllowance.js) keeps the
  * model key's month for everybody, and when it is spent, partners' menus are not
  * recognised until the next day. Until this block a refusal went only to the
- * log, and the Coordinator heard of it from a partner. Now the day and the seven
- * before it are here — the pages counted against the ceiling and the refusals by
- * kind — and the Friday watchdog (backend/scripts/openrouter-usage/watch.js,
- * workflow «Расход OpenRouter») turns red when the ceiling refused a file in
- * the week. A refusal by an account's own share is shown and wakes nobody: that
- * is the share doing its work.
+ * log, and the Coordinator heard of it from a partner. Now the day and the
+ * CEILING_HISTORY_DAYS before it are here — the pages counted against the
+ * ceiling and the refusals by kind (REFUSAL_KINDS) — and the Friday watchdog
+ * (backend/scripts/openrouter-usage/watch.js, workflow «Расход OpenRouter») turns
+ * red when the ceiling refused a file in those days. A refusal by the pool of
+ * the unconfirmed accounts is a warning on its run page, one by an account's own
+ * share a line: that is the share doing its work.
  *
  * Aggregates only — the endpoint answers without sign-in: no account, no file,
  * no card, no money. Counters Redis cannot be asked for are null («unknown»),
- * never 0, as in the `smart` block (services/smartSearchBudget.js).
+ * never 0, as in the `smart` block (services/smartSearchBudget.js). A counter
+ * Redis has lost — a restart without persistence, an eviction — reads as 0:
+ * the block cannot tell it from a quiet day (review by the lens, finding 3;
+ * whether Railway's Redis keeps its data is a question for its settings).
  *
  * Read on every request, one MGET under the Redis deadline: the counters are
  * the limits' own (dailyOcrCeilingKey) and the refusals' (dailyOcrRefusalKey),
@@ -35,6 +39,18 @@ import {
 
 /** Minsk keeps UTC+3 all year: a day back is 24 hours back. */
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The endpoint is public: with a half-open Redis every request would write a
+ * warning. Once a minute is enough to see it.
+ */
+const WARN_EVERY_MS = 60 * 1000;
+let lastWarnAt = 0;
+
+/** Tests only: let the next failed read write its line. */
+export const resetRecognitionHealthWarnings = () => {
+  lastWarnAt = 0;
+};
 
 /** A counter as Redis holds it: a whole number, none — 0; anything else is not a count. */
 const countOf = (value) => {
@@ -75,7 +91,10 @@ export const getRecognitionHealth = async ({ now = new Date() } = {}) => {
   try {
     values = await withRedisDeadline(redisClient.mGet(dayStarts.flatMap(keysOfDay)));
   } catch (error) {
-    logger.warn('Recognition health: the counters could not be read', { error: error.message });
+    if (now.getTime() - lastWarnAt >= WARN_EVERY_MS) {
+      lastWarnAt = now.getTime();
+      logger.warn('Recognition health: the counters could not be read', { error: error.message });
+    }
     return unknown;
   }
 

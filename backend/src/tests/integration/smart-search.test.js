@@ -1970,7 +1970,7 @@ describe('Smart Search - Бюджет модели', () => {
   });
 
   // Нитка «Потолок распознавания: малые правки», находка 3 (08.11.2026): блок
-  // recognition — сегодня и семь минских суток, страницы потолка распознавания и
+  // recognition — сегодня и 14 минских суток до него, страницы потолка распознавания и
   // отказы по видам (services/ocrCeilingHealth.js), по настоящему маршруту и
   // Redis. Только числа: ни учёток, ни файлов; код ответа решает PostGIS.
   test('recognition: неделя потолка распознавания — страницы и отказы, только числа', async () => {
@@ -1989,12 +1989,12 @@ describe('Smart Search - Бюджет модели', () => {
       const block = response.body.data.recognition;
       expect(Object.keys(block).sort()).toEqual(['ceiling_pages', 'ceiling_reached', 'days', 'redis_ready']);
       expect(block).toMatchObject({ ceiling_pages: 100, ceiling_reached: false, redis_ready: true });
-      expect(block.days).toHaveLength(8);
+      expect(block.days).toHaveLength(15);
       // find, а не days[0]: минская полночь между записью и запросом сдвинула бы день.
       expect(block.days.find(({ date }) => date === today)).toEqual({
         date: today,
         pages_counted: 42,
-        refusals: { door_ceiling: 2, door_share: 0, door_jobs: 0, reading_ceiling: 0, reading_share: 0 },
+        refusals: { door_ceiling: 2, door_pool: 0, door_share: 0, reading_ceiling: 0, reading_pool: 0, reading_share: 0 },
       });
       expect(response.body.data).toMatchObject({ healthy: true, postgis: 'healthy' });
     } finally {

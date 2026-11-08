@@ -31,7 +31,11 @@ import {
   parseResidentBytes,
   readResidentBytes,
 } from '../../services/ocr/pdfParseRunner.js';
-import { PDF_PARSE_MEMORY_LIMIT_MB, PDF_PARSE_TIMEOUT_MS } from '../../services/ocr/pdfTextExtractor.js';
+import { PDF_PARSE_MEMORY_LIMIT_MB, PDF_PARSE_TIMEOUT_MS, extractText } from '../../services/ocr/pdfTextExtractor.js';
+import { v2 as cloudinary } from 'cloudinary';
+
+/** The cloud the download guard accepts (pdfTextExtractor: only our own cloud is downloaded). */
+const cloudinaryConfig = () => cloudinary.config();
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'pdfParseChildren');
 const child = (name) => join(FIXTURES, `${name}.js`);
@@ -142,27 +146,51 @@ describe('an ordinary PDF parses in the child as it did in the API process', () 
 
 // Thread «Потолок распознавания: малые правки», finding 10: the page count a
 // PDF declares is the file's own word. pdf.js 1.10 takes it from the page
-// tree's /Count, and a page past the pages the file holds does not load — so
-// the child reports the last page that loaded, of the pages read.
+// tree's /Count; a page past the tree does not load («Page index N not found»),
+// and neither does a page the tree names but cannot reach (an entry pointing
+// at no object — «page dictionary kid reference points to wrong type of
+// object»). The child reports the last page that loaded and, only for the
+// first kind, the pages the tree holds (pagesInTree); for the second the
+// declared count stands, as before (review of the thread, finding M1).
 describe('the pages a file holds, beside the count it declares', () => {
   test.each([
-    // [declared, held, maxPages, numpages, lastPageFound]
-    ['declares 20, holds 1', 20, 1, 20, 20, 1],
-    ['declares 2, holds 1 — one page short', 2, 1, 20, 2, 1],
-    ['declares 1, holds 1', 1, 1, 20, 1, 1],
-    ['declares 3, holds 3', 3, 3, 20, 3, 3],
-    ['holds 25, 20 read — the last page read', 25, 25, 20, 25, 20],
-    ['declares 25, holds 19 — the pages end before the 20 read', 25, 19, 20, 25, 19],
-  ])('%s: numpages is the declared count, lastPageFound the last page that loaded', async (
-    _label, declaredPages, pages, maxPages, numpages, lastPageFound,
-  ) => {
-    const pdf = buildSyntheticPdf({ pages, linesPerPage: 3, declaredPages });
+    // [label, file, maxPages, numpages, lastPageFound, pagesInTree]
+    ['declares 20, holds 1', { pages: 1, declaredPages: 20 }, 20, 20, 1, 1],
+    ['declares 2, holds 1 — one page short', { pages: 1, declaredPages: 2 }, 20, 2, 1, 1],
+    ['declares 1, holds 1', { pages: 1 }, 20, 1, 1, null],
+    ['declares 3, holds 3', { pages: 3 }, 20, 3, 3, null],
+    ['holds 25, 20 read — the last page read, nothing proved past it', { pages: 25 }, 20, 25, 20, null],
+    ['declares 25, holds 19 — the tree ends before the 20 read', { pages: 19, declaredPages: 25 }, 20, 25, 19, 19],
+    ['holds 2, the tree names a third that points nowhere — not past the tree', { pages: 2, danglingKids: 1 }, 20, 3, 2, null],
+    ['declares 20, holds 1 and one entry pointing nowhere — not past the tree', { pages: 1, danglingKids: 1, declaredPages: 20 }, 20, 20, 1, null],
+  ])('%s', async (_label, file, maxPages, numpages, lastPageFound, pagesInTree) => {
+    const pdf = buildSyntheticPdf({ linesPerPage: 3, ...file });
 
     const result = await parsePdfIsolated(pdf, { maxPages, ...PRODUCTION_LIMITS });
 
-    expect(result).toMatchObject({ numpages, lastPageFound });
+    expect(result).toMatchObject({ numpages, lastPageFound, pagesInTree });
     expect(result.text).toContain(`Page ${lastPageFound} line 3: Borsch 13 rub`);
     expect(result.text).not.toContain(`Page ${lastPageFound + 1} line`);
+  }, 15000);
+
+  test('child, runner and extractor together: a downloaded file that declares 20 pages and holds 1 is one page', async () => {
+    const pdf = buildSyntheticPdf({ pages: 1, linesPerPage: 3, declaredPages: 20 });
+    const url = `https://res.cloudinary.com/${cloudinaryConfig().cloud_name}/image/upload/v1/establishments/x/menu_pdf/menu.pdf`;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      arrayBuffer: async () => pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.length),
+    });
+    try {
+      const result = await extractText(url, { maxPages: 20 });
+
+      expect(result).toMatchObject({ pageCount: 1, pagesParsed: 1 });
+      expect(result.text).toContain('Page 1 line 3: Borsch 13 rub');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   }, 15000);
 
   test('the text of the pages is pdf-parse\'s own: the child renders them as the library does', async () => {
@@ -176,7 +204,7 @@ describe('the pages a file holds, beside the count it declares', () => {
     expect(own.text.split('\n').length).toBeGreaterThan(4 * 6);
     expect(result.text).toBe(own.text);
     expect(own.numpages).toBe(9);
-    expect(result).toMatchObject({ numpages: 9, lastPageFound: 4 });
+    expect(result).toMatchObject({ numpages: 9, lastPageFound: 4, pagesInTree: 4 });
   }, 15000);
 });
 

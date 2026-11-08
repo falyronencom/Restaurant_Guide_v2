@@ -37,12 +37,21 @@
  * ocrAllowance.js): когда он выбран, меню партнёров не распознаются до
  * следующих суток, а видно это было только в журнале сервера. Из того же
  * ответа сторож читает блок recognition (services/ocrCeilingHealth.js:
- * сегодня и семь дней до него) и даёт тревогу, если общий потолок хоть раз
- * не принял файл. Отказы по доле одной учётки — строкой в итоге, без
- * тревоги: так доля и работает. Нет блока, не прочитан формат или сервер не
- * спросил свой Redis (без него пределы распознавания не действуют) — сторож
- * ослеп. Неделя сторожа — восемь суток: отказ утром прошлой пятницы до его
- * прогона попадёт в два отчёта подряд, зато ни один не пропадёт.
+ * сегодня и четырнадцать суток до него) и даёт тревогу, если общий потолок
+ * хоть раз не принял файл. Пул неподтверждённых учёток выбирался — строка и
+ * предупреждение без письма: новые партнёры без подтверждённой почты ждали, а
+ * подтвердив почту, партнёр выходит из пула. Отказы по доле одной учётки —
+ * строкой, без тревоги: так доля и работает. Нет блока, не прочитан формат,
+ * дни не подряд от сегодняшних или сервер не прочитал свой Redis (без него
+ * пределы распознавания не действуют) — сторож ослеп.
+ *
+ * Почему пятнадцать суток, а не неделя (ревью по линзе, находка 1). Отказ —
+ * событие, а не состояние, как остаток ключа: отложенный защитой выкатки,
+ * задержанный или пропущенный GitHub прогон терял бы его насовсем, а при
+ * недельном окне следующий прогон его уже не видит. Теперь каждый отказ
+ * попадает в два пятничных отчёта подряд (отказ утром пятницы до прогона — в
+ * три): второй отчёт помечает дни старше недели как «прошлая неделя». Цена —
+ * второе письмо о том же отказе.
  */
 
 import { checkDeployWindow } from '../model-expiry/watch.js';
@@ -137,9 +146,10 @@ export function parseHealthUrl(raw) {
  * Блоки model_key и recognition из проверки здоровья сервера, одним чтением.
  * Сервер отвечает 503, когда не здорова база, но блоки есть и тогда — они и
  * читаются. Сбой сети, 5xx без блока ключа и 429 — повтор; блок ключа с
- * проходящей причиной незнания (PASSING_REASONS) или блок распознавания,
- * чей Redis на миг не ответил, — тоже повтор; прочее — сразу ответ. Блока
- * распознавания нет — recognition: null, решает evaluateRecognition.
+ * проходящей причиной незнания (PASSING_REASONS) или блок распознавания без
+ * дней — Redis сервера не готов или на миг не ответил (`redis_ready: false`
+ * или `days: null`), — тоже повтор; прочее — сразу ответ. Блока распознавания
+ * нет — recognition: null, решает evaluateRecognition.
  *
  * @returns {Promise<{ keyBlock: object, recognition: object|null }>}
  * @throws {BlindError}
@@ -173,8 +183,8 @@ export async function fetchHealthBlocks({
         if (block.status === 'unknown' && PASSING_REASONS.has(block.unknown_reason)) {
           throw new Error(`сервер ещё не прочитал ключ (${oneLine(block.unknown_reason, 40)})`);
         }
-        if (last.recognition?.redis_ready === false) {
-          throw new Error('сервер не спросил свой Redis о счётчиках распознавания');
+        if (last.recognition && (last.recognition.redis_ready === false || last.recognition.days === null)) {
+          throw new Error('сервер не прочитал свой Redis о счётчиках распознавания');
         }
         return last;
       }
@@ -265,12 +275,31 @@ export function evaluateKey({ block, now, alarmPercent, staleMs = STALE_MS }) {
  * (backend/src/services/ocrAllowance.js; тест сверяет списки: сторож идёт без
  * зависимостей и код сервера не подключает). door_* — у двери: файл не
  * поставлен в очередь; reading_* — при первом запуске задания: файл не
- * прочитан. *_ceiling — общий потолок, *_share — доля учётки или пределы
- * неподтверждённых учёток, door_jobs — задания дня.
+ * прочитан. *_ceiling — общий потолок всех обычных учёток (тревога); *_pool —
+ * пул всех неподтверждённых учёток, страниц или заданий (предупреждение без
+ * письма); *_share — предел одной учётки: её страницы, её задания дня (строка).
  */
 export const REFUSAL_FIELDS = Object.freeze([
-  'door_ceiling', 'door_share', 'door_jobs', 'reading_ceiling', 'reading_share',
+  'door_ceiling', 'door_pool', 'door_share', 'reading_ceiling', 'reading_pool', 'reading_share',
 ]);
+
+/** Сутки окна: сегодня по Минску и четырнадцать до него (CEILING_HISTORY_DAYS сервера и сегодня). */
+export const WINDOW_DAYS = 15;
+
+/** Дни окна старше этого числа — прошлая неделя: прошлый прогон их, скорее всего, уже назвал. */
+const LAST_WEEK_FROM = 8;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const minskParts = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Europe/Minsk', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+
+/** Минская дата момента, YYYY-MM-DD (сутки продукта — минские, utils/minskDay.js сервера). */
+export function minskDateOf(moment) {
+  const parts = Object.fromEntries(minskParts.formatToParts(moment).map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 const isCount = (v) => Number.isSafeInteger(v) && v >= 0;
 const isMinskDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
@@ -280,15 +309,17 @@ const shortDate = (date) => `${date.slice(8, 10)}.${date.slice(5, 7)}`;
 
 /**
  * Оценка блока recognition: тревога — общий потолок распознавания не принял
- * файл хоть раз за дни блока; слепота — блока нет, формат не прочитан или
- * сервер не спросил свой Redis.
+ * файл хоть раз за сутки окна; слепота — блока нет, формат не прочитан, дни не
+ * подряд от сегодняшних (устаревший ответ, сдвиг часов, узкое окно читались бы
+ * тихими сутками — ревью по линзе, укрепление 1) или сервер не прочитал свой Redis.
  *
- * @param {{ board: object|null }} input
+ * @param {{ board: object|null, now: Date }} input
  * @returns {{ blind: string|null, alarm: boolean, summary: object|null }}
- *   summary — потолок, число дней, дни с отказами общего потолка, отказы долей
- *   и заданий за все дни, самые занятые сутки
+ *   summary — потолок, число суток, сутки с отказами общего потолка и пула
+ *   неподтверждённых (back — сколько суток назад), отказы долей за все сутки,
+ *   самые занятые сутки
  */
-export function evaluateRecognition({ board }) {
+export function evaluateRecognition({ board, now }) {
   const blind = (reason) => ({ blind: reason, alarm: false, summary: null });
   if (board === null || board === undefined) {
     return blind('в ответе нет блока recognition — сервер до этой правки?');
@@ -302,21 +333,32 @@ export function evaluateRecognition({ board }) {
   if (board.redis_ready !== true || board.days === null) {
     return blind('сервер не прочитал счётчики распознавания: его Redis не ответил, а без Redis пределы распознавания не действуют');
   }
-  if (!Array.isArray(board.days) || board.days.length === 0) {
-    return blind(`дни (days) блока recognition не прочитаны (${oneLine(JSON.stringify(board.days), 60)})`);
+  if (!Array.isArray(board.days) || board.days.length !== WINDOW_DAYS) {
+    const shown = Array.isArray(board.days) ? `${board.days.length} сут.` : oneLine(JSON.stringify(board.days), 40);
+    return blind(`в блоке recognition не ${WINDOW_DAYS} суток окна (${shown}) — сервер до этой правки?`);
   }
   for (const day of board.days) {
     const readable = day && isMinskDate(day.date) && isCount(day.pages_counted)
       && day.refusals && REFUSAL_FIELDS.every((field) => isCount(day.refusals[field]));
     if (!readable) return blind(`день блока recognition не прочитан (${oneLine(JSON.stringify(day), 80)})`);
   }
-
   const days = board.days;
-  const byCeiling = days
-    .map((day) => ({ date: day.date, door: day.refusals.door_ceiling, reading: day.refusals.reading_ceiling }))
+  const today = [minskDateOf(now), minskDateOf(new Date(now.getTime() - DAY_MS))];
+  const consecutive = days.every((day, index) => index === 0
+    || Date.parse(days[index - 1].date) - Date.parse(day.date) === DAY_MS);
+  if (!today.includes(days[0].date) || !consecutive) {
+    return blind(`сутки блока recognition не идут подряд от сегодняшних (${days[0].date} … ${days[days.length - 1].date}, `
+      + `сегодня по Минску ${today[0]}) — ответ устарел или часы сервера сбились`);
+  }
+
+  const refusalsBy = (kind) => days
+    .map((day, back) => ({
+      date: day.date, back, door: day.refusals[`door_${kind}`], reading: day.refusals[`reading_${kind}`],
+    }))
     .filter(({ door, reading }) => door + reading > 0);
-  const sum = (field) => days.reduce((total, day) => total + day.refusals[field], 0);
+  const share = days.reduce((total, day) => total + day.refusals.door_share + day.refusals.reading_share, 0);
   const busiest = days.reduce((top, day) => (day.pages_counted > top.pages_counted ? day : top), days[0]);
+  const byCeiling = refusalsBy('ceiling');
   return {
     blind: null,
     alarm: byCeiling.length > 0,
@@ -324,32 +366,44 @@ export function evaluateRecognition({ board }) {
       ceiling: board.ceiling_pages,
       dayCount: days.length,
       byCeiling,
-      share: sum('door_share') + sum('reading_share'),
-      jobs: sum('door_jobs'),
+      byPool: refusalsBy('pool'),
+      share,
       busiest: { date: busiest.date, pages: busiest.pages_counted },
     },
   };
 }
 
-/** Строки итога о потолке распознавания: главная (с ✅ или ❌) и, если были, отказы долей и заданий. */
+/** «05.11 — 2 (у двери 2); 27.10 — 1 (при чтении 1, прошлая неделя)» */
+const refusalDays = (rows) => rows.map(({ date, back, door, reading }) => {
+  const parts = [
+    door > 0 && `у двери ${door}`,
+    reading > 0 && `при чтении ${reading}`,
+    back >= LAST_WEEK_FROM && 'прошлая неделя',
+  ].filter(Boolean);
+  return `${shortDate(date)} — ${door + reading} (${parts.join(', ')})`;
+}).join('; ');
+
+/**
+ * Строки итога о потолке распознавания.
+ *
+ * @returns {{ ceiling: string, pool: string|null, share: string|null }}
+ *   ceiling — главная, с ✅ или ❌; pool — пул неподтверждённых выбирался (⚠️,
+ *   без письма); share — отказы по пределу одной учётки
+ */
 export function recognitionLines(summary) {
   const head = `Потолок распознавания (${summary.ceiling} страниц в сутки на всех)`;
-  const lines = [];
-  if (summary.byCeiling.length > 0) {
-    const days = summary.byCeiling.map(({ date, door, reading }) => {
-      const parts = [door > 0 && `у двери ${door}`, reading > 0 && `при чтении ${reading}`].filter(Boolean);
-      return `${shortDate(date)} — ${door + reading} (${parts.join(', ')})`;
-    });
-    lines.push(`❌ ${head}: общий потолок не принял файлы — ${days.join('; ')}`);
-  } else {
-    lines.push(`✅ ${head}: за ${summary.dayCount} сут. общий потолок файлов не отклонял; `
-      + `больше всего страниц за сутки — ${summary.busiest.pages} (${shortDate(summary.busiest.date)})`);
-  }
-  if (summary.share > 0 || summary.jobs > 0) {
-    lines.push(`Отказов по доле одной учётки или пределам неподтверждённых — ${summary.share}, `
-      + `по заданиям дня — ${summary.jobs}: так пределы и работают, тревоги нет.`);
-  }
-  return lines;
+  const ceiling = summary.byCeiling.length > 0
+    ? `❌ ${head}: общий потолок не принял файлы — ${refusalDays(summary.byCeiling)}`
+    : `✅ ${head}: за ${summary.dayCount} сут. общий потолок файлов не отклонял; `
+      + `больше всего страниц за сутки — ${summary.busiest.pages} (${shortDate(summary.busiest.date)})`;
+  const pool = summary.byPool.length > 0
+    ? `⚠️ Пул неподтверждённых учёток выбирался — ${refusalDays(summary.byPool)}: новые партнёры без `
+      + 'подтверждённой почты ждали следующих суток; подтвердив почту, партнёр выходит из пула. Письма об этом нет.'
+    : null;
+  const share = summary.share > 0
+    ? `Отказов по пределу одной учётки (её страницы или задания дня) — ${summary.share}: так предел и работает, тревоги нет.`
+    : null;
+  return { ceiling, pool, share };
 }
 
 /**
@@ -394,7 +448,8 @@ const RECOGNITION_ALARM_HINT = 'Что делать: открыть адрес �
   + 'на Railway, без выпуска); одна-две учётки — их видно в журнале сервера, строки «Recognition pages of the day …».';
 
 const RECOGNITION_BLIND_HINT = 'Что делать: открыть адрес проверки здоровья в браузере и посмотреть блок recognition. '
-  + 'Нет блока — на проде сервер до этой правки; redis_ready false — Redis сервера на Railway; формат изменился — '
+  + 'Нет блока или в нём не 15 суток — на проде сервер до этой правки; redis_ready false или days null — Redis '
+  + 'сервера на Railway не готов или не ответил вовремя; сутки не от сегодняшних — ответ устарел; формат изменился — '
   + 'править backend/scripts/openrouter-usage/watch.js и backend/src/services/ocrCeilingHealth.js.';
 
 // Команды workflow GitHub: в данных экранируются %, CR, LF; в свойствах ещё : и ,.
@@ -445,10 +500,15 @@ export function formatReport({ now, alarmPercent, url, evaluation, recognition =
     both('', RECOGNITION_BLIND_HINT);
     annotations.push(annotation(level, 'Сторож не видит потолок распознавания', recognition.blind));
   } else if (recognition) {
-    const [head, ...rest] = recognitionLines(recognition.summary);
-    both('', head, ...rest);
+    const lines = recognitionLines(recognition.summary);
+    both('', lines.ceiling);
+    if (lines.pool) {
+      both(lines.pool);
+      annotations.push(annotation('warning', 'Пул неподтверждённых учёток выбирался', lines.pool));
+    }
+    if (lines.share) both(lines.share);
     if (recognition.alarm) {
-      annotations.push(annotation(level, 'Потолок распознавания не принимал файлы', head));
+      annotations.push(annotation(level, 'Потолок распознавания не принимал файлы', lines.ceiling));
       both('', RECOGNITION_ALARM_HINT);
     }
   }
@@ -494,7 +554,7 @@ export async function runWatch({
     url = parseHealthUrl(env.HEALTH_URL);
     const blocks = await fetchHealthImpl({ url });
     evaluation = evaluateKey({ block: blocks.keyBlock, now, alarmPercent });
-    recognition = evaluateRecognition({ board: blocks.recognition });
+    recognition = evaluateRecognition({ board: blocks.recognition, now });
   } catch (error) {
     if (!(error instanceof BlindError)) throw error;
     evaluation = { blind: error.message, alarm: false, key: null, warnings: [] };

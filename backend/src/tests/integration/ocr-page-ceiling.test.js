@@ -23,9 +23,9 @@ import { jest } from '@jest/globals';
 import { randomUUID } from 'crypto';
 
 jest.unstable_mockModule('../../services/ocr/pdfParseRunner.js', () => {
-  // lastPageFound — the last page the child found of those read
-  // (pdfParseChild); not set — the parse did not say, the declared count stands.
-  const state = { numpages: 1, text: '', fails: false, lastPageFound: undefined };
+  // pagesInTree — the pages the child proved the file's page tree holds
+  // (pdfParseChild); not set — nothing proved, the declared count stands.
+  const state = { numpages: 1, text: '', fails: false, pagesInTree: undefined };
   const abortedError = (message = 'PDF parse cut short by shutdown') => Object.assign(
     new Error(message),
     { code: 'PDF_PARSE_ABORTED', reason: 'aborted' },
@@ -41,7 +41,7 @@ jest.unstable_mockModule('../../services/ocr/pdfParseRunner.js', () => {
         numpages: state.numpages,
         text: state.text,
         textLength: state.text.length,
-        lastPageFound: state.lastPageFound,
+        pagesInTree: state.pagesInTree,
       };
     },
   };
@@ -186,7 +186,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   await clearAllData();
   await sweepKeys();
-  Object.assign(parser, { numpages: 1, text: '', fails: false, lastPageFound: undefined });
+  Object.assign(parser, { numpages: 1, text: '', fails: false, pagesInTree: undefined });
   installFetch();
 });
 
@@ -238,14 +238,15 @@ describe('PDF стоит столько, сколько страниц проч�
   // слово самого файла. Файл заявляет 20 страниц, а в нём одна: страницы
   // дальше неё облако не нарисует, а потолок их считал.
   test.each([
-    // [заявлено, последняя найденная, прочитано и стоит]
+    // [заявлено, страниц в дереве по разбору (null — не доказано), прочитано и стоит]
     ['заявил 20, в нём одна — читается одна, столько и стоит', 20, 1, 1],
     ['заявил 2, в нём одна — на страницу меньше тоже видно', 2, 1, 1],
-    ['заявил 2, в нём обе — как прежде', 2, 2, 2],
-  ])('%s', async (_label, declared, lastPageFound, pages) => {
+    ['заявил 2, в нём обе — как прежде', 2, null, 2],
+    ['страница названа деревом, но не открылась — заявленное число, как прежде', 3, null, 3],
+  ])('%s', async (_label, declared, pagesInTree, pages) => {
     const card = await newCard();
     const mediaId = await insertMenuFile(card);
-    Object.assign(parser, { numpages: declared, lastPageFound });
+    Object.assign(parser, { numpages: declared, pagesInTree });
 
     await askAtDoor(card, mediaId);
     const { job } = await runNext();
@@ -260,7 +261,7 @@ describe('PDF стоит столько, сколько страниц проч�
   test('заявил 20, в нём одна: сбой чтения и повтор — на счётчиках 2, а не 40', async () => {
     const card = await newCard();
     const mediaId = await insertMenuFile(card);
-    Object.assign(parser, { numpages: 20, lastPageFound: 1 });
+    Object.assign(parser, { numpages: 20, pagesInTree: 1 });
 
     await askAtDoor(card, mediaId);
     visionFails = true;
@@ -650,7 +651,9 @@ describe('неподтверждённые учётки: PDF тоже в стр�
 // здоровья, а не только в журнале; пятничный сторож краснеет на отказах общего
 // потолка. Здесь — настоящие отказы на настоящем Redis и что из них видит табло.
 describe('табло потолка: настоящие отказы видны в блоке recognition', () => {
-  const NO_REFUSALS = { door_ceiling: 0, door_share: 0, door_jobs: 0, reading_ceiling: 0, reading_share: 0 };
+  const NO_REFUSALS = {
+    door_ceiling: 0, door_pool: 0, door_share: 0, reading_ceiling: 0, reading_pool: 0, reading_share: 0,
+  };
   const todayOnBoard = async () => (await getRecognitionHealth()).days[0];
 
   test('тихий день: страницы прочитанного файла — на табло, отказов нет, потолок не выбран', async () => {
@@ -663,7 +666,8 @@ describe('табло потолка: настоящие отказы видны 
 
     const board = await getRecognitionHealth();
     expect(board).toMatchObject({ ceiling_pages: 100, ceiling_reached: false, redis_ready: true });
-    expect(board.days).toHaveLength(8);
+    // Сегодня и 14 суток до него: каждый отказ — в двух пятничных отчётах подряд.
+    expect(board.days).toHaveLength(15);
     expect(board.days[0]).toEqual({ date: minskDate(today()), pages_counted: 9, refusals: NO_REFUSALS });
   });
 
@@ -697,7 +701,22 @@ describe('табло потолка: настоящие отказы видны 
     expect((await getRecognitionHealth()).ceiling_reached).toBe(true);
   });
 
-  test('счётчик потолка и отказов живёт неделю после своих суток, доля учётки — до полуночи', async () => {
+  test('у двери: пул неподтверждённых выбран — door_pool (новые партнёры без почты ждут); доля неподтверждённой — door_share', async () => {
+    const first = await newCard({ confirmed: false });
+    const second = await newCard({ confirmed: false });
+    await setCount(unconfirmedKeys(today()).ocrPages, 40);
+
+    expect((await askAtDoor(first, await insertMenuFile(first))).queued).toBe(false);
+    await setCount(unconfirmedKeys(today()).ocrPages, 0);
+    await setCount(unconfirmedAccountKeys(second.userId, today()).ocrPages, 20);
+    expect((await askAtDoor(second, await insertMenuFile(second))).queued).toBe(false);
+
+    expect(await todayOnBoard()).toMatchObject({ refusals: { ...NO_REFUSALS, door_pool: 1, door_share: 1 } });
+  });
+
+  test('счётчик потолка и отказов живёт две недели после своих суток, доля учётки — до полуночи', async () => {
+    // До записи: ключи рождаются позже, их срок не больше этого (граница секунды).
+    const leftBefore = secondsUntilMinskMidnight(today());
     const card = await newCard();
     parser.numpages = 2;
     await askAtDoor(card, await insertMenuFile(card));
@@ -707,14 +726,14 @@ describe('табло потолка: настоящие отказы видны 
     await askAtDoor(second, await insertMenuFile(second));
 
     const left = secondsUntilMinskMidnight(today());
-    const week = 7 * 24 * 60 * 60;
+    const twoWeeks = 14 * 24 * 60 * 60;
     const ceilingTtl = await redisClient.ttl(ceilingKey());
     const refusalTtl = await redisClient.ttl(`ocr:refusals:${minskDate(today())}:door_share`);
-    expect(ceilingTtl).toBeGreaterThan(left + week - 60);
-    expect(ceilingTtl).toBeLessThanOrEqual(left + week);
-    expect(refusalTtl).toBeGreaterThan(left + week - 60);
-    expect(refusalTtl).toBeLessThanOrEqual(left + week);
-    expect(await redisClient.ttl(ownPages(card))).toBeLessThanOrEqual(left);
+    expect(ceilingTtl).toBeGreaterThan(left + twoWeeks - 60);
+    expect(ceilingTtl).toBeLessThanOrEqual(leftBefore + twoWeeks);
+    expect(refusalTtl).toBeGreaterThan(left + twoWeeks - 60);
+    expect(refusalTtl).toBeLessThanOrEqual(leftBefore + twoWeeks);
+    expect(await redisClient.ttl(ownPages(card))).toBeLessThanOrEqual(leftBefore);
   });
 });
 

@@ -1866,7 +1866,7 @@ describe('OCR pipeline integration', () => {
       // the child (unit/pdfParseRunner.test.js reads a real file of that kind).
       test('a PDF that declares 20 pages and holds 1: one page is read; the summary names no other', async () => {
         const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
-        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 20, lastPageFound: 1 });
+        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 20, lastPageFound: 1, pagesInTree: 1 });
         const { fetchMock, calls } = routedFetch();
         global.fetch = fetchMock;
 
@@ -1886,7 +1886,7 @@ describe('OCR pipeline integration', () => {
       test('a PDF that declares 30 pages and holds 25: the first 20 are read, the summary names the 30 it declares', async () => {
         const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
         // Past the 20 pages read nothing is known of the file.
-        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 30, lastPageFound: 20 });
+        pdfParseModule.default.mockResolvedValue({ text: 'xy', numpages: 30, lastPageFound: 20, pagesInTree: null });
         const { fetchMock, calls } = routedFetch();
         global.fetch = fetchMock;
 

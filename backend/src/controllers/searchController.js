@@ -261,9 +261,9 @@ export async function getEstablishmentById(req, res, next) {
  * a code when it could not be read. It does not change the status code either.
  *
  * `recognition` (thread «Потолок распознавания: малые правки», finding 3,
- * 08.11.2026): the ceiling of menu recognition, today and the seven days
+ * 08.11.2026): the ceiling of menu recognition, today and the fourteen days
  * before — pages counted, refusals by kind (services/ocrCeilingHealth.js); the
- * same watchdog turns red when the ceiling refused a file in the week.
+ * same watchdog turns red when the ceiling refused a file in those days.
  * Aggregates only; the status code stays PostGIS's.
  */
 export async function searchHealth(req, res, next) {

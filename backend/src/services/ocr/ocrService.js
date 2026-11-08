@@ -304,16 +304,17 @@ const extractPageTexts = async (media, { textLayerBackup = false, signal, before
         pageCount: parseResult.pageCount,
         error: error.message,
       });
-      // The pages the text layer covers are the pages this attempt counted
-      // (pageUrls): it costs no more than they do.
-      const charLimit = parseResult.pagesParsed * TEXT_LAYER_CHARS_PER_PAGE;
+      // As many pages as this attempt counted (beforeReading above): the text
+      // layer costs no more than they do. They are the pages it covers
+      // (pagesParsed) whenever there is a text layer to fall back to.
+      const charLimit = pageUrls.length * TEXT_LAYER_CHARS_PER_PAGE;
       const textLength = parseResult.textLength ?? parseResult.text.length;
       if (textLength > charLimit) {
         logger.warn('PDF text layer longer than the limit — only its beginning is structured', {
           mediaId: media.id,
           textLength,
           charLimit,
-          pages: parseResult.pagesParsed,
+          pages: pageUrls.length,
         });
       }
       return {

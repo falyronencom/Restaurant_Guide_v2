@@ -341,22 +341,23 @@ describe('extractText — the page limit', () => {
 // Thread «Потолок распознавания: малые правки», finding 10: a file that
 // declares more pages than it holds (pdfParseRunner.test.js shows pdf.js
 // reporting the declared count) is read, and counted in the day's pages, by
-// the pages it holds — a page past them cannot be drawn.
-describe('pagesHeld — the pages a file holds, from the declared count and the last page found', () => {
+// the pages it holds — a page past them cannot be drawn. Only a page tree the
+// child proved shorter (pagesInTree) cuts the count; a page that did not load
+// for another reason leaves it as declared (review, finding M1).
+describe('pagesHeld — the declared count, unless the page tree is proved shorter', () => {
   test.each([
-    // [declared, lastPageFound, maxPages, expected]
-    ['declares 20, the last page found is 1', 20, 1, 20, 1],
-    ['declares 2, holds 1 — one page short is caught', 2, 1, 20, 1],
-    ['declares 1, holds 1', 1, 1, 20, 1],
-    ['declares 25, the 20 read were all found — past them nothing is known: the declared count', 25, 20, 20, 25],
-    ['declares 25, the pages end at 19 of the 20 read', 25, 19, 20, 19],
-    ['no page loaded — the declared count, as before', 20, 0, 20, 20],
-    ['the parse did not say — the declared count', 20, undefined, 20, 20],
-    ['every page read (maxPages 0): the pages end at 10 of 30', 30, 10, 0, 10],
-    ['every page read (maxPages 0): all 30 found', 30, 30, 0, 30],
-    ['no pages at all', 0, 0, 20, 0],
-  ])('%s', (_label, declared, lastPageFound, maxPages, expected) => {
-    expect(pagesHeld(declared, lastPageFound, maxPages)).toBe(expected);
+    // [label, declared, pagesInTree, expected]
+    ['declares 20, the tree holds 1', 20, 1, 1],
+    ['declares 2, the tree holds 1 — one page short is caught', 2, 1, 1],
+    ['nothing proved (null) — the declared count', 20, null, 20],
+    ['the parse did not say (undefined) — the declared count', 20, undefined, 20],
+    ['0 proved — the declared count, as before', 20, 0, 20],
+    ['as many as declared — the declared count', 20, 20, 20],
+    ['more than declared — the declared count', 20, 25, 20],
+    ['not a whole number — the declared count', 20, 1.5, 20],
+    ['no pages at all', 0, null, 0],
+  ])('%s', (_label, declared, pagesInTree, expected) => {
+    expect(pagesHeld(declared, pagesInTree)).toBe(expected);
   });
 });
 
@@ -384,7 +385,7 @@ describe('extractText — a file that declares more pages than it holds', () => 
   const declaredWarnings = () => mockLogger.warn.mock.calls.filter(([message]) => message === DECLARED_MESSAGE);
 
   test('declares 20, holds 1: one page — and its text layer is judged by that page', async () => {
-    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT, numpages: 20, lastPageFound: 1 });
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT, numpages: 20, lastPageFound: 1, pagesInTree: 1 });
 
     const result = await extractText(PDF_URL, { maxPages: 20 });
 
@@ -396,7 +397,7 @@ describe('extractText — a file that declares more pages than it holds', () => 
   });
 
   test('holds the pages it declares: as before, nothing said', async () => {
-    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(3), numpages: 3, lastPageFound: 3 });
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(3), numpages: 3, lastPageFound: 3, pagesInTree: null });
 
     const result = await extractText(PDF_URL, { maxPages: 20 });
 
@@ -404,8 +405,17 @@ describe('extractText — a file that declares more pages than it holds', () => 
     expect(declaredWarnings()).toEqual([]);
   });
 
+  test('a page the tree names did not load, and nothing proved past it: every declared page is still read', async () => {
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(2), numpages: 3, lastPageFound: 2, pagesInTree: null });
+
+    const result = await extractText(PDF_URL, { maxPages: 20 });
+
+    expect(result).toMatchObject({ pageCount: 3, pagesParsed: 3 });
+    expect(declaredWarnings()).toEqual([]);
+  });
+
   test('a long file whose 20 pages read were all found: the declared count stands, cut by the caller as before', async () => {
-    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(20), numpages: 100, lastPageFound: 20 });
+    mockPdfParse.mockResolvedValue({ text: PAGE_TEXT.repeat(20), numpages: 100, lastPageFound: 20, pagesInTree: null });
 
     const result = await extractText(PDF_URL, { maxPages: 20 });
 
