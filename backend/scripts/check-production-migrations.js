@@ -114,6 +114,12 @@ const MARKERS = [
               AND table_name = 'establishment_analytics'
               AND column_name = 'share_count'`,
   },
+  {
+    id: '040',
+    label: 'avatar_deletions table (a deleted account\'s pictures leave the cloud)',
+    query: `SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'avatar_deletions'`,
+  },
 ];
 
 function maskUrl(url) {
