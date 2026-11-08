@@ -365,8 +365,80 @@ export const globalRateLimitTiers = resolveRateLimitTiers(process.env);
 export const rateLimiter = createGlobalRateLimiter(globalRateLimitTiers.tiers);
 
 /**
+ * The refusal of a limit counted per route: createRateLimiter's, and that of a
+ * handler spending the same counter itself (spendRouteLimit).
+ *
+ * @param {Object} res - Express response
+ * @param {{ limit: number, windowSeconds: number, retryAfter: number, resetAt: number }} refusal
+ *   resetAt — seconds since the epoch
+ * @returns {Object} The response
+ */
+export const sendRateLimitRefusal = (res, {
+  limit, windowSeconds, retryAfter, resetAt,
+}) => {
+  setRetryAfter(res, retryAfter);
+  return res.status(429).json({
+    success: false,
+    message: RATE_LIMIT_MESSAGE,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      details: {
+        limit,
+        window: `${windowSeconds} seconds`,
+        retry_after: retryAfter,
+        reset_at: new Date(resetAt * 1000).toISOString(),
+      },
+    },
+    timestamp: new Date().toISOString(),
+  });
+};
+
+/**
+ * Spend a slot of a limit from inside a handler, for something only the handler
+ * can tell: an OAuth sign-in spends the address's day of new accounts only when it
+ * creates an account, and whether it does is known after the provider's token is
+ * verified (services/authService.js authenticateWithOAuth).
+ *
+ * Who is counted — requesterOf, as the route limiter of a public route counts.
+ * Refused: nothing stays spent. Redis unavailable: granted, as every limit here
+ * (config/redis.js).
+ *
+ * @param {Object} req - Express request
+ * @param {{ limit: number, windowSeconds: number, keyPrefix: string }} routeLimit
+ * @returns {Promise<{ granted: true, giveBack: () => Promise<void> }
+ *   | { granted: false, limit: number, windowSeconds: number, retryAfter: number, resetAt: number }>}
+ *   giveBack — when the guarded thing did not happen after all
+ */
+export const spendRouteLimit = async (req, { limit, windowSeconds, keyPrefix }) => {
+  const requester = requesterOf(req);
+  const nowMs = Date.now();
+  const bucket = bucketAt(windowSeconds, nowMs);
+  const key = `ratelimit:${keyPrefix}:${requester.identifier}:${bucket.index}`;
+
+  const count = await incrementWithExpiry(key, bucket.secondsLeft);
+  if (count > limit) {
+    await decrement(key);
+    logger.warn(`Custom rate limit exceeded (${keyPrefix})`, {
+      identifier: loggedRequester(requester),
+      currentCount: count,
+      limit,
+      path: req.path,
+    });
+    return {
+      granted: false,
+      limit,
+      windowSeconds,
+      retryAfter: bucket.secondsLeft,
+      resetAt: Math.floor(nowMs / 1000) + bucket.secondsLeft,
+    };
+  }
+
+  return { granted: true, giveBack: () => decrement(key) };
+};
+
+/**
  * Custom rate limiter factory for specific endpoints that need different limits.
- * 
+ *
  * Some endpoints may require tighter or looser limits than the global defaults.
  * For example, authentication endpoints might have stricter limits to prevent
  * brute force attacks.
@@ -428,21 +500,7 @@ export const createRateLimiter = ({
           path: req.path,
         });
 
-        setRetryAfter(res, ttl);
-        return res.status(429).json({
-          success: false,
-          message: RATE_LIMIT_MESSAGE,
-          error: {
-            code: 'RATE_LIMIT_EXCEEDED',
-            details: {
-              limit,
-              window: `${windowSeconds} seconds`,
-              retry_after: ttl,
-              reset_at: new Date(resetTime * 1000).toISOString(),
-            },
-          },
-          timestamp: new Date().toISOString(),
-        });
+        return sendRateLimitRefusal(res, { limit, windowSeconds, retryAfter: ttl, resetAt: resetTime });
       }
 
       // The request counted: the handler may give the slot back when it did

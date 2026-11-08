@@ -29,22 +29,10 @@ import { authenticate } from '../../middleware/auth.js';
 import { createRateLimiter } from '../../middleware/rateLimiter.js';
 import { uploadAvatar } from '../../middleware/upload.js';
 import { AVATAR_REFUSALS } from '../../constants/partnerSectionRefusals.js';
+import { REGISTRATION_REQUESTS_DAY_LIMIT } from '../../constants/registrationLimit.js';
 import { AppError } from '../../middleware/errorHandler.js';
 
 const router = express.Router();
-
-/**
- * Accounts one address may register in a day (thread «Расходы посторонних»,
- * point 6, 03.11.2026). Every account holds its own budgets — 100 requests a
- * minute on the global limiter and its own daily allowances — so until then
- * 20 registrations a minute from one address multiplied them without end. 20
- * a day leaves room for a family, an office or a café behind one address; the
- * site's visitors count by the address the site vouches for. Every
- * registration by e-mail sends a code: with the resends below, one address
- * spends at most 30 of the day's 50 codes (services/mailAllowance.js). Counted
- * per UTC day (the limiter's buckets start at the epoch).
- */
-export const REGISTRATIONS_PER_DAY = 20;
 
 /** Resends of the confirmation code one address may ask in a day, whatever the account. */
 export const CODE_RESENDS_PER_ADDRESS_DAY = 10;
@@ -60,9 +48,9 @@ export const RESET_REQUESTS_PER_ADDRESS_DAY = 10;
  * 
  * Middleware chain:
  * 1. Rate limiter: 20 requests per minute per IP (moderate limit for registrations)
- * 2. Rate limiter: REGISTRATIONS_PER_DAY per IP and day (UTC)
+ * 2. Rate limiter: REGISTRATION_REQUESTS_DAY_LIMIT per IP and day (UTC)
  * 3. Validation: Check email/phone format, password complexity, etc.
- * 4. Controller: Create user and generate tokens
+ * 4. Controller: Create user (within NEW_ACCOUNTS_DAY_LIMIT) and generate tokens
  * 
  * Rate limit is higher than login because legitimate use case is multiple users
  * registering from same IP (e.g., coffee shop WiFi, corporate network).
@@ -74,11 +62,7 @@ router.post(
     windowSeconds: 60, // 1 minute
     keyPrefix: 'register',
   }),
-  createRateLimiter({
-    limit: REGISTRATIONS_PER_DAY,
-    windowSeconds: 86400,
-    keyPrefix: 'register-day',
-  }),
+  createRateLimiter(REGISTRATION_REQUESTS_DAY_LIMIT),
   validateRegister,
   authController.register,
 );
@@ -92,7 +76,10 @@ router.post(
  * Middleware chain:
  * 1. Rate limiter: 20 requests per minute per IP (same as registration)
  * 2. Validation: Check provider enum and token presence
- * 3. Controller: Verify OAuth token and authenticate user
+ * 3. Controller: Verify OAuth token and authenticate user. An account created
+ *    here spends NEW_ACCOUNTS_DAY_LIMIT, as one created by /register does; signing
+ *    in to an existing account neither spends it nor meets it — which of the two
+ *    it is, is known only after the token is verified, so no limiter stands here.
  */
 router.post(
   '/oauth',

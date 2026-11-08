@@ -1,7 +1,8 @@
 /**
  * The day's shared allowance of all unconfirmed accounts together: how many
- * files, bytes and recognition jobs the accounts that have not confirmed
- * their e-mail may spend between them in a Minsk calendar day.
+ * files, bytes, recognition jobs and pages of recognition the accounts that
+ * have not confirmed their e-mail may spend between them in a Minsk calendar
+ * day.
  *
  * Why (thread «Расходы посторонних», point 3; the Coordinator's word of
  * 03.11.2026, «Пока потолок, потом А»): an account can be made in a minute,
@@ -41,21 +42,24 @@ const MEGABYTE = 1024 * 1024;
  * the thread's executor (delegated by the Coordinator), 03.11.2026:
  * - files and bytes — one regular account's daily upload allowance (100 files,
  *   300 MB): a full card and more, at most about 0.7 cloud credits a day;
- * - recognition jobs — 20: a job is a menu photo or a whole PDF (up to 20
- *   pages read). At about a cent a photo and one to five cents a page,
- *   twenty jobs cost about 20 cents a day in photos and up to about $20 in
- *   dense PDFs, against a model key of five dollars a month shared with the
- *   smart search — the ceiling slows the spending down, it does not hold it
- *   within the key; counting pages is a later change. A full card's menu is
- *   up to 32 jobs, so a new partner may see part of the menu recognised
- *   only after confirming the e-mail or after the card's approval (the
- *   moderator's approval queues what was not recognised —
- *   services/adminService.js).
+ * - recognition jobs — 20: a job is a menu photo or a whole PDF. They hold the
+ *   one queue of every partner. A full card's menu is up to 32 jobs, so a new
+ *   partner may see part of the menu recognised only after confirming the
+ *   e-mail or after the card's approval (the moderator's approval queues what
+ *   was not recognised — services/adminService.js);
+ * - pages of recognition — 40 (technical choice of the thread «Общий потолок
+ *   распознавания», delegated by the Coordinator, November 2026): a photo is a
+ *   page, a PDF as many as are read of it. They hold the money: twenty jobs
+ *   could be four hundred pages. Forty pages cost about 40 cents a day, up to
+ *   about $2 if dense, and throwaway accounts that need no mailbox leave the
+ *   rest of the ceiling of all accounts (services/ocrAllowance.js) to the
+ *   others.
  */
 export const UNCONFIRMED_DAILY_LIMITS = Object.freeze({
   files: 100,
   bytes: 300 * MEGABYTE,
   ocrJobs: 20,
+  ocrPages: 40,
 });
 
 /**
@@ -63,20 +67,22 @@ export const UNCONFIRMED_DAILY_LIMITS = Object.freeze({
  * day, so that one account cannot spend the day of all the others (review of
  * the thread, 03.11.2026): 40 files and 120 MB fill an ordinary card twice
  * (the seed house averaged 16 files a card); 10 recognition jobs are a
- * menu of ten photos or ten PDFs. Past it the refusal asks to confirm the
- * e-mail, which lifts both.
+ * menu of ten photos or ten PDFs; 20 pages are one PDF as long as the
+ * recognition reads, as it read for a new partner until pages were counted.
+ * Past it the refusal asks to confirm the e-mail, which lifts both.
  */
 export const UNCONFIRMED_ACCOUNT_DAILY_LIMITS = Object.freeze({
   files: 40,
   bytes: 120 * MEGABYTE,
   ocrJobs: 10,
+  ocrPages: 20,
 });
 
 /**
  * The shared counters for the Minsk day of `now`.
  *
  * @param {Date} now
- * @returns {{ files: string, bytes: string, ocrJobs: string }}
+ * @returns {{ files: string, bytes: string, ocrJobs: string, ocrPages: string }}
  */
 export const unconfirmedKeys = (now) => {
   const day = minskDate(now);
@@ -84,6 +90,7 @@ export const unconfirmedKeys = (now) => {
     files: `unconfirmed:daily:${day}:files`,
     bytes: `unconfirmed:daily:${day}:bytes`,
     ocrJobs: `unconfirmed:daily:${day}:ocr_jobs`,
+    ocrPages: `unconfirmed:daily:${day}:ocr_pages`,
   };
 };
 
@@ -92,7 +99,7 @@ export const unconfirmedKeys = (now) => {
  *
  * @param {string} userId
  * @param {Date} now
- * @returns {{ files: string, bytes: string, ocrJobs: string }}
+ * @returns {{ files: string, bytes: string, ocrJobs: string, ocrPages: string }}
  */
 export const unconfirmedAccountKeys = (userId, now) => {
   const day = minskDate(now);
@@ -100,6 +107,7 @@ export const unconfirmedAccountKeys = (userId, now) => {
     files: `unconfirmed:daily:${day}:account:${userId}:files`,
     bytes: `unconfirmed:daily:${day}:account:${userId}:bytes`,
     ocrJobs: `unconfirmed:daily:${day}:account:${userId}:ocr_jobs`,
+    ocrPages: `unconfirmed:daily:${day}:account:${userId}:ocr_pages`,
   };
 };
 
@@ -234,6 +242,23 @@ export const reserveUnconfirmedOcrJob = async (userId) => {
   return { granted: true, giveBack };
 };
 
+/**
+ * Where a page read for an unconfirmed account is counted, next to what every
+ * account's page is counted against (services/ocrAllowance.js).
+ *
+ * @param {string} userId
+ * @param {Date} now
+ * @returns {Array<{ pot: 'unconfirmed', key: string, limit: number }>}
+ */
+export const unconfirmedPagePots = (userId, now) => [
+  { pot: 'unconfirmed', key: unconfirmedKeys(now).ocrPages, limit: UNCONFIRMED_DAILY_LIMITS.ocrPages },
+  {
+    pot: 'unconfirmed',
+    key: unconfirmedAccountKeys(userId, now).ocrPages,
+    limit: UNCONFIRMED_ACCOUNT_DAILY_LIMITS.ocrPages,
+  },
+];
+
 const NOTHING_TO_GIVE_BACK = async () => {};
 
 /**
@@ -247,18 +272,5 @@ const NOTHING_TO_GIVE_BACK = async () => {};
 export const reserveSharedUpload = async (userId, bytes) => (
   await isUnconfirmedAccount(userId)
     ? reserveUnconfirmedUpload(userId, bytes)
-    : { granted: true, giveBack: NOTHING_TO_GIVE_BACK }
-);
-
-/**
- * The shared part of a recognition job: from the ceiling when the account is
- * unconfirmed, nothing otherwise.
- *
- * @param {string} userId
- * @returns {ReturnType<typeof reserveUnconfirmedOcrJob>}
- */
-export const reserveSharedOcrJob = async (userId) => (
-  await isUnconfirmedAccount(userId)
-    ? reserveUnconfirmedOcrJob(userId)
     : { granted: true, giveBack: NOTHING_TO_GIVE_BACK }
 );

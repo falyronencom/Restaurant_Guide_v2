@@ -1237,6 +1237,12 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
  *
  * Security: unverified provider emails cannot claim existing accounts.
  *
+ * Only scenario 3 asks `reserveNewAccount` (the address's day of new accounts,
+ * spent by POST /auth/register too): every account holds its own daily budgets,
+ * so a way to create accounts outside the limit multiplies them. A login or a
+ * link creates no account and neither spends the limit nor meets it. A refusal
+ * throws OAUTH_REGISTRATION_LIMIT with `refusal`; nothing is written.
+ *
  * @param {Object} providerData - Normalized data from oauthService
  * @param {string} providerData.providerId - External user ID from provider
  * @param {string} providerData.email - User's email from provider
@@ -1244,9 +1250,12 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
  * @param {string} providerData.avatarUrl - Avatar URL from provider
  * @param {boolean} providerData.emailVerified - Whether provider verified email
  * @param {string} providerData.provider - 'google' or 'yandex'
+ * @param {Object} limits
+ * @param {() => Promise<{ granted: boolean, giveBack?: () => Promise<void> }>} limits.reserveNewAccount -
+ *   Asked before a new account is written; `giveBack` when it was not after all
  * @returns {Promise<Object>} { user, accessToken, refreshToken, expiresIn }
  */
-export async function authenticateWithOAuth(providerData) {
+export async function authenticateWithOAuth(providerData, { reserveNewAccount }) {
   const { providerId, email, avatarUrl, emailVerified, provider } = providerData;
   // A provider's name is written under the same name rule as a typed one, but
   // never refuses a login: cleaned, or the neutral fallback (utils/userName.js).
@@ -1416,28 +1425,39 @@ export async function authenticateWithOAuth(providerData) {
       };
     }
 
-    // 3. No match → create new user
+    // 3. No match → create new user, within the address's day of new accounts
+    const registration = await reserveNewAccount();
+    if (!registration.granted) {
+      throw Object.assign(new Error('OAUTH_REGISTRATION_LIMIT'), { refusal: registration });
+    }
+
     const userId = randomUUID();
-    const createResult = await pool.query(
-      `INSERT INTO users (
-        id, email, password_hash, name, role, auth_method,
-        oauth_provider_id, email_verified, phone_verified,
-        is_active, avatar_url, last_login_at, created_at, updated_at
-      )
-      VALUES ($1, $2, NULL, $3, 'user', $4, $5, $6, false, true, $7, $8, $8, $8)
-      RETURNING id, email, phone, name, role, auth_method, avatar_url,
-                oauth_provider_id, is_active, last_login_at, created_at`,
-      [
-        userId,
-        email.toLowerCase().trim(),
-        name,
-        provider,
-        providerId,
-        emailVerified,
-        avatarUrl,
-        new Date(),
-      ],
-    );
+    let createResult;
+    try {
+      createResult = await pool.query(
+        `INSERT INTO users (
+          id, email, password_hash, name, role, auth_method,
+          oauth_provider_id, email_verified, phone_verified,
+          is_active, avatar_url, last_login_at, created_at, updated_at
+        )
+        VALUES ($1, $2, NULL, $3, 'user', $4, $5, $6, false, true, $7, $8, $8, $8)
+        RETURNING id, email, phone, name, role, auth_method, avatar_url,
+                  oauth_provider_id, is_active, last_login_at, created_at`,
+        [
+          userId,
+          email.toLowerCase().trim(),
+          name,
+          provider,
+          providerId,
+          emailVerified,
+          avatarUrl,
+          new Date(),
+        ],
+      );
+    } catch (error) {
+      await registration.giveBack();
+      throw error;
+    }
 
     const newUser = createResult.rows[0];
     logger.info('OAuth login: new user created', {
@@ -1455,7 +1475,7 @@ export async function authenticateWithOAuth(providerData) {
 
   } catch (error) {
     // Re-throw known error codes
-    if (['ACCOUNT_DEACTIVATED', 'OAUTH_EMAIL_NOT_VERIFIED'].includes(error.message)) {
+    if (['ACCOUNT_DEACTIVATED', 'OAUTH_EMAIL_NOT_VERIFIED', 'OAUTH_REGISTRATION_LIMIT'].includes(error.message)) {
       throw error;
     }
     // Handle unique constraint violations (race condition: concurrent OAuth signup)

@@ -146,17 +146,6 @@ const bookingRow = async (id) => (await query(
   [id],
 )).rows[0];
 
-/** Дождаться записи, которую сервер делает после ответа (уведомления). */
-const eventually = async (read, accept) => {
-  let value;
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    value = await read();
-    if (accept(value)) return value;
-    await new Promise((resolve) => { setTimeout(resolve, 20); });
-  }
-  return value;
-};
-
 /**
  * Ждать, пока чей-то запрос встанет в очередь за блокировкой строки: так тест
  * знает, что гонка разыграна, а не угадывает паузой.
@@ -503,12 +492,9 @@ describe('DELETE /auth/account — что остаётся без имени', (
     });
     expect(seen.booking_time).toBe('19:00:00');
 
-    const notices = await eventually(
-      () => query(
-        `SELECT message FROM notifications WHERE user_id = $1 AND type = 'booking_cancelled' ORDER BY message`,
-        [partner.user.id],
-      ),
-      (result) => result.rows.length >= 2,
+    const notices = await query(
+      `SELECT message FROM notifications WHERE user_id = $1 AND type = 'booking_cancelled' ORDER BY message`,
+      [partner.user.id],
     );
     expect(notices.rows.map((notice) => notice.message)).toEqual([
       'Бронь на «Test Establishment» (15 марта 19:00) отменена гостем',
@@ -704,7 +690,8 @@ describe('Панель: удалённую учётку не блокируют,
 // ============================================================================
 
 describe('DELETE /auth/account — фото профиля', () => {
-  test('своё фото в облаке уничтожается по точному public_id — вместе с копиями CDN', async () => {
+  // Что дальше делает задача — avatar-deletion.test.js.
+  test('своё фото в облаке: ответ облако не ждёт, файл удалит задача', async () => {
     const destroy = jest.spyOn(cloudinarySdk.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
     const p = await person();
     await query(
@@ -714,20 +701,11 @@ describe('DELETE /auth/account — фото профиля', () => {
 
     await deleteAccount(p.accessToken).expect(200);
 
-    expect(destroy).toHaveBeenCalledTimes(1);
-    expect(destroy).toHaveBeenCalledWith(`avatars/${p.id}/face0001`, { invalidate: true });
-  });
-
-  test('фото из Google или Яндекса не наше — облако не трогается', async () => {
-    const destroy = jest.spyOn(cloudinarySdk.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
-    const p = await person();
-    await query(`UPDATE users SET avatar_url = 'https://lh3.googleusercontent.com/a/face' WHERE id = $1`, [p.id]);
-
-    await deleteAccount(p.accessToken).expect(200);
-
     expect(destroy).not.toHaveBeenCalled();
+    expect(await count('SELECT count(*)::int AS n FROM avatar_deletions WHERE user_id = $1', [p.id])).toBe(1);
     expect((await userRow(p.id)).avatar_url).toBeNull();
   });
+
 });
 
 // ============================================================================
@@ -995,7 +973,7 @@ describe('Бронь, отправленная во время удаления,
         .send({ establishmentId: establishment.id, date: tomorrow, time: '12:00', guestCount: 2, contactPhone: '+375291112277' })
         .then((r) => r);
       await waitForLockWaiters(1);
-      await anonymiseAccount(holder, account, { userId: p.id });
+      await anonymiseAccount(holder, account, { userId: p.id, queueAvatarDeletion: false });
       await holder.query('COMMIT');
       response = await booking;
     } catch (error) {
