@@ -182,6 +182,19 @@ const hasUsableTextLayer = (text, pageCount) => {
 };
 
 /**
+ * How many pages a PDF holds: the count it declares, unless the parse proved its
+ * page tree shorter (pdfParseChild pagesInTree — the pages that loaded, when the
+ * page after them is past the tree).
+ *
+ * @param {number} declaredPages - The count the file declares
+ * @param {number|null|undefined} pagesInTree - Null or undefined when nothing was proved
+ * @returns {number}
+ */
+export const pagesHeld = (declaredPages, pagesInTree) => (
+  Number.isInteger(pagesInTree) && pagesInTree > 0 && pagesInTree < declaredPages ? pagesInTree : declaredPages
+);
+
+/**
  * Extract text from a PDF URL. Returns the text, page count, and whether the text
  * layer is usable — the caller renders that many pages for vision OCR and keeps
  * a usable text layer as the backup for a failed image read.
@@ -195,6 +208,18 @@ const hasUsableTextLayer = (text, pageCount) => {
  * text layer to that many characters (0 — not cut) and reports its full
  * length as textLength. The heuristic judges the text received.
  *
+ * The page count is the one the file declares, unless the file provably holds
+ * fewer pages: the pages that loaded end before the pages to read, and the page
+ * after them is past the file's page tree (pdfParseChild pagesInTree). Then the
+ * file has that many pages, and pageCount says so (a log line names both
+ * numbers). The orchestrator renders, and the day's pages count
+ * (services/ocrAllowance.js), only the pages a file holds: a page past them
+ * cannot be drawn. A page the tree names but pdf.js cannot read is not «past»:
+ * the declared count stands, and the cloud is asked for every page as before
+ * — so it does when no page loaded at all, and past the pages read (maxPages)
+ * nothing is known (thread «Потолок распознавания: малые правки», finding 10,
+ * and its review, finding M1).
+ *
  * Never throws on "no text layer" — that's an expected signal for scanned PDFs.
  * Only throws on fetch or parse failures; a parse that broke its limits throws
  * with error.code pdfParseRunner.PDF_PARSE_LIMIT, a download or parse cut by
@@ -207,7 +232,8 @@ const hasUsableTextLayer = (text, pageCount) => {
  * @param {AbortSignal} [options.signal] - Cuts the download and the parse short (graceful shutdown)
  * @returns {Promise<{ text: string, textLength: number, pageCount: number, pagesParsed: number, hasTextLayer: boolean }>}
  *   text — at most maxChars; textLength — the text layer's full length;
- *   pageCount — the document's pages; pagesParsed — the pages the text comes from
+ *   pageCount — the document's pages (the pages it holds, when it declares
+ *   more); pagesParsed — the pages the text comes from
  */
 export const extractText = async (pdfUrl, { maxPages = 0, maxChars = 0, signal } = {}) => {
   const buffer = await fetchPdfBuffer(pdfUrl, signal);
@@ -222,7 +248,15 @@ export const extractText = async (pdfUrl, { maxPages = 0, maxChars = 0, signal }
 
   const text = parsed.text || '';
   const textLength = parsed.textLength ?? text.length;
-  const pageCount = parsed.numpages || 0;
+  const declaredPages = parsed.numpages || 0;
+  const pageCount = pagesHeld(declaredPages, parsed.pagesInTree);
+  if (pageCount < declaredPages) {
+    logger.warn('PDF declares more pages than it holds — only the pages it holds are read', {
+      pdfUrl,
+      pagesDeclared: declaredPages,
+      pagesHeld: pageCount,
+    });
+  }
   const pagesParsed = maxPages > 0 ? Math.min(pageCount, maxPages) : pageCount;
   const hasTextLayer = hasUsableTextLayer(text, pagesParsed);
 
@@ -232,6 +266,10 @@ export const extractText = async (pdfUrl, { maxPages = 0, maxChars = 0, signal }
     pdfUrl,
     fileBytes: buffer.length,
     pageCount,
+    pagesDeclared: declaredPages,
+    // The last page read that loaded: below the pages read with pageCount at the
+    // declared count — a page the tree names that pdf.js could not read.
+    lastPageFound: parsed.lastPageFound ?? null,
     pagesParsed,
     textLength,
     hasTextLayer,

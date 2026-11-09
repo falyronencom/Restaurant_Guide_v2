@@ -22,9 +22,17 @@ jest.unstable_mockModule('../../services/openRouterKeyStatus.js', () => ({
   getKeyHealth: jest.fn(),
 }));
 
+// The recognition ceiling's block (thread «Потолок распознавания: малые
+// правки», finding 3, 08.11.2026) — its own module, tested in
+// unit/ocrCeilingHealth.test.js.
+jest.unstable_mockModule('../../services/ocrCeilingHealth.js', () => ({
+  getRecognitionHealth: jest.fn(),
+}));
+
 const searchService = await import('../../services/searchService.js');
 const smartSearchBudget = await import('../../services/smartSearchBudget.js');
 const openRouterKeyStatus = await import('../../services/openRouterKeyStatus.js');
+const ocrCeilingHealth = await import('../../services/ocrCeilingHealth.js');
 const {
   searchEstablishments,
   searchMap,
@@ -187,12 +195,14 @@ describe('searchController', () => {
       });
       smartSearchBudget.getBudgetHealth.mockResolvedValue({ degraded: true });
       openRouterKeyStatus.getKeyHealth.mockResolvedValue({ status: 'ok', remaining_percent: 99 });
+      ocrCeilingHealth.getRecognitionHealth.mockResolvedValue({ ceiling_pages: 100, ceiling_reached: false, redis_ready: true, days: [] });
 
       await searchHealth(req, res, next);
 
       // Changed on purpose (D5, 25.10.2026): the answer carries `smart` beside
       // PostGIS's fields, and its `degraded` does not decide the status code.
-      // And (D8, 28.10.2026) `model_key` beside them — the key's remaining share.
+      // And (D8, 28.10.2026) `model_key` beside them — the key's remaining share;
+      // and (08.11.2026) `recognition` — the recognition ceiling's week.
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({
         success: false,
@@ -210,8 +220,26 @@ describe('searchController', () => {
             },
           },
           model_key: { status: 'ok', remaining_percent: 99 },
+          recognition: { ceiling_pages: 100, ceiling_reached: false, redis_ready: true, days: [] },
         }
       });
+    });
+
+    test('a ceiling reached today, or counters Redis could not give, leave a healthy PostGIS at 200', async () => {
+      for (const recognition of [
+        { ceiling_pages: 100, ceiling_reached: true, redis_ready: true, days: [] },
+        { ceiling_pages: 100, ceiling_reached: null, redis_ready: false, days: null },
+      ]) {
+        const res = createRes();
+        searchService.checkSearchHealth.mockResolvedValue({ healthy: true, postgis: 'healthy' });
+        smartSearchBudget.getBudgetHealth.mockResolvedValue({ degraded: false });
+        ocrCeilingHealth.getRecognitionHealth.mockResolvedValue(recognition);
+
+        await searchHealth({}, res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json.mock.calls[0][0].data.recognition).toEqual(recognition);
+      }
     });
 
     test('a key that could not be read leaves a healthy PostGIS at 200', async () => {
