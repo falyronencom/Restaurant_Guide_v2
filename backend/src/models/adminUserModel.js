@@ -12,6 +12,7 @@
 
 import pool from '../config/database.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
+import { avatarQueueConditionSql, avatarStateSql } from './avatarModerationModel.js';
 import { CATALOGUE_TRACK_STATUSES } from '../constants/establishmentVocab.js';
 
 /**
@@ -56,6 +57,11 @@ const userColumns = (viewer) => `
   ${viewer ? 'NULL::text' : 'u.name'} AS name,
   ${viewer ? 'NULL::text' : 'u.email'} AS email,
   ${viewer ? 'NULL::text' : 'u.phone'} AS phone,
+  -- The photo as the person set it, whatever its state: the moderator looks at
+  -- it to approve or take it down (migration 041). A viewer gets none — a face
+  -- is the person's data; the viewer projection withholds the key as well.
+  ${viewer ? 'NULL::text' : 'u.avatar_url'} AS avatar_url,
+  ${avatarStateSql('u')} AS avatar_state,
   u.role,
   u.auth_method,
   u.is_active,
@@ -99,17 +105,23 @@ const countsJoin = (viewer) => `
  * «Заблокированные» are the accounts switched off and not deleted: a deleted
  * account is its own filter (A2-05).
  *
+ * «Фото на проверке» (avatar = 'pending') is the moderator's queue of photos
+ * (models/avatarModerationModel.js, avatarQueueConditionSql): the same
+ * condition as the rail's badge.
+ *
  * @param {Object} filters
  * @param {string} [filters.search]
  * @param {'active'|'blocked'|'deleted'} [filters.status]
  * @param {'user'|'partner'|'panel'} [filters.role]
+ * @param {'pending'} [filters.avatar]
  * @returns {{ whereClause: string, values: Array, paramIndex: number }}
  */
-const buildUserWhere = ({ search, status, role } = {}) => {
+const buildUserWhere = ({ search, status, role, avatar } = {}) => {
   const conditions = [];
   const values = [];
   let paramIndex = 1;
 
+  if (avatar === 'pending') conditions.push(avatarQueueConditionSql('u'));
   if (status === 'active') conditions.push('u.is_active = TRUE');
   if (status === 'blocked') conditions.push(`u.is_active = FALSE AND NOT ${DELETED_SQL}`);
   if (status === 'deleted') conditions.push(DELETED_SQL);

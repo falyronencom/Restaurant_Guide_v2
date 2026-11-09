@@ -70,6 +70,8 @@ const Map<String, String> kAuditActions = <String, String>{
   'user_block': 'Блокировка пользователя',
   'user_unblock': 'Разблокировка пользователя',
   'user_reset_name': 'Сброс имени пользователя',
+  'user_avatar_approve': 'Одобрение фото пользователя',
+  'user_avatar_remove': 'Снятие фото пользователя',
   'user_delete_account': 'Удаление учётной записи',
   // Скрипты оператора.
   'change_email': 'Смена адреса e-mail',
@@ -132,6 +134,10 @@ const Map<String, AuditActionTone> kAuditActionTones = <String, AuditActionTone>
   'user_unblock': AuditActionTone.allowing,
   // Сброс имени переписывает данные, доступности не меняет.
   'user_reset_name': AuditActionTone.neutral,
+  // Одобренное фото другие люди видят — открывающее; снятое пропадает у
+  // всех — ограничивающее (миграция 041).
+  'user_avatar_approve': AuditActionTone.allowing,
+  'user_avatar_remove': AuditActionTone.restricting,
   // Учётной записи больше нет — ограничивающее.
   'user_delete_account': AuditActionTone.restricting,
   // Скрипты оператора меняют данные и права, не доступность объекта.

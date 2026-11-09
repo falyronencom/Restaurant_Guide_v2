@@ -26,13 +26,22 @@
  *     says one line at info level per process: the deploy's journal shows it, and
  *     nothing else would.
  *
+ * Single files (migration 041, models/avatarFileDeletionModel.js): the photo a
+ * moderator took down, the one a person cleared or replaced, the registrant's
+ * photo of an account taken over. After its folder task a tick removes up to
+ * FILE_TASKS_PER_TICK of them — one destroy each, with the CDN's copies, and
+ * the same pauses, claims and giving up as a folder. Without that table (the
+ * window before 041) the files part says one line at info level per process and
+ * does nothing; the folders go on.
+ *
  * Whether it runs at all: config/avatarDeletion.js. It must not start under
  * NODE_ENV=test: tests call tick() directly, with the cloud stubbed.
  */
 
-import { deleteAvatarFolder } from '../config/cloudinary.js';
+import { deleteAvatarFile, deleteAvatarFolder } from '../config/cloudinary.js';
 import {
   CLAIM_LEASE_MS,
+  FILE_TASKS_PER_TICK,
   HEARTBEAT_INTERVAL_MS,
   RETRY_PAUSES_MS,
   resolveAvatarDeletionPolicy,
@@ -44,6 +53,13 @@ import {
   markDone,
   recordFailure,
 } from '../models/avatarDeletionModel.js';
+import {
+  avatarFileDeletionTableExists,
+  claimNextDueFile,
+  countOpenFiles,
+  markFileDone,
+  recordFileFailure,
+} from '../models/avatarFileDeletionModel.js';
 import logger from '../utils/logger.js';
 
 const LAST_ERROR_MAX_LENGTH = 300;
@@ -52,7 +68,9 @@ let intervalId = null;
 let tickPromise = null;
 let stopRequested = false;
 let lastHeartbeatAt = null;
+let lastFileHeartbeatAt = null;
 let saidTableAbsent = false;
+let saidFileTableAbsent = false;
 
 /**
  * What goes into the table and the journal from a failure.
@@ -109,24 +127,96 @@ const heartbeat = async () => {
 };
 
 /**
- * One tick: at most one task. Never rejects.
+ * The hourly line of the files part — on its own clock and under its own name,
+ * so that the folder line keeps its meaning.
+ */
+const fileHeartbeat = async () => {
+  if (lastFileHeartbeatAt !== null && Date.now() - lastFileHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
+  lastFileHeartbeatAt = Date.now();
+  const counts = await countOpenFiles();
+  if (counts.failed > 0) {
+    logger.error('Avatar file deletion: loop alive, tasks given up', counts);
+  } else {
+    logger.info('Avatar file deletion: loop alive', counts);
+  }
+};
+
+/**
+ * Count the failed attempt of a file: wait for the next pause, or give up.
+ *
+ * @param {{public_id: string, user_id: string, attempts: number}} task
+ * @param {Error|string} error
+ * @returns {Promise<void>}
+ */
+const settleFileFailure = async (task, error) => {
+  const attempts = task.attempts + 1;
+  const pauseMs = RETRY_PAUSES_MS[attempts - 1] ?? null;
+  const text = failureText(error);
+
+  await recordFileFailure(task.public_id, { attempts, error: text, pauseMs });
+
+  if (pauseMs === null) {
+    logger.error('Avatar file deletion: attempts ran out, the file stays on the cloud', {
+      userId: task.user_id,
+      attempts,
+      error: text,
+    });
+    return;
+  }
+  logger.warn('Avatar file deletion: attempt failed, will try again', {
+    userId: task.user_id,
+    attempts,
+    pauseMs,
+    error: text,
+  });
+};
+
+/**
+ * Up to FILE_TASKS_PER_TICK single files. The file is destroyed only inside its
+ * owner's avatar folder (deleteImage refuses the rest), with the CDN's copies.
+ * A refusal is not a cloud failure and will not change by waiting: the task is
+ * given up at once, with its line.
  *
  * @returns {Promise<void>}
  */
-const runTick = async () => {
-  stopRequested = false;
-  try {
-    if (!(await avatarDeletionTableExists())) {
-      if (!saidTableAbsent) {
-        saidTableAbsent = true;
-        logger.info('Avatar deletion: no table yet (migration 040), nothing to do');
-      }
-      return;
-    }
-    await heartbeat();
-
-    const task = await claimNextDue(CLAIM_LEASE_MS);
+const runFileTasks = async () => {
+  for (let done = 0; done < FILE_TASKS_PER_TICK; done += 1) {
+    if (stopRequested) return;
+    const task = await claimNextDueFile(CLAIM_LEASE_MS);
     if (!task) return;
+
+    let result;
+    try {
+      ({ result } = await deleteAvatarFile(task.public_id, task.user_id));
+    } catch (error) {
+      await settleFileFailure(task, error);
+      continue;
+    }
+
+    if (result === 'ok' || result === 'not found') {
+      await markFileDone(task.public_id);
+      logger.info('Avatar file deletion: file removed', { userId: task.user_id, result });
+    } else if (result === 'refused') {
+      await recordFileFailure(task.public_id, {
+        attempts: task.attempts + 1, error: "refused: not in the owner's avatar folder", pauseMs: null,
+      });
+      logger.error("Avatar file deletion: refused, the file is not in the owner's folder", { userId: task.user_id });
+    } else {
+      await settleFileFailure(task, `the cloud answered ${result}`);
+    }
+  }
+};
+
+/**
+ * The folder part: at most one deleted account's folder.
+ *
+ * @returns {Promise<void>}
+ */
+const runFolderTask = async () => {
+  await heartbeat();
+
+  const task = await claimNextDue(CLAIM_LEASE_MS);
+  if (!task) return;
 
     let outcome;
     try {
@@ -143,8 +233,34 @@ const runTick = async () => {
       return;
     }
 
-    await markDone(task.user_id, outcome.deleted);
-    logger.info('Avatar deletion: folder emptied', { userId: task.user_id, files: outcome.deleted });
+  await markDone(task.user_id, outcome.deleted);
+  logger.info('Avatar deletion: folder emptied', { userId: task.user_id, files: outcome.deleted });
+};
+
+/**
+ * One tick: at most one folder, then up to FILE_TASKS_PER_TICK files. Never
+ * rejects. Each part is on whenever its table is there.
+ *
+ * @returns {Promise<void>}
+ */
+const runTick = async () => {
+  stopRequested = false;
+  try {
+    if (await avatarDeletionTableExists()) {
+      await runFolderTask();
+    } else if (!saidTableAbsent) {
+      saidTableAbsent = true;
+      logger.info('Avatar deletion: no table yet (migration 040), nothing to do');
+    }
+
+    if (stopRequested) return;
+    if (await avatarFileDeletionTableExists()) {
+      await fileHeartbeat();
+      await runFileTasks();
+    } else if (!saidFileTableAbsent) {
+      saidFileTableAbsent = true;
+      logger.info('Avatar file deletion: no table yet (migration 041), nothing to do');
+    }
   } catch (error) {
     // The database, not the cloud. A claimed task comes back by itself.
     logger.error('Avatar deletion: tick failed', { error: failureText(error) });
@@ -182,6 +298,7 @@ export const start = ({ env = process.env } = {}) => {
 
   stopRequested = false;
   lastHeartbeatAt = null;
+  lastFileHeartbeatAt = null;
   intervalId = setInterval(() => {
     tick().catch((error) => {
       logger.error('Avatar deletion: tick error', { error: failureText(error) });

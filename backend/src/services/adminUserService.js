@@ -47,9 +47,31 @@
  *
  * The texts are Russian: the panel shows the server's message to the
  * moderator as it is.
+ *
+ * The person's photo (migration 041; the Coordinator's word 09.11.2026,
+ * thread «Фото людей»): other people see it only after a moderator approves
+ * it. Two more actions, each written to the journal hard, in the transaction
+ * of the action itself, like the block (DISCOVERY 09.11.2026, finding 10):
+ *
+ *   - approve the photo — other people see exactly this link
+ *     (users.avatar_approved_url; models/avatarModerationModel.js);
+ *   - take the photo down — the link goes for everybody, the person included,
+ *     and the file of our cloud leaves it with the CDN's copies, retried until
+ *     done (avatar_file_deletions, services/avatarDeletionLoop.js). A Google or
+ *     Yandex picture is the provider's: only the link goes.
+ *
+ * Both name the link the moderator saw: a person who changed the photo in the
+ * meantime — the new one is waiting for its own look — is refused with
+ * «обновите список», and the new photo is never approved or removed unseen.
+ * Any account but the moderator's own: a panel or a service account is not in
+ * the queue, and its photo is hidden from other people all the same.
  */
 
 import { getClient } from '../config/database.js';
+import { avatarModerationReady, approvedAvatarSql, avatarStateSql } from '../models/avatarModerationModel.js';
+import { AVATAR_FILE_REASONS, enqueueAvatarFileDeletion } from '../models/avatarFileDeletionModel.js';
+import { ownAvatarFile } from './avatarFiles.js';
+import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { isPanelRole } from '../config/panelRoles.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -81,6 +103,10 @@ export const USER_ACTION_REFUSALS = Object.freeze({
   PARTNER_WITH_ESTABLISHMENTS: 'У этого партнёра есть карточки заведений в каталоге или на модерации. Его блокировка решает и их судьбу — это отдельное решение, этой кнопкой его не заблокировать',
   RESTORE_FLAG_INVALID: 'Не понятно, возвращать ли отзывы: ожидается «да» или «нет»',
   ACCOUNT_DELETED: 'Учётная запись удалена. Удалённую учётную запись не блокируют, не включают и не переименовывают',
+  AVATAR_SEEN_REQUIRED: 'Не понятно, какое фото вы видели. Обновите список и попробуйте снова',
+  AVATAR_CHANGED: 'Фото уже сменилось или убрано. Обновите список и посмотрите, что стоит сейчас',
+  AVATAR_SELF: 'Своё фото одобряет или снимает другой модератор',
+  AVATAR_NOT_READY: 'Проверка фото включится после обновления базы данных. Сообщите оператору платформы',
 });
 
 const refuse = (code, status) => new AppError(USER_ACTION_REFUSALS[code], status, code);
@@ -116,7 +142,9 @@ export const normalizeReason = (raw) => {
  * @param {Object} params
  * @returns {Promise<{users: Array, meta: Object}>}
  */
-export const getUsers = async ({ page = 1, perPage = 20, search, status, role, viewer = false } = {}) => {
+export const getUsers = async ({
+  page = 1, perPage = 20, search, status, role, avatar, viewer = false,
+} = {}) => {
   const text = typeof search === 'string' ? search.trim() : '';
   if (viewer && text) {
     throw new AppError(
@@ -127,9 +155,13 @@ export const getUsers = async ({ page = 1, perPage = 20, search, status, role, v
   }
   const effectiveStatus = ['active', 'blocked', 'deleted'].includes(status) ? status : undefined;
   const effectiveRole = ['user', 'partner', 'panel'].includes(role) ? role : undefined;
+  // «Фото на проверке»: the moderator's queue of photos (adminUserModel).
+  const effectiveAvatar = avatar === 'pending' ? avatar : undefined;
   const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
   const currentPage = Math.max(page, 1);
-  const filters = { search: text || undefined, status: effectiveStatus, role: effectiveRole, viewer };
+  const filters = {
+    search: text || undefined, status: effectiveStatus, role: effectiveRole, avatar: effectiveAvatar, viewer,
+  };
 
   const [users, total] = await Promise.all([
     AdminUserModel.getUsers(filters, effectivePerPage, (currentPage - 1) * effectivePerPage),
@@ -504,4 +536,154 @@ export const resetUserName = async (userId, rawReason, actorId, { ipAddress, use
     logger.info('Admin reset user name', { adminId: actorId, userId });
     return { id: target.id, name: RESET_USER_NAME, changed: true };
   });
+};
+
+// ============================================================================
+// The person's photo — approve, take down (migration 041)
+// ============================================================================
+
+/**
+ * The link the moderator saw — the photo the action is about.
+ *
+ * @param {*} raw
+ * @returns {string}
+ */
+const seenAvatarUrl = (raw) => {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > 500) {
+    throw refuse('AVATAR_SEEN_REQUIRED', 422);
+  }
+  return raw;
+};
+
+/**
+ * The reason of a take-down: optional — one action, no form; when given, the
+ * rules of normalizeReason.
+ *
+ * @param {*} raw
+ * @returns {string|null}
+ */
+const optionalReason = (raw) => {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw === 'string' && raw.trim() === '') return null;
+  return normalizeReason(raw);
+};
+
+/**
+ * Lock the account row and check that the photo is still the one seen.
+ *
+ * @param {Object} client
+ * @param {string} userId
+ * @param {string} actorId
+ * @param {string} seenUrl
+ * @returns {Promise<{id: string, avatar_url: string, approved_url: string|null, avatar_state: string}>}
+ */
+const lockAvatarTarget = async (client, userId, actorId, seenUrl) => {
+  const result = await client.query(
+    `SELECT u.id, u.avatar_url,
+            ${approvedAvatarSql('u')} AS approved_url,
+            ${avatarStateSql('u')} AS avatar_state
+     FROM users u
+     WHERE u.id = $1
+     FOR UPDATE`,
+    [userId],
+  );
+  const target = result.rows[0];
+  if (!target) throw refuse('USER_NOT_FOUND', 404);
+  if (target.id === actorId) throw refuse('AVATAR_SELF', 409);
+  if (target.avatar_url !== seenUrl) throw refuse('AVATAR_CHANGED', 409);
+  return target;
+};
+
+/**
+ * Approve the photo: other people see exactly this link from now on.
+ *
+ * @param {string} userId
+ * @param {*} rawSeenUrl - the link the moderator saw
+ * @param {string} actorId
+ * @param {Object} [request] - { ipAddress, userAgent }
+ * @returns {Promise<{id: string, avatar_state: 'approved', changed: boolean}>}
+ */
+export const approveAvatar = async (userId, rawSeenUrl, actorId, { ipAddress, userAgent } = {}) => {
+  assertUserId(userId);
+  const seenUrl = seenAvatarUrl(rawSeenUrl);
+  if (!(await avatarModerationReady())) throw refuse('AVATAR_NOT_READY', 409);
+
+  const result = await inTransaction(userId, async (client) => {
+    const target = await lockAvatarTarget(client, userId, actorId, seenUrl);
+    if (target.avatar_state === 'approved') {
+      return { id: target.id, avatar_state: 'approved', changed: false };
+    }
+
+    await client.query(
+      'UPDATE users SET avatar_approved_url = avatar_url WHERE id = $1',
+      [userId],
+    );
+    await writeAudit(client, {
+      actorId,
+      action: 'user_avatar_approve',
+      userId,
+      oldData: { avatar_url: seenUrl, avatar_state: target.avatar_state },
+      newData: { avatar_state: 'approved' },
+      ipAddress,
+      userAgent,
+    });
+
+    logger.info('Admin approved a profile photo', { adminId: actorId, userId });
+    return { id: target.id, avatar_state: 'approved', changed: true };
+  });
+  invalidateBadges();
+  return result;
+};
+
+/**
+ * Take the photo down: the link goes for everybody, the person included; the
+ * file of our cloud leaves it, with the CDN's copies, by the queue written here.
+ *
+ * @param {string} userId
+ * @param {*} rawSeenUrl - the link the moderator saw
+ * @param {*} rawReason - optional
+ * @param {string} actorId
+ * @param {Object} [request] - { ipAddress, userAgent }
+ * @returns {Promise<{id: string, avatar_state: 'none', file: 'cloud'|'external', changed: true}>}
+ */
+export const removeAvatar = async (userId, rawSeenUrl, rawReason, actorId, { ipAddress, userAgent } = {}) => {
+  assertUserId(userId);
+  const seenUrl = seenAvatarUrl(rawSeenUrl);
+  const reason = optionalReason(rawReason);
+  if (!(await avatarModerationReady())) throw refuse('AVATAR_NOT_READY', 409);
+
+  const result = await inTransaction(userId, async (client) => {
+    const target = await lockAvatarTarget(client, userId, actorId, seenUrl);
+
+    await client.query(
+      `UPDATE users SET avatar_url = NULL, avatar_approved_url = NULL, updated_at = NOW()
+       WHERE id = $1`,
+      [userId],
+    );
+    // Only this file, only from the person's own folder: the photo they may have
+    // uploaded since is another link and is not touched (directive п. 4).
+    const publicId = ownAvatarFile(seenUrl, userId);
+    if (publicId) {
+      await enqueueAvatarFileDeletion(client, {
+        publicId,
+        userId,
+        reason: AVATAR_FILE_REASONS.MODERATOR_REMOVED,
+      });
+    }
+    const file = publicId ? 'cloud' : 'external';
+    await writeAudit(client, {
+      actorId,
+      action: 'user_avatar_remove',
+      userId,
+      oldData: { avatar_url: seenUrl, avatar_state: target.avatar_state },
+      newData: { avatar_state: 'none', file, ...(reason ? { reason } : {}) },
+      ipAddress,
+      userAgent,
+    });
+
+    logger.info('Admin took down a profile photo', { adminId: actorId, userId, file });
+    return { id: target.id, avatar_state: 'none', file, changed: true };
+  });
+  invalidateBadges();
+  return result;
 };

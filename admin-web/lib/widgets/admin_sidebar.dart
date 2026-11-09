@@ -89,7 +89,13 @@ class AdminSidebar extends StatelessWidget {
 // ============================================================================
 
 /// Какая очередь питает бейдж пункта.
-enum _RailBadge { pendingModeration, menuFlags }
+enum _RailBadge {
+  pendingModeration,
+  menuFlags,
+
+  /// Фото людей, ждущие модератора (миграция 041) — пункт «Пользователи».
+  pendingAvatars,
+}
 
 /// Пункт рейла.
 ///
@@ -155,7 +161,8 @@ const List<_NavGroup> _navGroups = <_NavGroup>[
     title: 'Сообщество',
     items: <_NavEntry>[
       _NavEntry('Отзывы', '/settings/reviews', Icons.reviews_outlined),
-      _NavEntry('Пользователи', '/settings/users', Icons.people_outline),
+      _NavEntry('Пользователи', '/settings/users', Icons.people_outline,
+          badge: _RailBadge.pendingAvatars),
       _NavEntry('История платежей', '/settings/payments',
           Icons.receipt_long_outlined,
           soon: true),
@@ -267,6 +274,7 @@ class _RailNav extends StatelessWidget {
           badgeCount: switch (entry.badge) {
             _RailBadge.pendingModeration => badges?.establishmentsPending,
             _RailBadge.menuFlags => badges?.menuFlags,
+            _RailBadge.pendingAvatars => badges?.avatarsPending,
             null => null,
           },
         ));

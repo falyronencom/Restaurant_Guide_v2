@@ -40,6 +40,11 @@ export const VIEWER_WITHHELD_KEYS = Object.freeze(new Set([
   // Review authors. author_name is not here: a visible review is signed on
   // the public card too; the service withholds it for a hidden one.
   'author_email',
+  // A person's photo as the moderator sees it — approved or not (migration
+  // 041): a face is the person's data, and an unapproved one is not even
+  // public.
+  'avatar_url',
+  'author_avatar_url',
   'reviewer_name',
   // People acting in the journal (moderators, partners)
   'admin_name',
