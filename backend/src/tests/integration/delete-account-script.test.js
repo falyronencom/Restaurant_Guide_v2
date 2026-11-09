@@ -165,6 +165,7 @@ describe('scripts/delete-account.js — удаление по заявке', () 
     expect(result.stdout).toContain(`Account ${p.id}: role user, sign-in email, active, registered `);
     expect(result.stdout).toContain(
       `✅ Account ${p.id} deleted: 1 review(s) kept under «Гость», `
+      + '0 hidden or deleted review text(s) erased, '
       + '0 booking(s) ahead cancelled (0 establishment notice(s), no push), '
       + '0 favourite(s) removed, 0 unfinished card(s) deleted; every session ended.',
     );
@@ -177,6 +178,7 @@ describe('scripts/delete-account.js — удаление по заявке', () 
       old_data: { role: 'user', auth_method: 'email' },
       new_data: {
         reviews_kept: 1,
+        review_texts_erased: 0,
         bookings_cancelled: 0,
         favorites_removed: 0,
         drafts_deleted: 0,

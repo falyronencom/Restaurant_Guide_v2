@@ -378,11 +378,13 @@ export const findExistingReview = async (userId, establishmentId) => {
  * @param {Object} updates - Fields to update
  * @param {number} [updates.rating] - New rating (optional)
  * @param {string} [updates.content] - New content (optional)
+ * @param {Object} [client=pool] - a client inside the caller's transaction
+ *   (reviewService.updateReview holds the author's account there)
  * @returns {Promise<Object|null>} The updated review object, or null if the
  *   review is not found or already deleted (as softDeleteReview answers false)
  * @throws {Error} If the database operation fails
  */
-export const updateReview = async (reviewId, updates) => {
+export const updateReview = async (reviewId, updates, client = pool) => {
   const fields = [];
   const values = [];
   let paramCount = 1;
@@ -430,7 +432,7 @@ export const updateReview = async (reviewId, updates) => {
   `;
 
   try {
-    const result = await pool.query(query, values);
+    const result = await client.query(query, values);
 
     if (result.rows.length === 0) {
       return null; // Review not found or already deleted
@@ -457,7 +459,7 @@ export const updateReview = async (reviewId, updates) => {
  * @param {string} reviewId - UUID of the review to delete
  * @returns {Promise<boolean>} True if deletion successful, false if review not found
  */
-export const softDeleteReview = async (reviewId) => {
+export const softDeleteReview = async (reviewId, client = pool) => {
   const query = `
     UPDATE reviews
     SET 
@@ -469,7 +471,9 @@ export const softDeleteReview = async (reviewId) => {
   `;
 
   try {
-    const result = await pool.query(query, [reviewId]);
+    // `client`: the author's own delete runs inside a transaction that holds
+    // the author's account (reviewService.deleteReview); the pool is the default.
+    const result = await client.query(query, [reviewId]);
     
     if (result.rows.length === 0) {
       return false; // Review not found or already deleted

@@ -7,6 +7,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { activeAccountRow } from './activeAccountSql.js';
 
 // Entity type → notification type groupings for category filtering.
 //
@@ -57,7 +58,8 @@ const CATEGORY_TYPES = {
  * @param {string} [data.message] - Detail message
  * @param {string} [data.establishmentId] - Related establishment UUID
  * @param {string} [data.reviewId] - Related review UUID
- * @returns {Promise<Object>} Created notification
+ * @returns {Promise<Object|undefined>} Created notification; undefined when the
+ *   recipient's account is not active — switched off or deleted (below)
  */
 export const create = async (data) => {
   const {
@@ -69,9 +71,15 @@ export const create = async (data) => {
     reviewId = null,
   } = data;
 
+  // Only for an active account, read under a share lock (activeAccountSql.js):
+  // a switched-off or deleted account opens no feed — its push was refused
+  // already (deviceTokenModel.findByUserId) — and the feed of a deleted one
+  // went with the deletion; a notice written after it lay under an account
+  // nobody can open (critic 2Г, П3-03: a partner's answer to a «Гость» review,
+  // a moderator hiding it).
   const query = `
     INSERT INTO notifications (user_id, type, title, message, establishment_id, review_id)
-    VALUES ($1, $2, $3, $4, $5, $6)
+    SELECT account.id, $2, $3, $4, $5, $6 FROM ${activeAccountRow('$1')} account
     RETURNING id, user_id, type, title, message, establishment_id, review_id, is_read, created_at
   `;
 
@@ -104,11 +112,16 @@ export const create = async (data) => {
  * @returns {Promise<string[]>} The users written to
  */
 export const createForEstablishmentFavorites = async ({ establishmentId, type, title, message }) => {
+  // Active accounts only, as create() above; FOR SHARE OF u is the lock the
+  // foreign key takes on each recipient anyway, made strong enough to wait
+  // for a deletion in progress.
   const query = `
     INSERT INTO notifications (user_id, type, title, message, establishment_id)
-    SELECT user_id, $2::text, $3::text, $4::text, establishment_id
-    FROM favorites
-    WHERE establishment_id = $1
+    SELECT f.user_id, $2::text, $3::text, $4::text, f.establishment_id
+    FROM favorites f
+    JOIN users u ON u.id = f.user_id AND u.is_active = TRUE
+    WHERE f.establishment_id = $1
+    FOR SHARE OF u
     RETURNING user_id
   `;
 
@@ -128,7 +141,8 @@ export const createForEstablishmentFavorites = async ({ establishmentId, type, t
 /**
  * One notice to the author of each of the given reviews, in one statement. The
  * same reading as one notice at a time: a review with no author is passed over
- * (ReviewModel.findReviewById joins users), and the message names the review's
+ * (ReviewModel.findReviewById joins users), so is an author whose account is
+ * not active (create() above), and the message names the review's
  * establishment, or `fallbackName` if it has no name or is gone. All the notices
  * share one created_at, so the feed orders by id as well (getByUserId).
  *
@@ -154,9 +168,10 @@ export const createForReviewAuthors = async ({
       r.establishment_id,
       r.id
     FROM reviews r
-    JOIN users u ON u.id = r.user_id
+    JOIN users u ON u.id = r.user_id AND u.is_active = TRUE
     LEFT JOIN establishments e ON e.id = r.establishment_id
     WHERE r.id = ANY($1::uuid[])
+    FOR SHARE OF u
   `;
 
   try {

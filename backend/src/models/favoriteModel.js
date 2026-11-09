@@ -17,6 +17,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { activeAccountRow } from './activeAccountSql.js';
 
 /**
  * Add an establishment to user's favorites
@@ -26,15 +27,22 @@ import logger from '../utils/logger.js';
  * query succeeds without error and returns the existing favorite. This
  * makes the API idempotent as specified in the directive.
  * 
+ * The row goes in only for an active account, read under a share lock in the
+ * same statement (activeAccountSql.js): a request that waited for the deletion
+ * of the account writes nothing after it — before 10.11.2026 its favourite
+ * stayed under the deleted account and in the card's counter for good
+ * (critic 2Г, item 2.03).
+ *
  * @param {string} userId - UUID of the user adding the favorite
  * @param {string} establishmentId - UUID of the establishment being favorited
- * @returns {Promise<Object>} The created or existing favorite object
+ * @returns {Promise<Object|null>} The created or existing favorite object;
+ *   null when the account is not active (switched off or deleted)
  * @throws {Error} If database operation fails (e.g., establishment doesn't exist)
  */
 export const addFavorite = async (userId, establishmentId) => {
   const query = `
     INSERT INTO favorites (user_id, establishment_id, created_at)
-    VALUES ($1, $2, CURRENT_TIMESTAMP)
+    SELECT account.id, $2, CURRENT_TIMESTAMP FROM ${activeAccountRow('$1')} account
     ON CONFLICT (user_id, establishment_id) DO NOTHING
     RETURNING 
       id,
@@ -48,15 +56,18 @@ export const addFavorite = async (userId, establishmentId) => {
   try {
     const result = await pool.query(query, values);
     
-    // If ON CONFLICT triggered, result.rows will be empty
-    // In this case, we need to fetch the existing favorite
+    // No row written: the favorite was there already (ON CONFLICT), or the
+    // account is not active. The first answers with the existing record, the
+    // second with null.
     if (result.rows.length === 0) {
-      // Favorite already existed, fetch it
-      logger.info('Favorite already exists, fetching existing record', {
-        userId,
-        establishmentId,
-      });
-      return await getFavorite(userId, establishmentId);
+      const existing = await getFavorite(userId, establishmentId);
+      if (existing) {
+        logger.info('Favorite already exists, fetching existing record', {
+          userId,
+          establishmentId,
+        });
+      }
+      return existing;
     }
 
     logger.info('Favorite added', {

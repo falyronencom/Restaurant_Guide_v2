@@ -13,6 +13,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { holdActiveAccount } from './activeAccountSql.js';
 
 /**
  * Insert a new verification code for a user.
@@ -156,8 +157,13 @@ const lockAccountCodes = (client, userId) =>
  * @param {Object} limit
  * @param {number} limit.max - Codes allowed within the window
  * @param {number} limit.minutes - The window
- * @returns {Promise<{reserved: Object|null, recentCount: number}>} reserved is
- *   null when the limit is reached; recentCount — codes in the window before this one
+ * @returns {Promise<{reserved: Object|null, recentCount: number, inactive?: true}>}
+ *   reserved is null when the limit is reached, or — with inactive: true — when
+ *   the account is not active; recentCount — codes in the window before this one
+ *
+ * The account is held in share mode first (activeAccountSql.js): a resend that
+ * read the account before its deletion committed and writes after it leaves
+ * no code under it and sends no letter (critic 2Г, item 2.03).
  */
 export const reserveCodeWithinLimit = async (userId, code, expiresAt, { max, minutes }) => {
   const countQuery = `
@@ -176,6 +182,10 @@ export const reserveCodeWithinLimit = async (userId, code, expiresAt, { max, min
   try {
     await client.query('BEGIN');
     await lockAccountCodes(client, userId);
+    if (!await holdActiveAccount(client, userId)) {
+      await client.query('ROLLBACK');
+      return { reserved: null, recentCount: 0, inactive: true };
+    }
     // A statement of its own, after the lock: under READ COMMITTED it sees
     // every reservation committed by the resends that held the lock before.
     const recentCount = (await client.query(countQuery, [userId, String(minutes)])).rows[0].count;

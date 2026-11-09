@@ -64,6 +64,16 @@ if (process.env.YANDEX_CLIENT_ID === undefined) {
   process.env.YANDEX_CLIENT_ID = '';
 }
 
+// Адрес сайта и общий секрет: с ними удаление учётки зовёт сайт по сети
+// (services/siteRefresh.js). Пустая строка = «не задано»: тест, которому нужен
+// этот вызов, задаёт их сам и подменяет fetch.
+if (process.env.SITE_URL === undefined) {
+  process.env.SITE_URL = '';
+}
+if (process.env.SITE_REQUEST_SECRET === undefined) {
+  process.env.SITE_REQUEST_SECRET = '';
+}
+
 // Клиент Google: без него вход через Google отказывает (config/oauth.js), а
 // наборы с подменённой библиотекой Google проверяют вход дальше этого места.
 // Настоящий номер клиента не нужен: подпись в этих наборах не проверяется.

@@ -8,6 +8,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { activeAccountRow } from './activeAccountSql.js';
 
 /**
  * Create or reactivate a device token (UPSERT)
@@ -28,7 +29,8 @@ import logger from '../utils/logger.js';
  * @param {string} data.fcmToken
  * @param {string} data.platform - 'ios' | 'android'
  * @param {string} [data.deviceName]
- * @returns {Promise<Object>} Created or updated token record
+ * @returns {Promise<Object|undefined>} Created or updated token record;
+ *   undefined when the account is not active (switched off or deleted)
  */
 export const create = async (data) => {
   const { userId, fcmToken, platform, deviceName = null } = data;
@@ -37,14 +39,21 @@ export const create = async (data) => {
   // it; both parts are one statement, hence one transaction. The caller's
   // own row is left to ON CONFLICT (user_id <> $1): one statement must not
   // modify the same row twice — Postgres does not define which change wins.
+  //
+  // Both parts need the caller's account active, read under a share lock
+  // (activeAccountSql.js): a request that waited for the deletion of the
+  // account neither leaves a token under it nor takes the phone from the
+  // account that holds it now (critic 2Г, item 2.03).
   const query = `
-    WITH released AS (
+    WITH account AS ${activeAccountRow('$1')},
+    released AS (
       UPDATE device_tokens
       SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP
       WHERE fcm_token = $2 AND user_id <> $1 AND is_active = TRUE
+        AND EXISTS (SELECT 1 FROM account)
     )
     INSERT INTO device_tokens (user_id, fcm_token, platform, device_name)
-    VALUES ($1, $2, $3, $4)
+    SELECT account.id, $2, $3, $4 FROM account
     ON CONFLICT (user_id, fcm_token)
     DO UPDATE SET
       is_active = TRUE,

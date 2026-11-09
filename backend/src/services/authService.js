@@ -1517,13 +1517,21 @@ export async function upgradeUserToPartner(userId) {
       return checkResult.rows[0];
     }
 
-    // Upgrade role to partner
+    // Upgrade role to partner — of an account still active: the read above
+    // takes no lock, and a deletion that committed since must not get its
+    // empty shell made a partner (critic 2Г, 2.01). The UPDATE waits for the
+    // deletion's row lock and then reads the row the deletion left.
     const updateQuery = `
       UPDATE users
       SET role = 'partner', updated_at = $1
-      WHERE id = $2
+      WHERE id = $2 AND is_active = true
       RETURNING id, email, phone, name, role, auth_method, created_at
     `;
+    // No row: switched off or deleted since the read — as the read would say.
+    const upgraded = (update) => {
+      if (update.rows.length === 0) throw new Error('USER_NOT_FOUND');
+      return update;
+    };
 
     let result;
     if (isPanelRole(currentRole)) {
@@ -1535,7 +1543,7 @@ export async function upgradeUserToPartner(userId) {
       const client = await getClient();
       try {
         await client.query('BEGIN');
-        result = await client.query(updateQuery, [new Date(), userId]);
+        result = upgraded(await client.query(updateQuery, [new Date(), userId]));
         await revokeAllSessions(client, userId);
         await deactivateDevices(client, userId);
         await client.query(
@@ -1550,7 +1558,7 @@ export async function upgradeUserToPartner(userId) {
         client.release();
       }
     } else {
-      result = await pool.query(updateQuery, [new Date(), userId]);
+      result = upgraded(await pool.query(updateQuery, [new Date(), userId]));
     }
 
     // authenticate reads the role from the database (cached briefly): the
@@ -1682,7 +1690,14 @@ function mailReachedUser(result) {
 export async function sendEmailVerificationCode(userId) {
   const { user, code, expiresAt } = await prepareEmailVerificationCode(userId);
 
-  const { reserved, recentCount } = await reserveCodeWithinLimit(userId, code, expiresAt, VERIFICATION_CODE_LIMIT);
+  const { reserved, recentCount, inactive } = await reserveCodeWithinLimit(
+    userId, code, expiresAt, VERIFICATION_CODE_LIMIT,
+  );
+  // Switched off or deleted since prepareEmailVerificationCode read it: as
+  // that read would have answered.
+  if (inactive) {
+    throw new Error('USER_NOT_FOUND');
+  }
   if (!reserved) {
     logger.warn('Email verification send rate-limited', { userId, recentCount });
     throw new Error('RATE_LIMITED');
@@ -1936,7 +1951,14 @@ async function issuePasswordReset(user) {
   const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
 
-  const { token, recentCount } = await createResetTokenWithinLimit(user.id, tokenHash, expiresAt, PASSWORD_RESET_LIMIT);
+  const { token, recentCount, inactive } = await createResetTokenWithinLimit(
+    user.id, tokenHash, expiresAt, PASSWORD_RESET_LIMIT,
+  );
+  if (inactive) {
+    // Switched off or deleted since the account was read: no link, no letter.
+    logger.info('Password reset not issued: the account is no longer active', { userId: user.id });
+    return;
+  }
   if (!token) {
     logger.warn('Password reset issue throttled (per-user)', {
       userId: user.id,

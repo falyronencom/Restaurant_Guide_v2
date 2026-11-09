@@ -16,6 +16,7 @@ import * as MediaModel from '../models/mediaModel.js';
 import * as PartnerDocumentsModel from '../models/partnerDocumentsModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/authRefusals.js';
 import logger from '../utils/logger.js';
 import {
   hasModeratorSuspensionMarks,
@@ -621,6 +622,12 @@ export const createEstablishment = async (partnerId, establishmentData) => {
       // setPrimaryPhoto writes on every later save (COALESCE(preview_url, url)).
       primary_image_url: primary_photo ? buildImageMediaFields(primary_photo).preview_url : primary_photo,
     });
+    // The account was switched off or deleted since the request signed in —
+    // the deletion was in progress, and the card waited for it (critic 2Г,
+    // 2.01). Nothing was written; nothing of the card is left to write.
+    if (!establishment) {
+      throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+    }
 
     // Save photos to establishment_media table
     const allPhotos = [];

@@ -7,6 +7,7 @@
 
 import * as DeviceTokenModel from '../models/deviceTokenModel.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/authRefusals.js';
 
 const VALID_PLATFORMS = ['ios', 'android'];
 
@@ -35,12 +36,18 @@ export const registerToken = async (userId, data) => {
     );
   }
 
-  return DeviceTokenModel.create({
+  const token = await DeviceTokenModel.create({
     userId,
     fcmToken: fcm_token.trim(),
     platform,
     deviceName: device_name || null,
   });
+  // Nothing is written for an account switched off or deleted since the
+  // request signed in (critic 2Г, 2.03).
+  if (!token) {
+    throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+  }
+  return token;
 };
 
 /**

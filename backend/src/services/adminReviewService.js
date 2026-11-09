@@ -10,11 +10,12 @@
  */
 
 import { randomUUID } from 'crypto';
-import { getClient } from '../config/database.js';
+import pool, { getClient } from '../config/database.js';
 import * as AdminReviewModel from '../models/adminReviewModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
 import * as NotificationService from './notificationService.js';
+import { eraseTextsOfDeletedAuthors } from './accountDeletionService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 
@@ -290,6 +291,11 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
       await client.query('BEGIN');
       result = await AdminReviewModel.setReviewVisibility(reviewId, isVisible, review.is_visible, client);
       if (result) {
+        // A review of a deleted account, hidden now, loses its text
+        // (accountDeletionService.eraseTextsOfDeletedAuthors).
+        if (!result.is_visible) {
+          await eraseTextsOfDeletedAuthors(client, [reviewId]);
+        }
         // Recalculate establishment aggregates (hidden reviews excluded from rating)
         await ReviewModel.updateEstablishmentAggregates(result.establishment_id, client);
         await AuditLogModel.writeAuditLogInTransaction(client, {
@@ -383,6 +389,11 @@ export const deleteReview = async (reviewId, adminUserId, rawReason, { ipAddress
       throw refuse('REVIEW_DELETE_FAILED', 500);
     }
 
+    // A review of a deleted account, deleted now, loses its text
+    // (accountDeletionService.eraseTextsOfDeletedAuthors); the recount below
+    // follows.
+    await eraseTextsOfDeletedAuthors(pool, [reviewId]);
+
     // Recalculate establishment aggregates (rating/count)
     await ReviewModel.updateEstablishmentAggregates(review.establishment_id);
 
@@ -458,6 +469,9 @@ export const hideReviewsBatch = async (rawIds, rawReason, adminUserId, { ipAddre
   try {
     await client.query('BEGIN');
     hidden = await AdminReviewModel.hideVisibleReviews(client, ids);
+    // Reviews of deleted accounts among them lose their text
+    // (accountDeletionService.eraseTextsOfDeletedAuthors).
+    await eraseTextsOfDeletedAuthors(client, hidden.map((row) => row.id));
     const establishments = [...new Set(hidden.map((row) => row.establishment_id))];
     for (const establishmentId of establishments) {
       await ReviewModel.updateEstablishmentAggregates(establishmentId, client);
