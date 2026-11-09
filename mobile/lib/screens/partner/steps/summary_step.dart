@@ -62,16 +62,20 @@ class SummaryStep extends StatelessWidget {
     );
   }
 
-  /// Build checklist of completed steps
+  /// Build checklist of completed steps.
+  ///
+  /// Галочки — проверки самого мастера (провайдера), те же, что у кнопки
+  /// внизу и у отправки: своего списка у итогового шага нет. Все галочки
+  /// стоят ровно тогда, когда работает «Отправить на верификацию».
   Widget _buildChecklist(PartnerRegistrationProvider provider) {
     final checklistItems = [
       _ChecklistItem(
         title: 'Ваши данные',
-        isCompleted: _isLegalInfoCompleted(provider),
+        isCompleted: provider.isLegalInfoStepDone,
       ),
       _ChecklistItem(
         title: 'Категория заведения',
-        isCompleted: provider.data.categories.isNotEmpty,
+        isCompleted: provider.isCategoryStepDone,
       ),
       _ChecklistItem(
         title: 'Категория кухни',
@@ -79,11 +83,11 @@ class SummaryStep extends StatelessWidget {
       ),
       _ChecklistItem(
         title: 'О заведении',
-        isCompleted: _isBasicInfoCompleted(provider),
+        isCompleted: provider.isBasicInfoFieldsDone,
       ),
       _ChecklistItem(
         title: 'Медиа',
-        isCompleted: _isMediaCompleted(provider),
+        isCompleted: provider.isMediaStepDone,
       ),
       _ChecklistItem(
         title: 'Время работы',
@@ -91,7 +95,7 @@ class SummaryStep extends StatelessWidget {
       ),
       _ChecklistItem(
         title: 'Заполните адрес',
-        isCompleted: _isAddressCompleted(provider),
+        isCompleted: provider.isAddressStepDone,
       ),
     ];
 
@@ -143,7 +147,8 @@ class SummaryStep extends StatelessWidget {
     BuildContext context,
     PartnerRegistrationProvider provider,
   ) {
-    final allCompleted = _isAllCompleted(provider);
+    // То же, что у кнопки «Отправить» внизу мастера и у отправки.
+    final allCompleted = provider.isReadyToSubmit;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,51 +218,6 @@ class SummaryStep extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  // ============================================================================
-  // Validation helpers
-  // ============================================================================
-
-  bool _isLegalInfoCompleted(PartnerRegistrationProvider provider) {
-    final data = provider.data;
-    return (data.legalName?.isNotEmpty ?? false) &&
-        (data.unp?.isNotEmpty ?? false) &&
-        (data.contactPerson?.isNotEmpty ?? false) &&
-        (data.contactEmail?.isNotEmpty ?? false);
-  }
-
-  bool _isBasicInfoCompleted(PartnerRegistrationProvider provider) {
-    final data = provider.data;
-    return (data.name?.isNotEmpty ?? false) &&
-        (data.phone?.isNotEmpty ?? false);
-  }
-
-  /// Меню — фото меню или PDF, как у шага «Медиа»
-  /// (`PartnerRegistrationProvider._validateMediaStep`): иначе у карточки с
-  /// меню одним PDF кнопка «Отправить на верификацию» была серой, а нижняя
-  /// «Отправить» работала.
-  bool _isMediaCompleted(PartnerRegistrationProvider provider) {
-    final data = provider.data;
-    return data.interiorPhotos.isNotEmpty &&
-        (data.menuPhotos.isNotEmpty || data.menuPdfs.isNotEmpty);
-  }
-
-  bool _isAddressCompleted(PartnerRegistrationProvider provider) {
-    final data = provider.data;
-    return (data.city?.isNotEmpty ?? false) &&
-        (data.street?.isNotEmpty ?? false) &&
-        (data.building?.isNotEmpty ?? false);
-  }
-
-  bool _isAllCompleted(PartnerRegistrationProvider provider) {
-    return provider.data.categories.isNotEmpty &&
-        provider.isCuisineStepDone &&
-        _isBasicInfoCompleted(provider) &&
-        provider.isHoursStepDone &&
-        _isMediaCompleted(provider) &&
-        _isAddressCompleted(provider) &&
-        _isLegalInfoCompleted(provider);
   }
 }
 

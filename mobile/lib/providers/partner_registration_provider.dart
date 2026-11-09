@@ -203,20 +203,22 @@ class PartnerRegistrationProvider with ChangeNotifier {
         _data.cuisineTypes.length <= CuisineOptions.maxSelection;
   }
 
-  /// Validate Step 3: Basic information
-  /// Relaxed validation for testing - only require name and price range
-  bool _validateBasicInfoStep() {
+  /// Validate Step 3: Basic information — its fields and the working hours.
+  bool _validateBasicInfoStep() => _validateBasicInfoFields() && isHoursStepDone;
+
+  /// Поля шага «О заведении» без часов: на итоговом шаге у часов своя строка
+  /// («Время работы»).
+  bool _validateBasicInfoFields() {
     final name = _data.name ?? '';
     final description = _data.description ?? '';
     final priceRange = _data.priceRange;
 
-    // Basic requirements: name (2+ chars), price range and working hours.
+    // Basic requirements: name (2+ chars) and price range.
     // Description and phone are optional; a phone, once typed, must be one
     // the server accepts — see [phoneError].
     return name.length >= 2 &&
         (description.isEmpty || description.length >= 5) &&
         phoneError == null &&
-        isHoursStepDone &&
         priceRange != null &&
         priceRange.isNotEmpty;
   }
@@ -406,6 +408,32 @@ class PartnerRegistrationProvider with ChangeNotifier {
 
   /// Шаг кухни выполнен: кухня выбрана или не нужна.
   bool get isCuisineStepDone => _validateCuisineStep();
+
+  // Готовность шагов — те же проверки, что у кнопки внизу мастера
+  // ([canProceed]) и у отправки ([submit]). По ним итоговый шаг ставит галочки
+  // и включает «Отправить на верификацию». Свой список итогового шага
+  // расходился с этим: без телефона его кнопка была серой, а нижняя
+  // «Отправить» работала; с УНП не из 9 цифр или почтой без «@» — «Ваши
+  // данные» с галочкой и общий отказ после нажатия (находка № 10 нитки «Часы
+  // работы», слово Координатора «Да, бери 10», 09.11.2026).
+
+  /// Шаг категорий выполнен.
+  bool get isCategoryStepDone => _validateCategoryStep();
+
+  /// Поля шага «О заведении» заполнены; часы — [isHoursStepDone].
+  bool get isBasicInfoFieldsDone => _validateBasicInfoFields();
+
+  /// Шаг «Медиа» выполнен: фото зала, меню фото или PDF, главное фото.
+  bool get isMediaStepDone => _validateMediaStep();
+
+  /// Шаг адреса выполнен.
+  bool get isAddressStepDone => _validateAddressStep();
+
+  /// Шаг «Ваши данные» выполнен: УНП из 9 цифр, почта по формату.
+  bool get isLegalInfoStepDone => _validateLegalInfoStep();
+
+  /// Карточку можно отправить: готовы все шаги — то, что проверяет [submit].
+  bool get isReadyToSubmit => _validateSummaryStep();
 
   // ============================================================================
   // Data Updates - Step 3: Basic Information
