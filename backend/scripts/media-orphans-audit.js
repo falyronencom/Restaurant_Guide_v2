@@ -58,6 +58,16 @@
  * Options:
  *   --as-of=<date>  ages on this date (default: the snapshot's moment, else now)
  *   --json          the report as JSON (tests, diffing two runs)
+ *   --sweep         also the clean-up's list (thread «Фото людей», step 1,
+ *                   finding 2): which files the server's sweep would remove —
+ *                   the plan of scripts/lib/mediaOrphanSweep.js, each file asked
+ *                   once more against every text column of the database
+ *                   (src/models/mediaReferenceModel.js) — by account and card:
+ *                   how many files, how much space, why. Still read only. This
+ *                   table, not the server's journal, is what the Coordinator
+ *                   sees before the sweep is switched on (directive п. 9). The
+ *                   only part of the output that names owners: the first eight
+ *                   characters of an account's or a card's id.
  *
  * Exit: 0 — counted; 1 — could not count (arguments, setup, connection, query);
  * 2 — refused: the database and the listing are not of one cloud or one moment;
@@ -91,6 +101,8 @@ import {
   topFoldersOf,
 } from './lib/mediaOrphans.js';
 import { readDatabase } from './lib/mediaOrphansDb.js';
+import { SWEEP_REASON, SWEEP_TERM_DAYS, lastWizardUploads, planSweep, summarizeSweep } from './lib/mediaOrphanSweep.js';
+import { isNamedAnywhere, loadTextColumns } from '../src/models/mediaReferenceModel.js';
 
 const { Client } = pg;
 
@@ -100,11 +112,12 @@ class SetupError extends Error {}
 class Refusal extends Error {}
 
 const parseArgs = (argv) => {
-  const out = { production: false, cloud: false, listing: null, asOf: null, json: false };
+  const out = { production: false, cloud: false, listing: null, asOf: null, json: false, sweep: false };
   for (const arg of argv) {
     if (arg === '--production') out.production = true;
     else if (arg === '--cloud') out.cloud = true;
     else if (arg === '--json') out.json = true;
+    else if (arg === '--sweep') out.sweep = true;
     else if (arg.startsWith('--listing=')) out.listing = arg.slice('--listing='.length);
     else if (arg.startsWith('--as-of=')) out.asOf = arg.slice('--as-of='.length);
     // A mistyped --production must not quietly become a local run.
@@ -242,6 +255,71 @@ const ageLine = (b) => AGE_BUCKETS.filter((k) => b.age[k] > 0 || k !== 'unknown'
   .map((k) => `${AGE_TITLE[k]} ${b.age[k]}`).join(' · ');
 const range = (b) => (b.oldest ? `, загружены с ${b.oldest} по ${b.newest}` : '');
 const counted = (b) => `${b.files} (${formatBytes(b.bytes)})`;
+
+/**
+ * The clean-up's list: the plan, every file asked once more against the
+ * database on the same connection (read-only session), and the table by owner.
+ * A file the second question finds named is not in the list.
+ */
+const sweepList = async ({ cloud, refs, owners, topFolders, asOf, client }) => {
+  const planned = planSweep({ assets: cloud.assets, refs, owners, topFolders, asOf, dbMoment: cloud.dbMoment });
+  const tables = await loadTextColumns(client);
+  const due = [];
+  let stillNamed = 0;
+  for (const file of planned) {
+    if (await isNamedAnywhere(client, tables, file.public_id)) stillNamed += 1;
+    else due.push(file);
+  }
+  const byReason = Object.fromEntries(Object.values(SWEEP_REASON).map((reason) => {
+    const files = due.filter((f) => f.reason === reason);
+    return [reason, { files: files.length, bytes: files.reduce((n, f) => n + f.bytes, 0) }];
+  }));
+  const rows = summarizeSweep(due, owners, lastWizardUploads(cloud.assets))
+    .map((row) => ({ ...row, ownerId: row.ownerId.slice(0, 8) }));
+  return {
+    termDays: SWEEP_TERM_DAYS,
+    files: due.length,
+    bytes: due.reduce((n, f) => n + f.bytes, 0),
+    byReason,
+    owners: rows,
+    recheck: { planned: planned.length, stillNamed },
+  };
+};
+
+const REASON_TITLE = {
+  [SWEEP_REASON.QUIET_WIZARD]: `мастер молчит больше ${SWEEP_TERM_DAYS} дней`,
+  [SWEEP_REASON.DELETED_ACCOUNT]: 'учётная запись удалена',
+  [SWEEP_REASON.ACCOUNT_GONE]: 'учётной записи в базе нет',
+  [SWEEP_REASON.CARD_GONE]: 'карточки в базе нет',
+};
+const ROLE_WORD = { user: 'пользователь', partner: 'партнёр', admin: 'панель', viewer: 'панель' };
+
+const ownerTitle = (row) => {
+  if (row.group === GROUP.CARDS) return `карточка ${row.ownerId}`;
+  const what = [row.service ? 'служебная' : ROLE_WORD[row.role] || 'без роли', row.deleted ? 'удалена' : null]
+    .filter(Boolean).join(', ');
+  return `учётка ${row.ownerId} (${row.role ? what : 'нет в базе'})`;
+};
+
+const printSweep = (sw) => {
+  const line = '────────────────────────────────────────────────────────────';
+  console.log(line);
+  console.log('  УБОРКА ФАЙЛОВ МАСТЕРА — что удалила бы уборка (только список, ничего не удалено)');
+  console.log(line);
+  console.log(`  Кандидатов: ${plural(sw.files, ['файл', 'файла', 'файлов'])}, ${formatBytes(sw.bytes)}`);
+  for (const [reason, b] of Object.entries(sw.byReason)) {
+    if (b.files) console.log(`    ${REASON_TITLE[reason]}: ${b.files} (${formatBytes(b.bytes)})`);
+  }
+  console.log(`  Повторная проверка ссылок по всем текстовым колонкам базы: из ${sw.recheck.planned} нашлась ссылка у ${sw.recheck.stillNamed} — их в списке нет`);
+  if (sw.owners.length) {
+    console.log('  По учёткам и карточкам (первые 8 знаков номера):');
+    for (const row of sw.owners) {
+      console.log(`    ${ownerTitle(row).padEnd(42)} ${String(row.files).padStart(5)} ${formatBytes(row.bytes).padStart(10)}` +
+        `${row.lastUpload ? `  последняя загрузка в мастер ${row.lastUpload}` : ''}  — ${REASON_TITLE[row.reason]}`);
+    }
+  }
+  console.log(line);
+};
 
 const printReport = (r) => {
   const line = '════════════════════════════════════════════════════════════';
@@ -388,7 +466,6 @@ const main = async () => {
   const target = args.production
     ? `ПРОД (база ${client.database}), сертификат закреплён`
     : `локальная (${client.host}:${client.port}/${client.database})`;
-  await client.end().catch(() => {});
 
   const listed = new Set(cloud.assets.map((a) => a.public_id));
   const refs = indexReferences({
@@ -404,11 +481,22 @@ const main = async () => {
     }
     checkSameCloud(refs.clouds, cloud.assets.length);
   } catch (error) {
+    await client.end().catch(() => {});
     if (error instanceof Refusal) {
       console.error(`⛔ ${error.message}`);
       return 2;
     }
     throw error;
+  }
+
+  let sweep = null;
+  try {
+    if (args.sweep) sweep = await sweepList({ cloud, refs, owners: db.owners, topFolders, asOf, client });
+  } catch (error) {
+    console.error(`❌ База (повторная проверка уборки): ${error.message}`);
+    return 1;
+  } finally {
+    await client.end().catch(() => {});
   }
 
   const counts = buildReport({
@@ -429,10 +517,14 @@ const main = async () => {
     cardStatusesRead: db.cardStatusesRead,
     countsCheck: db.countsCheck ? { checked: db.countsCheck.checked, mismatched: db.countsCheck.mismatched.length } : null,
     ...counts,
+    ...(sweep ? { sweep } : {}),
   };
 
   if (args.json) console.log(JSON.stringify(report, null, 2));
-  else printReport(report);
+  else {
+    printReport(report);
+    if (sweep) printSweep(sweep);
+  }
   return report.snapshotComparison?.referencedButNone ? 3 : 0;
 };
 
