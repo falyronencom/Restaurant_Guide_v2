@@ -9,14 +9,20 @@
  * production holds none such (read-only census 12.10.2026), but the rule does
  * not lean on that.
  *
- * - Our cloud goes through the image optimizer, as before: it is the only host
- *   next.config.ts `remotePatterns` admits (P0 30.09.2026 — the optimizer
- *   decodes whatever it fetches). Only uploaded assets (`image/upload/`, the
- *   form the backend accepts as ours) and not `.svg`, which next/image would
- *   load past the optimizer.
- * - Sign-in provider photos load straight from the provider (`unoptimized`):
- *   the optimizer refuses those hosts, and widening `remotePatterns` to them is
- *   exactly what P0 narrowed away.
+ * Every photo loads straight from where it lives (ReviewAvatar renders it
+ * `unoptimized`): the site keeps no copy of a person's photo.
+ * - Our cloud: the stored link as it is — only uploaded assets (`image/upload/`,
+ *   the form the backend accepts as ours), not `.svg`. Until 09.11.2026 these
+ *   went through the image optimizer, and its copy outlived the person: on
+ *   production the cloud answered 404 after the account was deleted, the
+ *   site's /_next/image copy 200 (Cache-Control up to 30 days). So no
+ *   optimizer, and next.config.ts `remotePatterns` refuses avatars/ even when
+ *   asked directly. No transformation of our own either: strict
+ *   transformations are on in Cloudinary since 06.11.2026, a new form of link
+ *   is refused; the uploaded avatar is already small (backend uploadAvatar).
+ * - Sign-in provider photos load straight from the provider: the optimizer
+ *   refuses those hosts, and widening `remotePatterns` to them is exactly what
+ *   P0 30.09.2026 narrowed away.
  * - Anything else is not loaded at all — the card shows the initial. Otherwise
  *   a guest's browser would fetch whatever address an author once put in their
  *   profile.
@@ -28,11 +34,9 @@
 export type AvatarSource = {
   /** The address as parsed — what was checked is what gets loaded. */
   src: string;
-  /** true — through /_next/image; false — straight from the provider. */
-  optimized: boolean;
 };
 
-// Our Cloudinary account — the same one next.config.ts admits.
+// Our Cloudinary account.
 const OUR_CLOUD_HOSTNAME = 'res.cloudinary.com';
 const OUR_CLOUD_UPLOADS = '/davrzdre8/image/upload/';
 
@@ -63,15 +67,15 @@ export function avatarSource(
   }
 
   if (url.hostname === OUR_CLOUD_HOSTNAME) {
-    const optimizable =
+    const uploaded =
       url.pathname.startsWith(OUR_CLOUD_UPLOADS) &&
       !url.pathname.toLowerCase().endsWith('.svg');
-    return optimizable ? { src: url.href, optimized: true } : null;
+    return uploaded ? { src: url.href } : null;
   }
 
   const fromSignIn = SIGN_IN_AVATAR_SOURCES.some(
     ({ hostname, pathPrefix }) =>
       url.hostname === hostname && url.pathname.startsWith(pathPrefix),
   );
-  return fromSignIn ? { src: url.href, optimized: false } : null;
+  return fromSignIn ? { src: url.href } : null;
 }

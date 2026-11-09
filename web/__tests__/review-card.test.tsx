@@ -81,11 +81,12 @@ describe('ReviewCard — sync Server Component', () => {
 });
 
 /*
- * Author avatar (ReviewAvatar island, lib/avatar-source). Sign-in photos load
- * straight from the provider — the optimizer refuses their hosts (400, an empty
- * circle on production 30.09–12.10.2026); our cloud goes through the optimizer;
- * any other address and any failed load show the initial, like an author
- * without a photo.
+ * Author avatar (ReviewAvatar island, lib/avatar-source). Every photo loads
+ * straight from where it lives — sign-in photos from the provider (the
+ * optimizer refuses their hosts: an empty circle on production
+ * 30.09–12.10.2026), our cloud's from the cloud (the optimizer's copy outlived
+ * a deleted account, 09.11.2026); any other address and any failed load show
+ * the initial, like an author without a photo.
  */
 describe('ReviewCard — author avatar', () => {
   const GOOGLE =
@@ -114,15 +115,20 @@ describe('ReviewCard — author avatar', () => {
     expect(img).toHaveAttribute('referrerpolicy', 'no-referrer');
   });
 
-  it('sends a photo from our cloud through the optimizer', () => {
-    render(<ReviewCard review={withAvatar(OUR_CLOUD)} />);
+  // The site keeps no copy of a person's photo: through /_next/image the copy
+  // outlived the account's deletion on production (09.11.2026 — the cloud
+  // answered 404, the site's copy 200). So our cloud loads directly too, the
+  // stored link as it is (strict transformations on Cloudinary since 06.11).
+  it('loads a photo from our cloud directly, the stored link as it is', () => {
+    const { container } = render(<ReviewCard review={withAvatar(OUR_CLOUD)} />);
 
-    // The resolved property (jsdom's base is http://localhost): with onError set,
-    // next/image re-assigns img.src after mount, so the attribute turns absolute.
-    const { src } = screen.getByAltText('Алексей') as HTMLImageElement;
-    expect(src).toMatch(
-      /^http:\/\/localhost\/_next\/image\?url=https%3A%2F%2Fres\.cloudinary\.com%2Fdavrzdre8%2Fimage%2Fupload%2Fv1791566923%2Favatars%2Fuser-1%2Fphoto\.jpg&w=\d+&q=75$/,
-    );
+    const img = screen.getByAltText('Алексей') as HTMLImageElement;
+    // The resolved property: with onError set, next/image re-assigns img.src
+    // after mount, so the attribute may turn absolute.
+    expect(img.src).toBe(OUR_CLOUD);
+    expect(img).not.toHaveAttribute('srcset');
+    expect(img).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(container.innerHTML).not.toContain('_next/image');
   });
 
   it('shows the initial and requests nothing for any other address', () => {

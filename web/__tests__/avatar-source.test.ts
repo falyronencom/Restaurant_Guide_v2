@@ -2,14 +2,16 @@
  * @jest-environment node
  *
  * Откуда сайт берёт аватар автора отзыва (lib/avatar-source). Браузер гостя
- * обращается к серверу, с которого идёт фото, — поэтому напрямую грузятся
- * только фото входа через Google и Яндекс, наше облако идёт через оптимизатор
- * (как раньше), любой другой адрес не грузится вовсе: на карточке буква.
+ * обращается к серверу, с которого идёт фото, — поэтому грузятся только фото
+ * входа через Google и Яндекс и фото из нашего облака, все напрямую (сайт не
+ * хранит копий фото людей); любой другой адрес не грузится вовсе: на карточке
+ * буква.
  *
  * Список хостов входа закреплён литералом: добавить хост — продуктовое
  * решение (чьи серверы видят адреса гостей), а не правка ради зелёного
- * прогона. Согласие с next.config.ts проверяется настоящим сопоставителем
- * Next (hasRemoteMatch), тем же, что решает в /_next/image.
+ * прогона. Что оптимизатор ни одного из этих адресов не возьмёт, проверяется
+ * настоящим сопоставителем Next (hasRemoteMatch) по настоящему next.config.ts —
+ * тем же, что решает в /_next/image.
  */
 import { hasRemoteMatch } from 'next/dist/shared/lib/match-remote-pattern';
 
@@ -52,18 +54,19 @@ const optimizerAdmits = (url: string) =>
 
 describe('avatarSource — откуда грузится аватар автора отзыва', () => {
   it('фото входа через Google и Яндекс — напрямую', () => {
-    expect(avatarSource(GOOGLE)).toEqual({ src: GOOGLE, optimized: false });
-    expect(avatarSource(YANDEX)).toEqual({ src: YANDEX, optimized: false });
+    expect(avatarSource(GOOGLE)).toEqual({ src: GOOGLE });
+    expect(avatarSource(YANDEX)).toEqual({ src: YANDEX });
   });
 
-  it('фото из нашего облака — через оптимизатор, как раньше', () => {
-    expect(avatarSource(OUR_CLOUD)).toEqual({ src: OUR_CLOUD, optimized: true });
+  // 09.11.2026: копия оптимизатора пережила удаление учётной записи (облако —
+  // 404, сайт — 200). Фото человека сайт не копирует: ссылка из базы как есть.
+  it('фото из нашего облака — тоже напрямую, ссылкой из базы как есть', () => {
+    expect(avatarSource(OUR_CLOUD)).toEqual({ src: OUR_CLOUD });
   });
 
   it('грузится тот адрес, что проверен, — в разобранном виде', () => {
     expect(avatarSource('https://LH3.GoogleUserContent.com/a/x')).toEqual({
       src: 'https://lh3.googleusercontent.com/a/x',
-      optimized: false,
     });
     // И из нашего облака — у него своя ветка возврата.
     expect(
@@ -72,7 +75,6 @@ describe('avatarSource — откуда грузится аватар автор
       ),
     ).toEqual({
       src: 'https://res.cloudinary.com/davrzdre8/image/upload/v1/avatars/user-1/photo.jpg',
-      optimized: true,
     });
   });
 
@@ -93,20 +95,21 @@ describe('avatarSource — откуда грузится аватар автор
     ]);
   });
 
-  it('всё, что правило шлёт в оптимизатор, оптимизатор принимает; фото входа он не принимает', () => {
-    let sentToOptimizer = 0;
+  // Сторож на образцах фото людей: ни один не возьмёт и прямой адрес
+  // /_next/image?url=…, иначе копия фото человека снова ляжет в кэш сайта.
+  // Правило пускает и другие пути нашего облака (папку карточек оптимизатор
+  // берёт) — что сайт сам не ведёт аватар через оптимизатор, держит
+  // `unoptimized` в ReviewAvatar (review-card.test.tsx).
+  it('образцы фото людей, которые правило пускает, оптимизатор не принимает', () => {
+    let loaded = 0;
     for (const url of [GOOGLE, YANDEX, OUR_CLOUD, ...REFUSED.map(([u]) => u)]) {
       const source = avatarSource(url);
-      if (source?.optimized) {
-        sentToOptimizer += 1;
-        expect([url, optimizerAdmits(source.src)]).toEqual([url, true]);
+      if (source) {
+        loaded += 1;
+        expect([url, optimizerAdmits(source.src)]).toEqual([url, false]);
       }
     }
-    // Якорь: перебор не пуст — в оптимизатор идёт ровно наше облако.
-    expect(sentToOptimizer).toBe(1);
-    // Если однажды расширят remotePatterns на хосты входа — этот тест
-    // покраснеет: P0 30.09.2026 сузил оптимизатор до нашего облака.
-    expect(optimizerAdmits(GOOGLE)).toBe(false);
-    expect(optimizerAdmits(YANDEX)).toBe(false);
+    // Якорь: перебор не пуст — грузятся ровно три адреса.
+    expect(loaded).toBe(3);
   });
 });
