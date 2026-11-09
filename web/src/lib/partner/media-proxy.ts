@@ -2,6 +2,7 @@ import 'server-only';
 
 import { ApiError } from '@/lib/api/types';
 import { getAccessToken, refreshAccessToken } from '@/lib/auth/session';
+import { siteRequestHeaders, visitorAddressFrom } from '@/lib/api/visitor';
 
 /*
  * Shared media streaming-proxy helper (Phase C Slice 1, Segment B). Forwards a
@@ -79,6 +80,11 @@ export async function proxyMediaUpload(
       headers: {
         'content-type': contentType, // boundary preserved — do NOT re-encode
         authorization: `Bearer ${token}`,
+        // The site's secret and the visitor of this request, as every call of
+        // the site names them (lib/api/visitor.ts; thread «2Г: общие пределы»,
+        // 10.11.2026): without them the API counted the upload by the site's
+        // own address — one budget for every visitor whose token it refused.
+        ...siteRequestHeaders(visitorAddressFrom(request.headers)),
       },
       body: request.body,
       // undici requires duplex for a streamed body; absent from the DOM lib type.
