@@ -35,7 +35,7 @@ import cloudinary from '../../config/cloudinary.js';
 import { authenticateWithOAuth } from '../../services/authService.js';
 import * as avatarDeletionLoop from '../../services/avatarDeletionLoop.js';
 import { invalidateCache as invalidateBadges } from '../../services/badgesService.js';
-import { USER_ACTION_REFUSALS } from '../../services/adminUserService.js';
+import { pool } from '../../config/database.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import {
@@ -123,6 +123,19 @@ const registration = {
 };
 
 const signIn = (data) => authenticateWithOAuth({ emailVerified: true, name: 'Пётр Провайдеров', ...data }, registration);
+
+/** Ждать, пока чей-то запрос встанет в очередь за блокировкой строки. */
+const waitForLockWaiter = async () => {
+  for (let attempt = 0; attempt < 250; attempt += 1) {
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+    );
+    if (rows[0].n > 0) return;
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+  }
+  throw new Error('никто не ждёт блокировки строки');
+};
 
 const queueIds = async () => (await asAdmin('get', '/users?avatar=pending&per_page=50').expect(200))
   .body.data.map((u) => u.id);
@@ -332,10 +345,14 @@ describe('модератор видит очередь и решает одни�
     await remove(p.id, cloudUrl(`avatars/${p.id}/face0001`), 'Неподобающее фото').expect(200);
     await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [p.id, cloudUrl(`avatars/${p.id}/face0002`)]);
 
+    // Ни фото, ни его состояния, и отбора очереди у просмотрщика нет: кто ждёт
+    // проверки фото — факт о человеке (ревью по линзе, находка 3).
     const users = (await asViewer('get', '/users?avatar=pending').expect(200)).body.data;
-    expect(users.map((u) => [u.id, u.avatar_url, u.avatar_state])).toEqual([[p.id, null, 'pending']]);
+    // Отбор не применён: в ответе и учётки без фото (сам администратор).
+    expect(users.map((u) => u.id)).toEqual(expect.arrayContaining([admin.user.id, p.id]));
+    expect(users.find((u) => u.id === p.id)).toEqual(expect.objectContaining({ avatar_url: null, avatar_state: null }));
     const reviews = (await asViewer('get', '/reviews').expect(200)).body.data;
-    expect(reviews.every((r) => r.author_avatar_url === null)).toBe(true);
+    expect(reviews.map((r) => [r.author_avatar_url, r.author_avatar_state])).toEqual([[null, null]]);
     const entries = (await asViewer('get', '/audit-log?action=user_avatar_remove').expect(200)).body.data;
     expect(entries.length).toBe(1);
     expect(JSON.stringify(entries)).not.toContain('face0001');
@@ -391,8 +408,9 @@ describe('модератор видит очередь и решает одни�
 
     for (const action of [approve(p.id, seen), remove(p.id, seen)]) {
       const refused = await action.expect(409);
-      expect([refused.body.error.code, refused.body.message])
-        .toEqual(['AVATAR_CHANGED', USER_ACTION_REFUSALS.AVATAR_CHANGED]);
+      expect([refused.body.error.code, refused.body.message]).toEqual([
+        'AVATAR_CHANGED', 'Фото уже сменилось или убрано. Обновите список и посмотрите, что стоит сейчас',
+      ]);
     }
     expect(await storedAvatar(p.id)).toBe(fresh);
     expect(await queueIds()).toEqual([p.id]);
@@ -524,6 +542,105 @@ describe('фото, убранное или заменённое самим че
 });
 
 // ============================================================================
+// Исправления по ревью перед коммитом (Phase 3.5)
+// ============================================================================
+
+describe('одобрение живёт только со своей ссылкой', () => {
+  test('ссылка с чужого хоста (до шлюза 02.10): одобрить нельзя, снять — можно', async () => {
+    const p = await person({ avatar: () => 'https://images.example.org/face.jpg' });
+
+    const refused = await approve(p.id, 'https://images.example.org/face.jpg').expect(409);
+    expect([refused.body.error.code, refused.body.message]).toEqual([
+      'AVATAR_NOT_APPROVABLE',
+      'Это фото не из нашего облака и не из входа через Google или Яндекс — одобрить его нельзя, только снять',
+    ]);
+    await remove(p.id, 'https://images.example.org/face.jpg').expect(200);
+    expect(await storedAvatar(p.id)).toBeNull();
+  });
+
+  test('человек убрал одобренное фото и вернул ту же ссылку — снова на проверке', async () => {
+    const p = await person({ avatar: ownFile('face0001') });
+    const url = cloudUrl(`avatars/${p.id}/face0001`);
+    const review = await createTestReview(p.id, card.id);
+    await approve(p.id, url).expect(200);
+    const put = (avatarUrl) => request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${p.accessToken}`)
+      .send({ avatar_url: avatarUrl })
+      .expect(200);
+
+    await put(null);
+    await put(url);
+
+    expect(await publicAvatars(review.id)).toEqual(NOBODY_SEES);
+    expect(await queueIds()).toEqual([p.id]);
+  });
+
+  test('перехват: новый владелец не возвращает лицо прежнего мимо модератора', async () => {
+    const p = await person({ avatar: ownFile('face0001') });
+    const registrantFace = cloudUrl(`avatars/${p.id}/face0001`);
+    const review = await createTestReview(p.id, card.id);
+    await approve(p.id, registrantFace).expect(200);
+
+    const holder = await signIn({ provider: 'google', providerId: `g-${randomUUID()}`, email: p.email, avatarUrl: null });
+    await request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${holder.accessToken}`)
+      .send({ avatar_url: registrantFace })
+      .expect(200);
+
+    expect(await storedAvatar(p.id)).toBe(registrantFace);
+    expect(await publicAvatars(review.id)).toEqual(NOBODY_SEES);
+  });
+
+  test('модератор одобряет, пока человек меняет фото: одобрение ждёт строку и отказывает', async () => {
+    const p = await person({ avatar: ownFile('face0001') });
+    const seen = cloudUrl(`avatars/${p.id}/face0001`);
+    const fresh = cloudUrl(`avatars/${p.id}/face0002`);
+    const holder = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [p.id]);
+      await holder.query('UPDATE users SET avatar_url = $2 WHERE id = $1', [p.id, fresh]);
+      const pending = approve(p.id, seen).then((r) => r);
+      await waitForLockWaiter();
+      await holder.query('COMMIT');
+      const answer = await pending;
+      expect([answer.status, answer.body.error?.code]).toEqual([409, 'AVATAR_CHANGED']);
+    } finally {
+      holder.release();
+    }
+    const { rows: [row] } = await query('SELECT avatar_url, avatar_approved_url FROM users WHERE id = $1', [p.id]);
+    expect(row).toEqual({ avatar_url: fresh, avatar_approved_url: null });
+  });
+
+  test('файл, к которому человек вернулся, петля не удаляет', async () => {
+    const p = await person({ avatar: ownFile('face0001') });
+    const first = cloudUrl(`avatars/${p.id}/face0001`);
+    await request(app)
+      .post('/api/v1/auth/avatar')
+      .set('Authorization', `Bearer ${p.accessToken}`)
+      .attach('avatar', Buffer.from('fake-jpeg'), JPEG)
+      .expect(200);
+    await request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${p.accessToken}`)
+      .send({ avatar_url: first })
+      .expect(200);
+
+    await avatarDeletionLoop.tick();
+
+    // Заменённое fresh0001 удалено; face0001 — снова фото человека — цело.
+    expect(destroy.mock.calls).toEqual([[`avatars/${p.id}/fresh0001`, { invalidate: true }]]);
+    expect((await fileTasks(p.id)).map((t) => [t.public_id, t.status])).toEqual([
+      [`avatars/${p.id}/face0001`, 'done'],
+      [`avatars/${p.id}/fresh0001`, 'done'],
+    ]);
+    expect(await storedAvatar(p.id)).toBe(first);
+  });
+});
+
+// ============================================================================
 // Окно между выкаткой и миграцией 041
 // ============================================================================
 
@@ -555,7 +672,8 @@ describe('схема без миграции 041: ничего не падает
       expect((await asAdmin('get', '/badges').expect(200)).body.data.avatars_pending).toBe(1);
       for (const action of [approve(p.id, url), remove(p.id, url)]) {
         const refused = await action.expect(409);
-        expect(refused.body.message).toBe(USER_ACTION_REFUSALS.AVATAR_NOT_READY);
+        expect(refused.body.message)
+          .toBe('Проверка фото включится после обновления базы данных. Сообщите оператору платформы');
       }
       expect(await storedAvatar(p.id)).toBe(url);
     });

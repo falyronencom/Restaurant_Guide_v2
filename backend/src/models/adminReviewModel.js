@@ -153,7 +153,7 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       -- approves or takes it down beside the review (migration 041). A viewer
       -- gets none (adminReviewService.toViewerReview, viewer projection).
       ${filters.viewer ? 'NULL::text' : 'u.avatar_url'} as author_avatar_url,
-      ${avatarStateSql('u')} as author_avatar_state,
+      ${filters.viewer ? 'NULL::text' : avatarStateSql('u')} as author_avatar_state,
       e.name as establishment_name,
       e.city as establishment_city,
       e.id as establishment_id,

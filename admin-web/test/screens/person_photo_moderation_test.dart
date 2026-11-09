@@ -46,7 +46,8 @@ Map<String, dynamic> _person({
       'email': viewerRedacted ? null : 'photo@example.com',
       'phone': null,
       'avatar_url': viewerRedacted ? null : avatarUrl,
-      'avatar_state': avatarState,
+      // Просмотрщику сервер не отдаёт и состояние (adminUserModel).
+      'avatar_state': viewerRedacted ? null : avatarState,
       'role': 'user',
       'is_active': true,
       'is_deleted': false,
@@ -289,19 +290,45 @@ void main() {
         isNull, reason: 'второе касание снимает отбор');
   });
 
-  testWidgets('просмотрщик: состояние без самого фото и без кнопок',
+  testWidgets('просмотрщик: ни фото, ни его состояния, ни кнопок',
       (tester) async {
     final server = _Server()..person = _person(viewerRedacted: true);
     await pumpUsers(tester, server, viewer: true);
 
     expect(find.byKey(PersonPhoto.imageKey), findsNothing);
-    expect(
-      find.text('Фото на проверке — другие видят букву. '
-          'Само фото скрыто в режиме просмотра.'),
-      findsOneWidget,
-    );
+    expect(find.text('фото на проверке'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('user-photo-block')), findsNothing);
     expect(find.byKey(const ValueKey<String>('user-photo-approve')), findsNothing);
     expect(find.byKey(const ValueKey<String>('user-photo-remove')), findsNothing);
+  });
+
+  test('панель грузит фото только из облака, Google и Яндекса', () {
+    expect(personPhotoSource(_photo), _photo);
+    expect(personPhotoSource('https://lh3.googleusercontent.com/a/x=s96-c'),
+        isNotNull);
+    expect(personPhotoSource('https://avatars.yandex.net/get-yapic/1/islands-200'),
+        isNotNull);
+    for (final foreign in <String>[
+      'https://images.example.org/face.jpg',
+      'http://res.cloudinary.com/test/image/upload/v1/a.jpg',
+      'https://res.cloudinary.com:8443/test/image/upload/v1/a.jpg',
+      'https://user@res.cloudinary.com/test/image/upload/v1/a.jpg',
+      'https://avatars.yandex.net/other/1',
+      '',
+    ]) {
+      expect(personPhotoSource(foreign), isNull, reason: foreign);
+    }
+  });
+
+  testWidgets('фото с чужого хоста — буква, а снять его можно', (tester) async {
+    final server = _Server()
+      ..person = _person(avatarUrl: 'https://images.example.org/face.jpg');
+    await pumpUsers(tester, server);
+
+    expect(find.byKey(PersonPhoto.imageKey), findsNothing);
+    expect(find.byKey(const ValueKey<String>('user-photo-foreign')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('user-photo-approve')), findsNothing);
+    expect(find.byKey(const ValueKey<String>('user-photo-remove')), findsOneWidget);
   });
 
   testWidgets('«Отзывы»: фото автора рядом с отзывом, состояние и путь к '

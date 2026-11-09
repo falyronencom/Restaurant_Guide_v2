@@ -872,6 +872,10 @@ class _PhotoBlock extends StatelessWidget {
     final busy = provider.isSubmitting;
     final isSelf = context.watch<AuthProvider>().currentUser?.id == user.id;
     final showButtons = canModerate && !isSelf && user.canRemovePhoto;
+    // Ссылка не из облака и не из входа через Google или Яндекс — значение до
+    // шлюза 02.10.2026: панель её не открывает, сервер её не одобрит.
+    final foreign =
+        user.avatarUrl != null && personPhotoSource(user.avatarUrl) == null;
 
     return Container(
       key: const ValueKey<String>('user-photo-block'),
@@ -892,14 +896,20 @@ class _PhotoBlock extends StatelessWidget {
               spacing: 10,
               children: <Widget>[
                 const Text('Фото профиля', style: AppTheme.canonFieldLabel),
+                // Просмотрщику сервер не отдаёт ни фото, ни его состояние
+                // (ревью по линзе PR 1а, находка 3) — блока у него нет.
                 Text(
-                  user.viewerRedacted
-                      ? '${personPhotoStateLabel(user.avatarState)}. '
-                          'Само фото скрыто в режиме просмотра.'
-                      : personPhotoStateLabel(user.avatarState),
+                  personPhotoStateLabel(user.avatarState),
                   key: const ValueKey<String>('user-photo-state'),
                   style: AppTheme.canonFieldValue,
                 ),
+                if (foreign)
+                  const Text(
+                    'Фото не из нашего облака и не из входа через Google или '
+                    'Яндекс: панель его не открывает. Его можно только снять.',
+                    key: ValueKey<String>('user-photo-foreign'),
+                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                  ),
                 if (canModerate && isSelf && user.canRemovePhoto)
                   const Text(
                     'Своё фото одобряет или снимает другой модератор.',
@@ -910,7 +920,7 @@ class _PhotoBlock extends StatelessWidget {
                     spacing: 10,
                     runSpacing: 10,
                     children: <Widget>[
-                      if (user.canModeratePhoto)
+                      if (user.canModeratePhoto && !foreign)
                         ElevatedButton.icon(
                           key: const ValueKey<String>('user-photo-approve'),
                           onPressed: busy ? null : () => _approve(context),

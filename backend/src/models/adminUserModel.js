@@ -58,10 +58,11 @@ const userColumns = (viewer) => `
   ${viewer ? 'NULL::text' : 'u.email'} AS email,
   ${viewer ? 'NULL::text' : 'u.phone'} AS phone,
   -- The photo as the person set it, whatever its state: the moderator looks at
-  -- it to approve or take it down (migration 041). A viewer gets none — a face
-  -- is the person's data; the viewer projection withholds the key as well.
+  -- it to approve or take it down (migration 041). A viewer gets neither the
+  -- photo nor its state — a face, and whether one waits for a look, are the
+  -- person's data; the viewer projection withholds the photo's key as well.
   ${viewer ? 'NULL::text' : 'u.avatar_url'} AS avatar_url,
-  ${avatarStateSql('u')} AS avatar_state,
+  ${viewer ? 'NULL::text' : avatarStateSql('u')} AS avatar_state,
   u.role,
   u.auth_method,
   u.is_active,

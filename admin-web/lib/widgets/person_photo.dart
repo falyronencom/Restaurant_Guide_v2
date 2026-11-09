@@ -27,6 +27,31 @@ String personPhotoStateLabel(PersonPhotoState state) => switch (state) {
       PersonPhotoState.approved => 'Фото одобрено — другие его видят',
     };
 
+/// Откуда панель грузит фото человека — те же места, что сайт
+/// (`web/src/lib/avatar-source.ts`): наше облако и фото входа через Google и
+/// Яндекс. Ссылку с другого хоста (значение до шлюза 02.10.2026) браузер
+/// модератора не открывает: чужой сервер увидел бы его адрес — вместо фото
+/// буква, снять такое фото можно (ревью по линзе PR 1а, находка 4).
+const List<({String host, String pathPrefix})> kPersonPhotoSources =
+    <({String host, String pathPrefix})>[
+  (host: 'res.cloudinary.com', pathPrefix: '/'),
+  (host: 'lh3.googleusercontent.com', pathPrefix: '/'),
+  (host: 'avatars.yandex.net', pathPrefix: '/get-yapic/'),
+];
+
+/// Ссылка, которую панель вправе загрузить, или `null`.
+String? personPhotoSource(String? url) {
+  final link = url?.trim();
+  if (link == null || link.isEmpty) return null;
+  final uri = Uri.tryParse(link);
+  if (uri == null || uri.scheme != 'https' || uri.hasPort || uri.userInfo.isNotEmpty) {
+    return null;
+  }
+  final allowed = kPersonPhotoSources.any(
+      (s) => uri.host == s.host && uri.path.startsWith(s.pathPrefix));
+  return allowed ? link : null;
+}
+
 /// Фото человека в круге — так модератор видит, что человек поставил
 /// (решение Координатора 09.11.2026: фото профиля другим — только после
 /// одобрения). Без фото и при сбое загрузки — буква, как в приложении и на
@@ -62,9 +87,9 @@ class PersonPhoto extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final link = url?.trim();
+    final link = personPhotoSource(url);
     final letter = _Letter(label: label, size: size, muted: muted);
-    if (link == null || link.isEmpty) return letter;
+    if (link == null) return letter;
 
     return ClipOval(
       child: SizedBox(

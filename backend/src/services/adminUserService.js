@@ -71,6 +71,29 @@ import { getClient } from '../config/database.js';
 import { avatarModerationReady, approvedAvatarSql, avatarStateSql } from '../models/avatarModerationModel.js';
 import { AVATAR_FILE_REASONS, enqueueAvatarFileDeletion } from '../models/avatarFileDeletionModel.js';
 import { ownAvatarFile } from './avatarFiles.js';
+
+/**
+ * The sign-in providers' pictures — the only links besides our own cloud a
+ * moderator may approve: the site shows nothing else (web/src/lib/avatar-source.ts),
+ * and the app would load any address. A value stored before the input gate of
+ * 02.10.2026 can name any host; such a photo can only be taken down (Phase 3.5
+ * lens review of PR 1a, finding 2).
+ */
+const PROVIDER_PICTURES = Object.freeze([
+  { host: 'lh3.googleusercontent.com', pathPrefix: '/' },
+  { host: 'avatars.yandex.net', pathPrefix: '/get-yapic/' },
+]);
+
+const isProviderPicture = (link) => {
+  let url;
+  try {
+    url = new URL(link);
+  } catch {
+    return false;
+  }
+  return url.protocol === 'https:' && !url.port && !url.username && !url.password
+    && PROVIDER_PICTURES.some(({ host, pathPrefix }) => url.hostname === host && url.pathname.startsWith(pathPrefix));
+};
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { isPanelRole } from '../config/panelRoles.js';
@@ -107,6 +130,7 @@ export const USER_ACTION_REFUSALS = Object.freeze({
   AVATAR_CHANGED: 'Фото уже сменилось или убрано. Обновите список и посмотрите, что стоит сейчас',
   AVATAR_SELF: 'Своё фото одобряет или снимает другой модератор',
   AVATAR_NOT_READY: 'Проверка фото включится после обновления базы данных. Сообщите оператору платформы',
+  AVATAR_NOT_APPROVABLE: 'Это фото не из нашего облака и не из входа через Google или Яндекс — одобрить его нельзя, только снять',
 });
 
 const refuse = (code, status) => new AppError(USER_ACTION_REFUSALS[code], status, code);
@@ -155,8 +179,9 @@ export const getUsers = async ({
   }
   const effectiveStatus = ['active', 'blocked', 'deleted'].includes(status) ? status : undefined;
   const effectiveRole = ['user', 'partner', 'panel'].includes(role) ? role : undefined;
-  // «Фото на проверке»: the moderator's queue of photos (adminUserModel).
-  const effectiveAvatar = avatar === 'pending' ? avatar : undefined;
+  // «Фото на проверке»: the moderator's queue of photos (adminUserModel). Not
+  // for a viewer: who has a photo waiting is a fact about a person.
+  const effectiveAvatar = !viewer && avatar === 'pending' ? avatar : undefined;
   const effectivePerPage = Math.min(Math.max(perPage, 1), 50);
   const currentPage = Math.max(page, 1);
   const filters = {
@@ -610,6 +635,9 @@ export const approveAvatar = async (userId, rawSeenUrl, actorId, { ipAddress, us
 
   const result = await inTransaction(userId, async (client) => {
     const target = await lockAvatarTarget(client, userId, actorId, seenUrl);
+    if (!ownAvatarFile(seenUrl, userId) && !isProviderPicture(seenUrl)) {
+      throw refuse('AVATAR_NOT_APPROVABLE', 409);
+    }
     if (target.avatar_state === 'approved') {
       return { id: target.id, avatar_state: 'approved', changed: false };
     }

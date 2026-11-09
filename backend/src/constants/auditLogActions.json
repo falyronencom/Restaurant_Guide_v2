@@ -189,6 +189,9 @@
     "establishment_name",
     "establishment_city",
     "batch_id",
-    "batch_size"
+    "batch_size",
+    "avatar_url",
+    "avatar_state",
+    "file"
   ]
 }

@@ -65,7 +65,7 @@ export const enqueueAvatarFileDeletion = async (client, { publicId, userId, reas
  * and if this one dies the task comes due again by itself.
  *
  * @param {number} leaseMs
- * @returns {Promise<{public_id: string, user_id: string, attempts: number}|null>}
+ * @returns {Promise<{public_id: string, user_id: string, reason: string, attempts: number}|null>}
  */
 export const claimNextDueFile = async (leaseMs) => {
   const result = await pool.query(
@@ -78,10 +78,23 @@ export const claimNextDueFile = async (leaseMs) => {
          LIMIT 1
          FOR UPDATE SKIP LOCKED
       )
-      RETURNING public_id, user_id, attempts`,
+      RETURNING public_id, user_id, reason, attempts`,
     [leaseMs],
   );
   return result.rows[0] ?? null;
+};
+
+/**
+ * The person's avatar link as it stands now — asked right before a file the
+ * person let go of is destroyed: PUT /auth/profile may have pointed the link
+ * back at it since (Phase 3.5 review of PR 1a, LOW-3).
+ *
+ * @param {string} userId
+ * @returns {Promise<string|null>}
+ */
+export const currentAvatarUrl = async (userId) => {
+  const result = await pool.query('SELECT avatar_url FROM users WHERE id = $1', [userId]);
+  return result.rows[0]?.avatar_url ?? null;
 };
 
 /**

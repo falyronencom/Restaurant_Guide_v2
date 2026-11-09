@@ -29,6 +29,7 @@ const MAY_NAME_THE_COLUMN = Object.freeze({
   'services/authService.js': 'писатели фото (профиль, вход через Google и Яндекс) и свой профиль',
   'services/accountDeletionService.js': 'удаление учётки обнуляет фото',
   'services/avatarFiles.js': 'файл старого фото уходит из облака',
+  'models/avatarFileDeletionModel.js': 'петля сверяет, не вернулся ли человек к файлу, перед удалением',
   'models/avatarModerationModel.js': 'само правило показа и очередь модератора',
   'models/adminUserModel.js': 'панель: фото в списке людей, только администратору',
   'models/adminReviewModel.js': 'панель: фото автора у отзыва, только администратору',
@@ -94,6 +95,18 @@ describe('колонку фото называют только файлы из 
     expect(authorAvatar.length).toBeGreaterThanOrEqual(2);
     expect(new Set(authorAvatar)).toEqual(new Set(['${AUTHOR_AVATAR_SQL}']));
     expect(model).toMatch(/const AUTHOR_AVATAR_SQL = `[^`]*\$\{publicAvatarSql\('u'\)\}/);
+  });
+
+  // Запрос, берущий строку пользователя целиком, отдал бы фото, не назвав
+  // колонку (ревью перед коммитом, NIT-1): такие чтения запрещены везде.
+  test('строку пользователя целиком не читает ни один файл сервера', () => {
+    const WHOLE_ROW = /SELECT\s+\*\s+FROM\s+(?:public\.)?users\b|\b(?:u|users)\.\*|row_to_json\s*\(/i;
+    const hits = files.flatMap(({ name, lines }) => lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => !isComment(line) && WHOLE_ROW.test(line))
+      .map(({ index }) => `${name}:${index + 1}`));
+
+    expect(hits).toEqual([]);
   });
 
   test('список не гниёт: каждый файл из него на месте и называет колонку', () => {

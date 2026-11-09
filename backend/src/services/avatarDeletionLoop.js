@@ -38,7 +38,7 @@
  * NODE_ENV=test: tests call tick() directly, with the cloud stubbed.
  */
 
-import { deleteAvatarFile, deleteAvatarFolder } from '../config/cloudinary.js';
+import { deleteAvatarFile, deleteAvatarFolder, ownCloudPublicId } from '../config/cloudinary.js';
 import {
   CLAIM_LEASE_MS,
   FILE_TASKS_PER_TICK,
@@ -55,8 +55,10 @@ import {
 } from '../models/avatarDeletionModel.js';
 import {
   avatarFileDeletionTableExists,
+  AVATAR_FILE_REASONS,
   claimNextDueFile,
   countOpenFiles,
+  currentAvatarUrl,
   markFileDone,
   recordFileFailure,
 } from '../models/avatarFileDeletionModel.js';
@@ -184,6 +186,16 @@ const runFileTasks = async () => {
     if (stopRequested) return;
     const task = await claimNextDueFile(CLAIM_LEASE_MS);
     if (!task) return;
+
+    // A file the person let go of and then took back as their photo stays:
+    // the task closes without a call to the cloud. A photo a moderator took
+    // down goes whatever the person did since.
+    if (task.reason !== AVATAR_FILE_REASONS.MODERATOR_REMOVED
+      && ownCloudPublicId(await currentAvatarUrl(task.user_id)) === task.public_id) {
+      await markFileDone(task.public_id);
+      logger.info('Avatar file deletion: kept, the person uses the file again', { userId: task.user_id });
+      continue;
+    }
 
     let result;
     try {

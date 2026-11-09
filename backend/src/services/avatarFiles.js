@@ -70,6 +70,27 @@ export const retireAvatarFile = async (client, { userId, oldUrl, newUrl, reason,
 };
 
 /**
+ * A new link — or none — is not the photo a moderator approved: the approval
+ * goes with the old link, in the caller's transaction. Other people would not
+ * see the new link anyway (the links differ); what this prevents is the old
+ * approval coming back unreviewed — a person clears an approved Google
+ * picture, and a later sign-in writes the very same link (Phase 3.5 review of
+ * PR 1a, LOW-2). Without migration 041 there is nothing to drop.
+ *
+ * @param {Object} client - pg client inside the caller's transaction
+ * @param {Object} change
+ * @param {string} change.userId
+ * @param {string|null} change.oldUrl
+ * @param {string|null} change.newUrl
+ * @param {boolean} change.moderationReady - avatarModerationReady(), asked before BEGIN
+ * @returns {Promise<void>}
+ */
+export const forgetApproval = async (client, { userId, oldUrl, newUrl, moderationReady }) => {
+  if (!moderationReady || oldUrl === newUrl) return;
+  await client.query('UPDATE users SET avatar_approved_url = NULL WHERE id = $1', [userId]);
+};
+
+/**
  * The window before migration 041 only: the old way — one destroy after COMMIT,
  * with the CDN's copies; the answer does not wait for the cloud, a failure goes
  * to the journal and the file stays until the account's folder is emptied.

@@ -57,8 +57,9 @@ import {
   markAsUsed as markResetTokenUsed,
 } from '../models/passwordResetModel.js';
 import { sendVerificationCodeEmail, sendPasswordResetEmail } from './emailService.js';
-import { AVATAR_FILE_REASONS, avatarFileDeletionTableExists } from '../models/avatarFileDeletionModel.js';
-import { destroyLaterWithoutQueue, retireAvatarFile } from './avatarFiles.js';
+import { AVATAR_FILE_REASONS } from '../models/avatarFileDeletionModel.js';
+import { avatarModerationReady } from '../models/avatarModerationModel.js';
+import { destroyLaterWithoutQueue, forgetApproval, retireAvatarFile } from './avatarFiles.js';
 
 /**
  * Argon2id Parameters
@@ -1062,9 +1063,9 @@ export async function updateUserProfile(userId, profileData) {
     return result.rows[0];
   }
 
-  // Asked before BEGIN: inside the transaction a missing table would fail the
-  // whole change (the window before migration 041).
-  const queueReady = await avatarFileDeletionTableExists();
+  // Asked before BEGIN: inside the transaction a missing table or column would
+  // fail the whole change (the window before migration 041).
+  const queueReady = await avatarModerationReady();
   const client = await getClient();
   let user;
   let fileWithoutQueue = null;
@@ -1081,10 +1082,17 @@ export async function updateUserProfile(userId, profileData) {
     }
     const result = await client.query(query, values);
     user = result.rows[0];
+    // Under the row's lock the UPDATE finds the row; should it not, nothing
+    // was written — the same answer as before the transaction.
+    if (!user) {
+      throw new Error('USER_NOT_FOUND');
+    }
     const newUrl = avatarUrl || null;
+    const oldUrl = before.rows[0].avatar_url;
+    await forgetApproval(client, { userId, oldUrl, newUrl, moderationReady: queueReady });
     fileWithoutQueue = await retireAvatarFile(client, {
       userId,
-      oldUrl: before.rows[0].avatar_url,
+      oldUrl,
       newUrl,
       reason: newUrl ? AVATAR_FILE_REASONS.REPLACED : AVATAR_FILE_REASONS.CLEARED,
       queueReady,
@@ -1155,7 +1163,7 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
   const now = new Date();
   // Asked before BEGIN (the window before migration 041): the registrant's own
   // photo, if it lies in our cloud, goes with everything else they set up.
-  const avatarQueueReady = await avatarFileDeletionTableExists();
+  const avatarQueueReady = await avatarModerationReady();
   const client = await getClient();
   let user;
   let deletedTokens = 0;
@@ -1195,9 +1203,13 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
     // The provider's picture is a new link: it waits for a moderator like any
     // other (models/avatarModerationModel.js). The registrant's file leaves the
     // cloud (services/avatarFiles.js).
+    const registrantUrl = registrant.rows[0]?.avatar_url ?? null;
+    await forgetApproval(client, {
+      userId: existingUser.id, oldUrl: registrantUrl, newUrl: user.avatar_url, moderationReady: avatarQueueReady,
+    });
     registrantFileWithoutQueue = await retireAvatarFile(client, {
       userId: existingUser.id,
-      oldUrl: registrant.rows[0]?.avatar_url ?? null,
+      oldUrl: registrantUrl,
       newUrl: user.avatar_url,
       reason: AVATAR_FILE_REASONS.TAKEN_OVER,
       queueReady: avatarQueueReady,
