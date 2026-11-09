@@ -263,6 +263,11 @@ class Establishment {
   /// [moment], поэтому «через полночь» и смена суток проверяются тестом, а не
   /// подгонкой под часы машины. Момент один на весь расчёт.
   ///
+  /// Снятое с показа заведение (приостановлено, на модерации, черновик,
+  /// отклонено, в архиве) — «Закрыто» при любых часах: избранное продолжает его
+  /// показывать (Координатор, 08.11.2026, «Да на 1–4»). По тому же ответу
+  /// [isOpenAt] его нет в «Прогулке» с «Открыто сейчас».
+  ///
   /// Смена дня D идёт от его открытия до закрытия; закрытие в момент открытия
   /// или раньше — уже следующие сутки (18:00–02:00, а 12:00–12:00 и
   /// 00:00–00:00 — ровно сутки от часа открытия). Поэтому сначала смотрим хвост
@@ -270,6 +275,8 @@ class Establishment {
   /// Если вчера нет данных, решает сегодняшняя запись: у места с часами на
   /// сегодня писать ночью «Часы не указаны» было бы странно.
   OpenStatus openStatusAt(DateTime moment) {
+    if (status != 'active') return const OpenStatus.closed();
+
     final now = moment.hour * 60 + moment.minute;
     final today = moment.weekday - 1;
 
@@ -288,12 +295,7 @@ class Establishment {
     if (hours?['is_open'] == false) return const OpenStatus.closed();
     final opens = clockMinutes(hours?['open']);
     final closes = clockMinutes(hours?['close']);
-    if (opens == null || closes == null) {
-      // Часы неизвестны: снятое с показа заведение — «Закрыто», как и раньше.
-      return status == 'active'
-          ? const OpenStatus.unknown()
-          : const OpenStatus.closed();
-    }
+    if (opens == null || closes == null) return const OpenStatus.unknown();
 
     final inShift = closes <= opens ? now >= opens : now >= opens && now < closes;
     return inShift
