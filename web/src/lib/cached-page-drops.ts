@@ -40,13 +40,16 @@ let hour = { start: 0, total: 0, byVisitor: new Map<string, number>() };
 /**
  * Whether a cached card page may be dropped now; true takes one drop from the
  * hour's allowance. The map holds at most DROPS_PER_HOUR visitors: one is
- * written only when a drop is granted.
+ * written only when a drop is granted. Every check runs after the one await,
+ * next to the count it guards: checked before it, a burst of requests waiting
+ * there together passed the hour's total all at once (second review,
+ * 10.11.2026).
  */
 export async function mayDropCachedPage(): Promise<boolean> {
+  const visitor = (await currentVisitor()) ?? NO_VISITOR;
   const now = Date.now();
   if (now - hour.start >= HOUR_MS) hour = { start: now, total: 0, byVisitor: new Map() };
   if (hour.total >= DROPS_PER_HOUR) return false;
-  const visitor = (await currentVisitor()) ?? NO_VISITOR;
   const spent = hour.byVisitor.get(visitor) ?? 0;
   if (spent >= DROPS_PER_VISITOR_HOUR) return false;
   hour.byVisitor.set(visitor, spent + 1);

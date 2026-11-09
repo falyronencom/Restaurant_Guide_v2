@@ -96,6 +96,27 @@ it('the whole site: the 120th drop of the hour goes, the 121st does not; the nex
   expect(revalidatePathMock).toHaveBeenCalledTimes(121);
 });
 
+it('a burst of 130 visitors at once — exactly 120 drops, not one more', async () => {
+  // Each request names another visitor, and headers() answers after a tick:
+  // all 130 wait at the same moment, as a burst of requests does.
+  const { headers } = jest.requireMock('next/headers') as { headers: jest.Mock };
+  let n = 0;
+  headers.mockImplementation(async () => {
+    n += 1;
+    const own = new Headers({ 'x-forwarded-for': `198.51.100.${n}, 152.233.10.1` });
+    await new Promise((resolve) => setImmediate(resolve));
+    return own;
+  });
+  const { mayDropCachedPage } = await import('@/lib/cached-page-drops');
+
+  try {
+    const granted = await Promise.all(Array.from({ length: 130 }, () => mayDropCachedPage()));
+    expect(granted.filter(Boolean)).toHaveLength(120);
+  } finally {
+    headers.mockImplementation(() => Promise.resolve(headerStore));
+  }
+});
+
 it.each([
   ['the sitemap', '/sitemap.xml'],
   ['the home page', '/'],
