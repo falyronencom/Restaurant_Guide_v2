@@ -36,6 +36,18 @@ class DeleteAccountScreen extends StatelessWidget {
   /// Адрес поддержки — тот же, что в отказах сервера.
   static const String supportEmail = 'support@nirivio.by';
 
+  /// Что может остаться вне приложения — текст Координатора дословно
+  /// (09.11.2026, «Текст да, 3 месяца»; облачный критик 2Г, п. 4 итога):
+  /// выделенное начало, затем текст. На сайте — те же слова
+  /// (web/src/lib/account/deletion.ts).
+  static const String outsideCopiesLead = 'Что может остаться вне приложения.';
+  static const String outsideCopiesText =
+      'Учётная запись удаляется из приложения и с сайта сразу. Какое-то время '
+      'следы ещё хранятся в служебных местах: в журналах сервера — до 7 дней, '
+      'в отправленных вам письмах у почтовой службы — до 30 дней, в '
+      'зашифрованных копиях базы — до 3 месяцев. Эти копии не публикуются: '
+      'они нужны, чтобы восстановить сервис при сбое и проверять обновления.';
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<AccountDeletionProvider>(
@@ -190,9 +202,24 @@ class _DeleteAccountViewState extends State<_DeleteAccountView> {
         const _Point('Брони — у заведения останутся дата, время и число гостей. '
             'Предстоящие брони отменятся, заведение получит уведомление'),
         const SizedBox(height: 16),
+        const Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: DeleteAccountScreen.outsideCopiesLead,
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              TextSpan(text: ' ${DeleteAccountScreen.outsideCopiesText}'),
+            ],
+          ),
+          style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, height: 1.35),
+        ),
+        const SizedBox(height: 16),
+        // Только почта: ни приложение, ни сайт не заводят учётную запись по
+        // номеру (вход по номеру — когда появятся СМС, решение 19.10.2026;
+        // облачный критик 2Г, П3-04).
         const Text(
-          'Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту '
-          'или телефон.',
+          'Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту.',
           style: TextStyle(fontSize: 15, color: AppTheme.textPrimary, height: 1.35),
         ),
         const SizedBox(height: 24),
