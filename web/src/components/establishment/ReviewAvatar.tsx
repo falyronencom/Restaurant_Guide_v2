@@ -14,6 +14,10 @@ import { cn } from '@/lib/utils';
  * client island inside the server card; next/image re-requests the photo after
  * hydration when onError is set, so a failure that happened before hydration
  * still reaches it.
+ *
+ * Always `unoptimized`: the photo loads straight from its host and the site's
+ * image optimizer keeps no copy of it — a copy there outlived a deleted account
+ * on production (09.11.2026; lib/avatar-source).
  */
 
 // Stable avatar tint by author name (design uses a small varied palette).
@@ -57,10 +61,11 @@ export function ReviewAvatar({
           alt={name}
           fill
           sizes='42px'
-          unoptimized={!shown.optimized}
-          // A sign-in photo comes straight from Google/Yandex: they see the
-          // guest's address but need not see which page asked (both serve
-          // without a Referer — checked 12.10.2026).
+          unoptimized
+          // The photo comes straight from our cloud or Google/Yandex: they see
+          // the guest's address but need not see which page asked (both
+          // providers serve without a Referer — checked 12.10.2026; the cloud
+          // serves the mobile app, which sends none).
           referrerPolicy='no-referrer'
           className='object-cover'
           onError={() => setFailedSrc(shown.src)}

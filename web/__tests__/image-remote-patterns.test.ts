@@ -18,6 +18,8 @@ import { hasRemoteMatch } from 'next/dist/shared/lib/match-remote-pattern';
 import nextConfig from '../next.config';
 
 const OUR_CLOUD = 'davrzdre8';
+// Папка владельца в облаке — UUID (backend config/cloudinary.js, ownedFolders).
+const CARD = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
 
 // Оптимизатор Next 16 сверяет адрес с ДВУМЯ списками: устаревшим
 // images.domains и remotePatterns (next/dist/server/image-optimizer.js —
@@ -37,7 +39,7 @@ describe('images.remotePatterns — Cloudinary только нашего акк�
       allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1759000000/establishments/a/photo.jpg`),
     ).toBe(true);
     expect(
-      allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/c_fill,w_600/v1/b/menu.webp?_a=BAMAPqfi0`),
+      allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/c_fill,w_600/v1/establishments/b/menu.webp?_a=BAMAPqfi0`),
     ).toBe(true);
   });
 
@@ -74,6 +76,47 @@ describe('images.remotePatterns — Cloudinary только нашего акк�
 
   it('оптимизатор качает не больше 5 МБ одного файла (PDF-меню лежат рядом с фото)', () => {
     expect(nextConfig.images?.maximumResponseBody).toBe(5_000_000);
+  });
+
+  // Все формы ссылок на фото карточек, что выдаёт сервер (backend
+  // config/cloudinary.js: generateImageUrl, ISSUED_PHOTO_LINK_FORMS, secure_url
+  // загрузки; папки — uploadImage и загрузки мастера партнёра temp/<id>).
+  it.each([
+    ['оригинал', `c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/${CARD}/interior/abc123`],
+    ['оригинал до 20.07.2026', `c_limit,h_1080,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/${CARD}/menu/abc123`],
+    ['превью', `c_limit,w_1200/f_auto,fl_progressive,q_auto/v1/establishments/${CARD}/dishes/abc123`],
+    ['миниатюра', `c_fill,h_300,w_400/f_auto,fl_progressive,q_auto/v1/establishments/${CARD}/exterior/abc123`],
+    ['обложка PDF-меню', `c_fill,h_300,pg_1,w_400/f_jpg,q_auto/v1762000000/establishments/${CARD}/menu_pdf/abc123.jpg`],
+    ['ссылка загрузки как есть', `v1762000000/establishments/${CARD}/promotions/abc123.jpg`],
+    ['без версии', `establishments/${CARD}/interior/abc123.jpg`],
+    ['загрузка мастера партнёра', `c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/establishments/temp/${CARD}/interior/abc123`],
+  ])('фото карточки проходит: %s', (_form, path) => {
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/${path}`)).toBe(true);
+  });
+
+  // Сайт не хранит копий фото людей: 09.11.2026 на проде копия фото профиля в
+  // кэше /_next/image отдавалась после удаления учётной записи (облако — 404,
+  // сайт — 200). Страницы фото профиля ведут мимо оптимизатора
+  // (lib/avatar-source); здесь — что и прямой адрес /_next/image?url=<фото из
+  // avatars/> получает отказ 400. Сторож: краснеет, если папка avatars/ снова
+  // попадёт в remotePatterns — в любой форме, какую понимает облако.
+  it.each([
+    ['ссылка загрузки', `v1791566923/avatars/${CARD}/photo.jpg`],
+    ['без версии', `avatars/${CARD}/photo.jpg`],
+    ['без расширения', `v1/avatars/${CARD}/photo`],
+    ['с разрешённой строкой преобразования', `c_limit,w_1920/f_auto,fl_progressive,q_auto/v1/avatars/${CARD}/photo`],
+    ['с одним сегментом преобразования', `c_fill,h_300,w_400/v1/avatars/${CARD}/photo.jpg`],
+    ['папка, записанная кодами (%61 = a)', `v1/%61vatars/${CARD}/photo.jpg`],
+    ['обход через ../ после папки карточек', `establishments/../avatars/${CARD}/photo.jpg`],
+    ['обход через %2e%2e после папки карточек', `establishments/%2e%2e/avatars/${CARD}/photo.jpg`],
+  ])('фото профиля из avatars/ — нет: %s', (_form, path) => {
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/${path}`)).toBe(false);
+  });
+
+  it('из нашего облака — только папка карточек establishments/', () => {
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1/sample.jpg`)).toBe(false);
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1/other/${CARD}/a.jpg`)).toBe(false);
+    expect(allowed(`https://res.cloudinary.com/${OUR_CLOUD}/image/upload/v1/establishmentsx/${CARD}/a.jpg`)).toBe(false);
   });
 
   it('наше облако — только по https', () => {
