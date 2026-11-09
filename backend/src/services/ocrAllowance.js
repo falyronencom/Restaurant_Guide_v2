@@ -51,7 +51,14 @@
  * upload allowance's technique: INCR is atomic, so parallel saves at the edge
  * cannot all read «one left» and all pass. Over a limit the reservation is given
  * back at once and a line goes to the log. The counters carry the date in their
- * names and expire at Minsk midnight (utils/minskDay.js).
+ * names and expire at Minsk midnight (utils/minskDay.js) — all but two, kept two
+ * weeks longer (CEILING_HISTORY_DAYS) and read by no limit: the ceiling's pages
+ * and the day's refusals (REFUSAL_KINDS). They are what the `recognition` block
+ * of GET /api/v1/search/health shows (services/ocrCeilingHealth.js), and the
+ * Friday watchdog turns red when the ceiling refused a file in those days
+ * (thread «Потолок распознавания: малые правки», finding 3; the Coordinator's
+ * choice, option Б, 08.11.2026): until then a ceiling that had refused partners
+ * was seen only in the log.
  *
  * What a refusal does. At a door — the account's jobs are spent, or the day's
  * pages are spent already (spentPagesRefusal): nothing is queued; the save or the
@@ -71,13 +78,15 @@
  * here (config/redis.js answers «first increment» and skips the give-back).
  *
  * Accepted: pages are counted before the call and are not given back when it
- * fails, and their number comes from the file itself: the count can be higher
- * than what was paid, the safe side. Two requests queuing the same file at the
+ * fails, and their number comes from the file itself — the pages it holds, not
+ * the count it declares (ocr/pdfTextExtractor.js pagesHeld): the count can be
+ * higher than what was paid, the safe side. Two requests queuing the same file at the
  * same moment can both find no active job and both reserve; the second may then
  * get the first's job back from OcrJobModel.enqueue and keep its reservation — the
  * day's count of that account comes out one higher. On the last attempt a failed
  * image read falls back to the text layer in one structurer call
- * (ocr/ocrService.js), inside the pages already counted.
+ * (ocr/ocrService.js), inside the pages already counted: its text is cut to
+ * ten thousand characters a page counted.
  */
 
 import pool from '../config/database.js';
@@ -134,6 +143,72 @@ const CEILING_VARIABLE = 'OCR_DAILY_PAGE_CEILING';
  * thread, delegated by the Coordinator.
  */
 export const DAILY_OCR_ACCOUNT_PAGE_LIMIT = 100;
+
+/**
+ * Days the ceiling's pages and the refusals of a Minsk day are kept after it.
+ * The Friday watchdog (backend/scripts/openrouter-usage/watch.js) reads the day it
+ * runs and the fourteen before: every refusal stays in two Friday runs, so a run
+ * deferred by the deploy guard, delayed or missed by GitHub's schedule loses
+ * nothing — the next one still sees the week (review of the thread by the lens,
+ * finding 1: with seven days a deferred run lost the alarm for good). The limits
+ * read the current day's keys only: a day kept counts against nothing.
+ */
+export const CEILING_HISTORY_DAYS = 14;
+
+const CEILING_HISTORY_SECONDS = CEILING_HISTORY_DAYS * 24 * 60 * 60;
+
+/**
+ * The refusals of a day, counted where they happen, by whom a refusal shuts out.
+ * At a door (enqueueWithinDailyAllowance) nothing is queued; when a job first
+ * runs (takePagesForAttempt) the file is not read. *_ceiling — the ceiling of all
+ * the regular accounts: other accounts spent the day, the account's own share
+ * would have let the file through (the pots are asked in the order of pagePots,
+ * the account's own first). *_pool — the pool of all the unconfirmed accounts, of
+ * pages or of jobs (services/unconfirmedAllowance.js): every new partner who has
+ * not confirmed an e-mail waits for the next day. *_share — one account's own
+ * limit: its pages, its jobs of the day, or an unconfirmed account's share.
+ * Requests are counted, not files: a file refused twice counts twice.
+ */
+export const REFUSAL_KINDS = Object.freeze([
+  'door_ceiling', 'door_pool', 'door_share', 'reading_ceiling', 'reading_pool', 'reading_share',
+]);
+
+/**
+ * The kind of a refusal by pages, from where it happened and the pot that refused.
+ *
+ * @param {'door'|'reading'} where
+ * @param {string} pot - A pot of pagePots
+ * @returns {string} One of REFUSAL_KINDS
+ */
+const pagesRefusalKind = (where, pot) => {
+  if (pot === 'ceiling') return `${where}_ceiling`;
+  if (pot === 'unconfirmed_pool') return `${where}_pool`;
+  return `${where}_share`;
+};
+
+/**
+ * The counter of one kind of refusal for the Minsk day of `now`.
+ *
+ * @param {string} kind - One of REFUSAL_KINDS
+ * @param {Date} now
+ * @returns {string}
+ */
+export const dailyOcrRefusalKey = (kind, now) => `ocr:refusals:${minskDate(now)}:${kind}`;
+
+/**
+ * Count one refusal for the Minsk day of `now`. Never throws: incrementWithExpiry
+ * answers «first increment» when Redis is not there, and the refusal stands.
+ *
+ * @param {string} kind - One of REFUSAL_KINDS
+ * @param {Date} now
+ * @returns {Promise<void>}
+ */
+const countRefusal = async (kind, now) => {
+  await incrementWithExpiry(
+    dailyOcrRefusalKey(kind, now),
+    secondsUntilMinskMidnight(now) + CEILING_HISTORY_SECONDS,
+  );
+};
 
 /**
  * The ceiling now: the variable when it is a whole number above zero, otherwise
@@ -241,7 +316,7 @@ const accountStanding = async (userId) => {
  * @param {string} userId
  * @param {boolean} unconfirmed
  * @param {Date} now
- * @returns {Array<{ pot: 'account'|'unconfirmed'|'ceiling', key: string, limit: number }>}
+ * @returns {Array<{ pot: 'account'|'unconfirmed_pool'|'unconfirmed'|'ceiling', key: string, limit: number }>}
  */
 const pagePots = (userId, unconfirmed, now) => {
   const ceiling = dailyOcrPageCeiling();
@@ -319,7 +394,9 @@ export const takePagesForAttempt = async ({
   const mayRefuse = attempt <= 1;
   const taken = [];
   for (const { pot, key, limit } of pagePots(userId, standing.unconfirmed, now)) {
-    const count = await incrementWithExpiry(key, secondsLeft, pages);
+    // The ceiling's pages are kept a week past their day (CEILING_HISTORY_DAYS).
+    const expiry = pot === 'ceiling' ? secondsLeft + CEILING_HISTORY_SECONDS : secondsLeft;
+    const count = await incrementWithExpiry(key, expiry, pages);
     taken.push(key);
     if (mayRefuse && count > limit) {
       for (const takenKey of taken) {
@@ -335,6 +412,7 @@ export const takePagesForAttempt = async ({
         pages: count,
         pagesLimit: limit,
       });
+      await countRefusal(pagesRefusalKind('reading', pot), now);
       throw Object.assign(new Error(RECOGNITION_CEILING_MESSAGE), { code: RECOGNITION_CEILING });
     }
   }
@@ -421,6 +499,7 @@ export const enqueueWithinDailyAllowance = async ({ userId, establishmentId, med
         pages: spent.pages,
         pagesLimit: spent.limit,
       });
+      await countRefusal(pagesRefusalKind('door', spent.pot), new Date(Date.now()));
       return { queued: false, refusal: spent };
     }
   }
@@ -434,6 +513,8 @@ export const enqueueWithinDailyAllowance = async ({ userId, establishmentId, med
       jobs: allowance.jobs,
       jobsLimit: allowance.limit,
     });
+    // The account's own jobs of the day.
+    await countRefusal('door_share', new Date(Date.now()));
     return { queued: false, refusal: allowance };
   }
 
@@ -449,6 +530,7 @@ export const enqueueWithinDailyAllowance = async ({ userId, establishmentId, med
       establishmentId,
       mediaId,
     });
+    await countRefusal(shared.pool ? 'door_pool' : 'door_share', new Date(Date.now()));
     return { queued: false, refusal: shared };
   }
 

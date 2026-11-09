@@ -235,6 +235,9 @@ export const reserveUnconfirmedOcrJob = async (userId) => {
       granted: false,
       jobs: overShared ? jobs : ownJobs,
       limit,
+      // The pool of all unconfirmed accounts refused, not the account's share:
+      // counted apart for the health block (ocrAllowance.js REFUSAL_KINDS).
+      pool: overShared,
       ...renewal(nowMs, secondsLeft),
     };
   }
@@ -244,14 +247,16 @@ export const reserveUnconfirmedOcrJob = async (userId) => {
 
 /**
  * Where a page read for an unconfirmed account is counted, next to what every
- * account's page is counted against (services/ocrAllowance.js).
+ * account's page is counted against (services/ocrAllowance.js): the pool of all
+ * the unconfirmed accounts ('unconfirmed_pool'), then the account's share
+ * ('unconfirmed').
  *
  * @param {string} userId
  * @param {Date} now
- * @returns {Array<{ pot: 'unconfirmed', key: string, limit: number }>}
+ * @returns {Array<{ pot: 'unconfirmed_pool'|'unconfirmed', key: string, limit: number }>}
  */
 export const unconfirmedPagePots = (userId, now) => [
-  { pot: 'unconfirmed', key: unconfirmedKeys(now).ocrPages, limit: UNCONFIRMED_DAILY_LIMITS.ocrPages },
+  { pot: 'unconfirmed_pool', key: unconfirmedKeys(now).ocrPages, limit: UNCONFIRMED_DAILY_LIMITS.ocrPages },
   {
     pot: 'unconfirmed',
     key: unconfirmedAccountKeys(userId, now).ocrPages,
