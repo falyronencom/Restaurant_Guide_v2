@@ -44,8 +44,11 @@ const { default: pool } = await import('../../config/database.js');
 const OcrJobModel = await import('../../models/ocrJobModel.js');
 const { default: logger } = await import('../../utils/logger.js');
 const {
+  CEILING_HISTORY_DAYS,
+  REFUSAL_KINDS,
   RECOGNITION_CEILING,
   accountPageLimit,
+  dailyOcrRefusalKey,
   dailyOcrPageCeiling,
   reserveDailyOcrJob,
   enqueueWithinDailyAllowance,
@@ -69,6 +72,9 @@ const CEILING_PAGES = 'ocr:ceiling:2026-10-17:pages';
 const POOL_PAGES = 'unconfirmed:daily:2026-10-17:ocr_pages';
 const SHARE_PAGES = `unconfirmed:daily:2026-10-17:account:${USER}:ocr_pages`;
 const SECONDS_TO_MIDNIGHT = 43200;
+/** Страницы потолка и отказы дня живут две недели после своих суток (табло проверки здоровья). */
+const HISTORY_SECONDS = 14 * 24 * 60 * 60;
+const refusalKey = (kind, date = '2026-10-17') => `ocr:refusals:${date}:${kind}`;
 
 const seedHouse = (flag) => {
   pool.query.mockResolvedValue({ rows: [{ is_service_account: flag }] });
@@ -269,7 +275,7 @@ describe('enqueueWithinDailyAllowance — учётка без подтвержд
     expect(result).toEqual({
       queued: false,
       refusal: {
-        granted: false, jobs: 21, limit: 20, retryAfter: 43200, resetAt: '2026-10-17T21:00:00.000Z',
+        granted: false, jobs: 21, limit: 20, pool: true, retryAfter: 43200, resetAt: '2026-10-17T21:00:00.000Z',
       },
     });
     expect(OcrJobModel.enqueue).not.toHaveBeenCalled();
@@ -387,7 +393,9 @@ describe('дверь смотрит, не потрачены ли страниц
         resetAt: '2026-10-17T21:00:00.000Z',
       },
     });
-    expect(incrementWithExpiry).not.toHaveBeenCalled();
+    // Предел заданий не тронут; посчитан только отказ общего потолка у двери —
+    // для табло (с 08.11.2026; до того здесь не звали ничего).
+    expect(incrementWithExpiry.mock.calls).toEqual([[refusalKey('door_ceiling'), SECONDS_TO_MIDNIGHT + HISTORY_SECONDS]]);
     expect(OcrJobModel.enqueue).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith('Recognition pages of the day spent: job not queued', {
       userId: USER,
@@ -410,15 +418,15 @@ describe('дверь смотрит, не потрачены ли страниц
   });
 
   test.each([
-    ['пул неподтверждённых', { [POOL_PAGES]: 40 }, 40],
-    ['доля учётки', { [SHARE_PAGES]: 20 }, 20],
-  ])('неподтверждённая: %s выбран — задание не ставится', async (_label, values, limit) => {
+    ['пул неподтверждённых', { [POOL_PAGES]: 40 }, 40, 'unconfirmed_pool'],
+    ['доля учётки', { [SHARE_PAGES]: 20 }, 20, 'unconfirmed'],
+  ])('неподтверждённая: %s выбран — задание не ставится', async (_label, values, limit, pot) => {
     standing({ confirmed: false, is_service_account: false });
     counters(values);
 
     expect(await enqueueWithinDailyAllowance(request)).toMatchObject({
       queued: false,
-      refusal: { pot: 'unconfirmed', pages: limit, limit },
+      refusal: { pot, pages: limit, limit },
     });
   });
 
@@ -469,15 +477,17 @@ describe('takePagesForAttempt — страницы попытки, когда и
     values.forEach((value) => incrementWithExpiry.mockResolvedValueOnce(value));
   };
 
-  test('подтверждённая: свой предел и потолок всех, шаг — страницы, срок — до полуночи Минска', async () => {
+  test('подтверждённая: свой предел и потолок всех, шаг — страницы, срок — до полуночи Минска; потолок — ещё неделю', async () => {
     standing({ confirmed: true, is_service_account: false });
     countersAfter(9, 30);
 
     await takePagesForAttempt(attemptOf(9));
 
+    // Страницы потолка живут неделю после суток — их читает табло проверки
+    // здоровья (с 08.11.2026); предел читает только ключ текущих суток.
     expect(incrementWithExpiry.mock.calls).toEqual([
       [OWN_PAGES, SECONDS_TO_MIDNIGHT, 9],
-      [CEILING_PAGES, SECONDS_TO_MIDNIGHT, 9],
+      [CEILING_PAGES, SECONDS_TO_MIDNIGHT + HISTORY_SECONDS, 9],
     ]);
     expect(decrement).not.toHaveBeenCalled();
   });
@@ -500,7 +510,7 @@ describe('takePagesForAttempt — страницы попытки, когда и
 
     expect(incrementWithExpiry.mock.calls).toEqual([
       [`ocr:daily:${USER}:2026-10-18:pages`, 86400, 1],
-      ['ocr:ceiling:2026-10-18:pages', 86400, 1],
+      ['ocr:ceiling:2026-10-18:pages', 86400 + HISTORY_SECONDS, 1],
     ]);
   });
 
@@ -557,7 +567,8 @@ describe('takePagesForAttempt — страницы попытки, когда и
     const failure = await takePagesForAttempt(attemptOf(1)).catch((error) => error);
 
     expect(failure.code).toBe(RECOGNITION_CEILING);
-    expect(incrementWithExpiry).toHaveBeenCalledTimes(1);
+    // Потолка всех не коснулись; отказ доли посчитан для табло (с 08.11.2026).
+    expect(incrementWithExpiry.mock.calls.map(([key]) => key)).toEqual([OWN_PAGES, refusalKey('reading_share')]);
     expect(decrement.mock.calls).toEqual([[OWN_PAGES, 1]]);
   });
 
@@ -594,6 +605,143 @@ describe('takePagesForAttempt — страницы попытки, когда и
   test('текст отказа партнёру — «временно недоступно», в строке нет чисел для запроса пункта реестра', () => {
     expect(failureReasonOf(RECOGNITION_CEILING_MESSAGE)).toBe('unavailable');
     expect(RECOGNITION_CEILING_MESSAGE).not.toMatch(/\d/);
+  });
+});
+
+// Нитка «Потолок распознавания: малые правки», находка 3 (вариант Б
+// Координатора, 08.11.2026): отказ дня считается там, где случился, — для
+// табло проверки здоровья (services/ocrCeilingHealth.js) и пятничного сторожа,
+// который краснеет на отказах общего потолка. До правки отказ шёл только в журнал.
+describe('отказы дня считаются по видам — для табло и пятничного сторожа', () => {
+  const request = { userId: USER, establishmentId: CARD, mediaId: MEDIA };
+  const refusalCalls = () => incrementWithExpiry.mock.calls.filter(([key]) => key.startsWith('ocr:refusals:'));
+  const counted = (kind) => [[refusalKey(kind), SECONDS_TO_MIDNIGHT + HISTORY_SECONDS]];
+  const standing = (row) => {
+    pool.query.mockResolvedValue({ rows: [row] });
+  };
+  const atDoor = (values) => {
+    getCounter.mockImplementation(async (key) => values[key] ?? 0);
+  };
+  const attemptOf = (pages, attempt = 1) => ({
+    userId: USER, pages, attempt, jobId: 'job-9', mediaId: MEDIA,
+  });
+
+  test('виды и неделя хранения — те, что читают табло и сторож', async () => {
+    expect(REFUSAL_KINDS).toEqual(['door_ceiling', 'door_pool', 'door_share', 'reading_ceiling', 'reading_pool', 'reading_share']);
+    expect(CEILING_HISTORY_DAYS).toBe(14);
+    expect(dailyOcrRefusalKey('door_pool', new Date(NOON))).toBe('ocr:refusals:2026-10-17:door_pool');
+    // Сторож идёт без зависимостей и кода сервера не подключает: свой список — тот же.
+    const { REFUSAL_FIELDS } = await import('../../../scripts/openrouter-usage/watch.js');
+    expect([...REFUSAL_FIELDS]).toEqual([...REFUSAL_KINDS]);
+  });
+
+  test('у двери: общий потолок выбран (100 из 100) — door_ceiling, срок — неделя после суток', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    atDoor({ [CEILING_PAGES]: 100 });
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(false);
+    expect(refusalCalls()).toEqual(counted('door_ceiling'));
+  });
+
+  test('у двери: 99 из 100 — задание ставится, отказа нет (граница N и N+1 — в тесте выше)', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    atDoor({ [CEILING_PAGES]: 99 });
+    incrementWithExpiry.mockResolvedValueOnce(1);
+    OcrJobModel.enqueue.mockResolvedValue({ id: 'job-7' });
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(true);
+    expect(refusalCalls()).toEqual([]);
+  });
+
+  test.each([
+    ['своя доля выбрана (50 из 50)', { confirmed: true }, { [OWN_PAGES]: 50 }],
+    ['неподтверждённая: её доля выбрана', { confirmed: false }, { [SHARE_PAGES]: 20 }],
+    ['и доля, и потолок выбраны — первой спрошена доля', { confirmed: true }, { [OWN_PAGES]: 50, [CEILING_PAGES]: 100 }],
+  ])('у двери: %s — door_share', async (_label, row, values) => {
+    standing({ ...row, is_service_account: false });
+    atDoor(values);
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(false);
+    expect(refusalCalls()).toEqual(counted('door_share'));
+  });
+
+  test('у двери: пул неподтверждённых страниц выбран (40 из 40) — door_pool: ждут все новые без почты', async () => {
+    standing({ confirmed: false, is_service_account: false });
+    atDoor({ [POOL_PAGES]: 40 });
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(false);
+    expect(refusalCalls()).toEqual(counted('door_pool'));
+  });
+
+  test('у двери: задания дня учётки выбраны (101-е) — door_share', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    incrementWithExpiry.mockResolvedValueOnce(101);
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(false);
+    expect(refusalCalls()).toEqual(counted('door_share'));
+  });
+
+  test.each([
+    ['21-е задание на всех неподтверждённых — пул: door_pool', [3, 21, 3], 'door_pool'],
+    ['11-е задание одной неподтверждённой — её доля: door_share', [11, 11, 11], 'door_share'],
+  ])('у двери: %s', async (_label, counters, kind) => {
+    standing({ confirmed: false, is_service_account: false });
+    counters.forEach((value) => incrementWithExpiry.mockResolvedValueOnce(value));
+
+    expect((await enqueueWithinDailyAllowance(request)).queued).toBe(false);
+    expect(refusalCalls()).toEqual(counted(kind));
+  });
+
+  test('при чтении: общий потолок — reading_ceiling; доля учётки — reading_share', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    incrementWithExpiry.mockResolvedValueOnce(10).mockResolvedValueOnce(101);
+    await expect(takePagesForAttempt(attemptOf(10))).rejects.toMatchObject({ code: RECOGNITION_CEILING });
+    expect(refusalCalls()).toEqual(counted('reading_ceiling'));
+
+    incrementWithExpiry.mockReset();
+    incrementWithExpiry.mockResolvedValueOnce(51);
+    await expect(takePagesForAttempt(attemptOf(1))).rejects.toMatchObject({ code: RECOGNITION_CEILING });
+    expect(refusalCalls()).toEqual(counted('reading_share'));
+  });
+
+  test('при чтении, неподтверждённая: пул всех (41-я) — reading_pool; её доля (21-я) — reading_share', async () => {
+    standing({ confirmed: false, is_service_account: false });
+    incrementWithExpiry.mockResolvedValueOnce(5).mockResolvedValueOnce(41);
+    await expect(takePagesForAttempt(attemptOf(5))).rejects.toMatchObject({ code: RECOGNITION_CEILING });
+    expect(refusalCalls()).toEqual(counted('reading_pool'));
+
+    incrementWithExpiry.mockReset();
+    incrementWithExpiry.mockResolvedValueOnce(21).mockResolvedValueOnce(30).mockResolvedValueOnce(21);
+    await expect(takePagesForAttempt(attemptOf(1))).rejects.toMatchObject({ code: RECOGNITION_CEILING });
+    expect(refusalCalls()).toEqual(counted('reading_share'));
+  });
+
+  test('при чтении: влезло (100 из 100) — отказа нет', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    incrementWithExpiry.mockResolvedValueOnce(10).mockResolvedValueOnce(100);
+
+    await takePagesForAttempt(attemptOf(10));
+
+    expect(refusalCalls()).toEqual([]);
+  });
+
+  test('повтор сверх предела не отказывает — и отказа не считает', async () => {
+    standing({ confirmed: true, is_service_account: false });
+    incrementWithExpiry.mockResolvedValueOnce(60).mockResolvedValueOnce(130);
+
+    await takePagesForAttempt(attemptOf(10, 2));
+
+    expect(refusalCalls()).toEqual([]);
+  });
+
+  test('после минской полуночи — счётчик отказа новых суток', async () => {
+    Date.now.mockReturnValue(Date.parse('2026-10-17T21:00:00.000Z'));
+    standing({ confirmed: true, is_service_account: false });
+    atDoor({ 'ocr:ceiling:2026-10-18:pages': 100 });
+
+    await enqueueWithinDailyAllowance(request);
+
+    expect(refusalCalls()).toEqual([['ocr:refusals:2026-10-18:door_ceiling', 86400 + HISTORY_SECONDS]]);
   });
 });
 

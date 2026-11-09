@@ -421,6 +421,10 @@ function addDishCondition({ dish, priceMaxByn, dishOrSearch, dishVariants, dishM
  *   - String: "10:00-22:00" → extracts "22:00"
  *   - Object: {"open":"10:00","close":"22:00"} → extracts "22:00"
  *   - Object without close (e.g. {"is_open":false}) → NULL
+ *   - Day off that still carries times ({"is_open":false,"open":"18:00",
+ *     "close":"03:00"} — the app keeps a switched-off day's times) → NULL:
+ *     a closed day says nothing about closing time. Only JSON false closes a
+ *     day, as in the app and on the site.
  *
  * Used inside jsonb_each() via LATERAL join.
  * Variable `val` refers to the JSONB value for each day.
@@ -433,7 +437,8 @@ const CLOSE_TIME_SQL = `
           THEN SPLIT_PART(val #>> '{}', '-', 2)
           ELSE NULL END
       WHEN 'object' THEN
-        CASE WHEN val->>'close' IS NOT NULL AND val->>'close' ~ '^[0-9]{1,2}:[0-9]{2}$'
+        CASE WHEN (val->'is_open') IS DISTINCT FROM 'false'::jsonb
+          AND val->>'close' IS NOT NULL AND val->>'close' ~ '^[0-9]{1,2}:[0-9]{2}$'
           THEN val->>'close'
           ELSE NULL END
       ELSE NULL

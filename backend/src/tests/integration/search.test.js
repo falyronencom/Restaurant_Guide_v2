@@ -1190,3 +1190,62 @@ describe('Search System - «%» и «_» в запросе ищутся букв
     expect(plain.establishments.map((e) => e.name).sort()).toEqual(['Бар 100%', 'Бар 1000']);
   });
 });
+
+// Отбор по часам и выходной день со временем (находка нитки «Часы работы»,
+// слово Координатора 08.11.2026 «Да на 1–4»). Мастер приложения хранит время и
+// у выключенного дня ({is_open: false, open, close}), а отбор брал это время как
+// время закрытия: место попадало в «до утра» и «круглосуточно» по дню, когда оно
+// закрыто, и выпадало из «до 22». Все три пути поиска делят одно извлечение
+// времени закрытия (CLOSE_TIME_SQL) — проверяется каждый.
+describe('Отбор по часам: выходной день со временем не считается', () => {
+  const week = (days) => JSON.stringify(Object.fromEntries(
+    ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+      .map((day) => [day, days[day] ?? { is_open: false }]),
+  ));
+  const every = (value) => week(Object.fromEntries(
+    ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((d) => [d, value]),
+  ));
+
+  beforeEach(async () => {
+    const insert = (name, lat, workingHours) => query(`
+      INSERT INTO establishments (id, partner_id, name, slug, description, city, address, latitude, longitude, categories, cuisines, status, working_hours, price_range, created_at, updated_at)
+      VALUES (gen_random_uuid(), $1, $2, gen_random_uuid()::text, 'Часы', 'Минск', 'Адрес', $3, 27.5, ARRAY['Кафе']::varchar[], ARRAY['Европейская']::varchar[], 'active', $4::jsonb, '$$', NOW(), NOW())
+    `, [partnerId, name, lat, workingHours]);
+
+    await insert('Ранний', 53.900, every('10:00-20:00'));
+    await insert('Сова', 53.901, every('18:00-03:00'));
+    await insert('Круглые сутки', 53.902, every('00:00-23:59'));
+    // Работает только в понедельник до 20:00. Во вторник и среду — выходной,
+    // но время у дня осталось: ночное и круглосуточное.
+    await insert('Выходной со временем', 53.903, week({
+      monday: '10:00-20:00',
+      tuesday: { is_open: false, open: '18:00', close: '03:00' },
+      wednesday: { is_open: false, open: '00:00', close: '23:59' },
+    }));
+  });
+
+  const names = (res) => res.body.data.establishments.map((e) => e.name).sort();
+
+  const paths = {
+    'список рядом (searchByRadius)': (hours) => request(app)
+      .get('/api/v1/search/establishments')
+      .query({ latitude: 53.9, longitude: 27.5, radius: 5, hours_filter: hours }),
+    'карта (searchByBounds)': (hours) => request(app)
+      .get('/api/v1/search/map')
+      .query({ neLat: 53.95, swLat: 53.85, neLon: 27.6, swLon: 27.4, hours_filter: hours }),
+    'список сайта без точки (searchWithoutLocation)': (hours) => request(app)
+      .get('/api/v1/public/establishments')
+      .query({ hours_filter: hours }),
+  };
+
+  describe.each(Object.entries(paths))('%s', (_path, get) => {
+    test.each([
+      ['until_22', ['Выходной со временем', 'Ранний']],
+      ['until_morning', ['Сова']],
+      ['24_hours', ['Круглые сутки']],
+    ])('%s', async (hours, expected) => {
+      const res = await get(hours).expect(200);
+      expect(names(res)).toEqual(expected);
+    });
+  });
+});

@@ -216,9 +216,14 @@ export const classifyChildEnd = ({ handedOver, code, exitSignal, stderr, peakRes
  * @param {(pid: number) => number|null} [options.readResident] - Resident-memory reader (tests)
  * @param {Function} [options.forkChild] - child_process.fork (tests)
  * @returns {Promise<{ text: string, textLength: number, numpages: number,
- *   peakResidentBytes: number|null, oomScoreAdjusted: boolean, durationMs: number }>}
- *   text — at most maxChars; textLength — the text's full length;
- *   peakResidentBytes — the largest resident sample, null where none could be read
+ *   lastPageFound: number, pagesInTree: number|null, peakResidentBytes: number|null,
+ *   oomScoreAdjusted: boolean, durationMs: number }>}
+ *   text — at most maxChars; textLength — the text's full length; numpages —
+ *   the page count the file declares; lastPageFound — the last of the pages
+ *   read that loaded, 0 when none did; pagesInTree — the pages the file holds
+ *   when its page tree ends before the pages read, null otherwise
+ *   (pdfParseChild); peakResidentBytes — the largest resident sample, null
+ *   where none could be read
  */
 export const parsePdfIsolated = (buffer, {
   maxPages,
@@ -339,6 +344,8 @@ export const parsePdfIsolated = (buffer, {
         text: answer.text,
         textLength: answer.textLength ?? answer.text.length,
         numpages: answer.numpages,
+        lastPageFound: answer.lastPageFound,
+        pagesInTree: answer.pagesInTree ?? null,
         peakResidentBytes: peakResident,
         oomScoreAdjusted,
         durationMs: Date.now() - startedAt,

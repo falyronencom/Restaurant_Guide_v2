@@ -6,6 +6,12 @@
  * when `imageBytes` > 0, one uncompressed RGB image of about that size drawn
  * on every page — the bulk of a real menu file is its photos. Plain objects,
  * a correct cross-reference table; nothing a parser must work hard on.
+ *
+ * `declaredPages` writes another page count into the page tree (/Count) than
+ * the pages it holds — a file that declares twenty pages and holds one.
+ * `danglingKids` adds that many entries to the page tree, after the pages, that
+ * point at objects the file does not have — pages a reader cannot load though
+ * the tree names them (counted in the default /Count).
  */
 
 const header = Buffer.from('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n', 'latin1');
@@ -15,9 +21,14 @@ const header = Buffer.from('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n', 'latin1');
  * @param {number} [options.pages=1]
  * @param {number} [options.linesPerPage=20]
  * @param {number} [options.imageBytes=0] - Approximate size of the shared image
+ * @param {number} [options.danglingKids=0] - Tree entries pointing at missing objects
+ * @param {number} [options.declaredPages] - The page tree's /Count; the pages
+ *   and the dangling entries by default
  * @returns {Buffer}
  */
-export const buildSyntheticPdf = ({ pages = 1, linesPerPage = 20, imageBytes = 0 } = {}) => {
+export const buildSyntheticPdf = ({
+  pages = 1, linesPerPage = 20, imageBytes = 0, danglingKids = 0, declaredPages = pages + danglingKids,
+} = {}) => {
   const objects = []; // index i → object number i + 1, value: Buffer of the body
   const add = (body) => {
     objects.push(typeof body === 'string' ? Buffer.from(body, 'latin1') : body);
@@ -64,9 +75,15 @@ export const buildSyntheticPdf = ({ pages = 1, linesPerPage = 20, imageBytes = 0
     ));
   }
 
+  // Object numbers past every object the file has: the cross-reference table
+  // below lists none of them.
+  for (let dangling = 1; dangling <= danglingKids; dangling += 1) {
+    kids.push(objects.length + 100 + dangling);
+  }
+
   objects[catalog - 1] = Buffer.from(`<< /Type /Catalog /Pages ${pageTree} 0 R >>`, 'latin1');
   objects[pageTree - 1] = Buffer.from(
-    `<< /Type /Pages /Kids [${kids.map((kid) => `${kid} 0 R`).join(' ')}] /Count ${kids.length} >>`,
+    `<< /Type /Pages /Kids [${kids.map((kid) => `${kid} 0 R`).join(' ')}] /Count ${declaredPages} >>`,
     'latin1',
   );
 
