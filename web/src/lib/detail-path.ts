@@ -6,6 +6,16 @@
  */
 const PATH_SEGMENT = /^[a-z0-9-]+$/i;
 
+/**
+ * Is `path` an establishment detail address of any card —
+ * `/{city}/{category}/{slug}`, plain segments only? For the actions that know
+ * the card by its id, not its slug (the review actions).
+ */
+export function isDetailPath(path: string): boolean {
+  const parts = path.split('/');
+  return isDetailPathOf(path, parts[3] ?? '');
+}
+
 export function isDetailPathOf(path: string, slug: string): boolean {
   const parts = path.split('/');
   return (
