@@ -257,17 +257,13 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
       : VENUE_PHOTO_TYPES.reduce((n, t) => n + (mediaCounts[t] || 0), 0);
     const limit = MEDIA_LIMITS[limitType];
 
-    if (currentCount >= limit) {
+    if (currentCount > limit) {
       // Over the limit — a card that had the facade and the dishes apart
-      // before migration 042: nothing is deleted, the text says how many there
-      // are (ESTABLISHMENT_REFUSALS.photoOverLimit).
-      throw new AppError(
-        currentCount > limit
-          ? ESTABLISHMENT_REFUSALS.photoOverLimit(currentCount, limit)
-          : ESTABLISHMENT_REFUSALS.photoLimit(type, limit),
-        403,
-        'MEDIA_LIMIT_EXCEEDED',
-      );
+      // before migration 042: nothing is deleted, the text says how many there are.
+      throw new AppError(ESTABLISHMENT_REFUSALS.photoOverLimit(currentCount, limit), 403, 'MEDIA_LIMIT_EXCEEDED');
+    }
+    if (currentCount >= limit) {
+      throw new AppError(ESTABLISHMENT_REFUSALS.photoLimit(type, limit), 403, 'MEDIA_LIMIT_EXCEEDED');
     }
 
     // Validate file type — mimetype AND extension (mimetype alone is
