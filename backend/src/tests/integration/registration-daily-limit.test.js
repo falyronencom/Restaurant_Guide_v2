@@ -13,6 +13,10 @@
 
 import request from 'supertest';
 import app from '../../server.js';
+import { minskDate } from '../../utils/minskDay.js';
+
+/** The number of the Minsk day — the day bucket of every day-long limiter (middleware/rateLimiter.js bucketAt). */
+const minskDayIndex = () => Date.parse(`${minskDate(new Date(Date.now()))}T00:00:00.000Z`) / 86400000;
 import pool from '../../config/database.js';
 import redisClient, { connectRedis } from '../../config/redis.js';
 import { RATE_LIMIT_MESSAGE } from '../../constants/rateLimitRefusal.js';
@@ -33,7 +37,7 @@ const sweep = async () => {
 
 /** A day counter of the address supertest calls from. */
 const dayKey = (prefix = 'register-day') =>
-  `ratelimit:${prefix}:${addressKey('::ffff:127.0.0.1')}:${Math.floor(Date.now() / 86400000)}`;
+  `ratelimit:${prefix}:${addressKey('::ffff:127.0.0.1')}:${minskDayIndex()}`;
 
 let n = 0;
 const register = () => {

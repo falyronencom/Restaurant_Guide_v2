@@ -641,7 +641,9 @@ export async function uploadAvatar(req, res, next) {
     // allowance, shared with every uploader (services/uploadAllowance.js): a
     // spent one is a 429 AppError, passed on to errorHandler below.
     const uploadResult = await sendWithinDailyAllowance(
-      { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit },
+      // The avatars' own pool of the new accounts' ceiling: a guest's avatar
+      // does not take the day of the new partners' cards.
+      { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit, pool: 'avatar' },
       () => cloudinaryUploadAvatar(tempFilePath, userId),
     );
     const avatarUrl = uploadResult.secure_url;
