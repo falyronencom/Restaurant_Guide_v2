@@ -197,10 +197,10 @@ describe('sendWithinDailyAllowance — общий путь всех загруз
   const TEXT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
   const upload = { userId: USER, bytes: 2048, message: TEXT };
 
-  // Учётка с подтверждённой почтой: общего потолка неподтверждённых нет
-  // (services/unconfirmedAllowance.js — свои случаи ниже).
+  // Партнёр с подтверждённой почтой и карточкой в каталоге: общих потолков
+  // нет — ни неподтверждённых, ни новых учёток (свои случаи ниже).
   beforeEach(() => {
-    pool.query.mockResolvedValue({ rows: [{ confirmed: true }] });
+    pool.query.mockResolvedValue({ rows: [{ confirmed: true, known: true }] });
   });
 
   test('предел исчерпан — DailyUploadLimitError: 429, код, текст вызывающего, подробности, срок; облако не зовётся', async () => {
@@ -357,5 +357,189 @@ describe('sendWithinDailyAllowance — учётка без подтверждё�
       'Unconfirmed accounts allowance: account lookup failed, the shared ceiling applies',
       expect.objectContaining({ userId: USER }),
     );
+  });
+});
+
+/*
+ * Нитка «2Г: общие пределы», п. 1.05 (10.11.2026). Учётка с подтверждённой
+ * почтой выходила из общего потолка сразу и держала только свои 100 файлов и
+ * 300 МБ в сутки: подтверждённая учётка стоит одного ящика, и несколько
+ * десятков таких выбирали бесплатный тариф облака за сутки-двое. Теперь новые
+ * подтверждённые учётки — без карточки в каталоге — делят потолок дня:
+ * 200 файлов и 600 МБ, доля одной учётки — 40 файлов и 120 МБ (литералы выбора
+ * исполнителя, обоснование — services/newcomerUploadCeiling.js); аватары —
+ * отдельный счёт тех же размеров.
+ */
+describe('sendWithinDailyAllowance — новая подтверждённая учётка: общий потолок новых учёток', () => {
+  const TEXT = 'Лимит загрузок на сегодня исчерпан. Продолжите завтра.';
+  const upload = { userId: USER, bytes: 2048, message: TEXT };
+  const CEILING_FILES = 'uploads:newcomers:2026-10-17:card:files';
+  const CEILING_BYTES = 'uploads:newcomers:2026-10-17:card:bytes';
+  const REFUSALS = 'uploads:newcomers:2026-10-17:card:refusals';
+  const OWN_FILES = `uploads:newcomers:2026-10-17:card:account:${USER}:files`;
+  const OWN_BYTES = `uploads:newcomers:2026-10-17:card:account:${USER}:bytes`;
+  const originalEnv = { ...process.env };
+
+  /**
+   * После своих счётчиков учётки: файлы и байты потолка, файлы и байты доли
+   * учётки в нём, затем — при отказе потолка — счёт отказов дня.
+   */
+  const ceilingAfter = (files, bytes, { own = [1, 2048], refusals } = {}) => {
+    incrementWithExpiry
+      .mockResolvedValueOnce(files).mockResolvedValueOnce(bytes)
+      .mockResolvedValueOnce(own[0]).mockResolvedValueOnce(own[1]);
+    if (refusals !== undefined) incrementWithExpiry.mockResolvedValueOnce(refusals);
+  };
+
+  beforeEach(() => {
+    pool.query.mockResolvedValue({ rows: [{ confirmed: true, known: false }] });
+    logger.warn.mockClear();
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  test('200-й файл дня на все новые учётки — загрузка идёт; счётчики потолка и доли — по минским суткам', async () => {
+    countersAfter(5, 4096);
+    ceilingAfter(200, 10 * MB);
+    const stored = { public_id: 'x' };
+
+    await expect(sendWithinDailyAllowance(upload, async () => stored)).resolves.toBe(stored);
+    expect(incrementWithExpiry.mock.calls.slice(2)).toEqual([
+      [CEILING_FILES, 43200],
+      [CEILING_BYTES, 43200, 2048],
+      [OWN_FILES, 43200],
+      [OWN_BYTES, 43200, 2048],
+    ]);
+    expect(decrement).not.toHaveBeenCalled();
+  });
+
+  test('201-й — отказ: текст вызывающего, подробности потолка, все резервы возвращены, облако не зовётся; первый отказ дня — ошибка в журнале', async () => {
+    countersAfter(5, 4096);
+    ceilingAfter(201, 10 * MB, { refusals: 1 });
+    const send = jest.fn();
+
+    const refusal = await sendWithinDailyAllowance(upload, send).catch((error) => error);
+
+    expect(refusal).toBeInstanceOf(DailyUploadLimitError);
+    expect([refusal.statusCode, refusal.code, refusal.message]).toEqual([429, 'RATE_LIMIT_EXCEEDED', TEXT]);
+    expect(refusal.details).toEqual({
+      files_limit: 200,
+      bytes_limit: 600 * MB,
+      retry_after: 43200,
+      reset_at: '2026-10-17T21:00:00.000Z',
+      ceiling: true,
+    });
+    expect(refusal.retryAfter).toBe(43200);
+    expect(send).not.toHaveBeenCalled();
+    expect(decrement.mock.calls).toEqual([
+      [CEILING_FILES], [OWN_FILES], [CEILING_BYTES, 2048], [OWN_BYTES, 2048], [FILES_KEY], [BYTES_KEY, 2048],
+    ]);
+    expect(incrementWithExpiry).toHaveBeenLastCalledWith(REFUSALS, 43200);
+    expect(logger.error).toHaveBeenCalledWith(
+      'New accounts\' daily upload ceiling spent',
+      expect.objectContaining({ userId: USER, refusalsToday: 1 }),
+    );
+  });
+
+  test('600 МБ ровно — проходит; байт сверху — отказ, уже не первый за день — предупреждение', async () => {
+    countersAfter(5, 4096);
+    ceilingAfter(10, 600 * MB);
+    await expect(sendWithinDailyAllowance(upload, async () => ({}))).resolves.toEqual({});
+
+    countersAfter(6, 6144);
+    ceilingAfter(11, 600 * MB + 1, { refusals: 2 });
+    await expect(sendWithinDailyAllowance(upload, jest.fn())).rejects.toBeInstanceOf(DailyUploadLimitError);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      'New accounts\' daily upload ceiling spent',
+      expect.objectContaining({ refusalsToday: 2 }),
+    );
+  });
+
+  test('доля одной учётки: 40-й файл проходит, 41-й — отказ с её долей, хотя потолок не выбран; день других не тронут', async () => {
+    countersAfter(40, 4096);
+    ceilingAfter(60, 10 * MB, { own: [40, 40 * 2048] });
+    await expect(sendWithinDailyAllowance(upload, async () => ({}))).resolves.toEqual({});
+
+    countersAfter(41, 6144);
+    ceilingAfter(61, 10 * MB, { own: [41, 41 * 2048] });
+    const refusal = await sendWithinDailyAllowance(upload, jest.fn()).catch((error) => error);
+
+    expect(refusal).toBeInstanceOf(DailyUploadLimitError);
+    expect(refusal.message).toBe(TEXT);
+    expect(refusal.details).toEqual(expect.objectContaining({
+      files_limit: 40, bytes_limit: 120 * MB, ceiling: true,
+    }));
+    // Отказ доли не считается отказом потолка: счёта отказов дня нет, ошибки в журнале нет.
+    expect(incrementWithExpiry.mock.calls.map(([key]) => key)).not.toContain(REFUSALS);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(decrement.mock.calls).toEqual([
+      [CEILING_FILES], [OWN_FILES], [CEILING_BYTES, 2048], [OWN_BYTES, 2048], [FILES_KEY], [BYTES_KEY, 2048],
+    ]);
+  });
+
+  test('120 МБ одной учётки — проходит, байт сверху — отказ её долей', async () => {
+    countersAfter(5, 4096);
+    ceilingAfter(10, 10 * MB, { own: [5, 120 * MB] });
+    await expect(sendWithinDailyAllowance(upload, async () => ({}))).resolves.toEqual({});
+
+    countersAfter(6, 6144);
+    ceilingAfter(11, 10 * MB, { own: [6, 120 * MB + 1] });
+    const refusal = await sendWithinDailyAllowance(upload, jest.fn()).catch((error) => error);
+    expect(refusal.details).toEqual(expect.objectContaining({ files_limit: 40, bytes_limit: 120 * MB }));
+  });
+
+  test('облако отказало явно — возвращаются свой резерв, резерв потолка и доли', async () => {
+    countersAfter(5, 4096);
+    ceilingAfter(7, MB);
+    const refused = Object.assign(new Error('Invalid image file'), { httpCode: 400 });
+
+    await expect(sendWithinDailyAllowance(upload, async () => { throw refused; })).rejects.toBe(refused);
+    expect(decrement.mock.calls).toEqual([
+      [FILES_KEY], [BYTES_KEY, 2048], [CEILING_FILES], [OWN_FILES], [CEILING_BYTES, 2048], [OWN_BYTES, 2048],
+    ]);
+  });
+
+  test('аватар — свой счёт потолка новых: гостевые аватары не тратят день карточек новых партнёров', async () => {
+    countersAfter(5, 4096);
+    ceilingAfter(201, MB, { refusals: 1 });
+
+    const refusal = await sendWithinDailyAllowance({ ...upload, pool: 'avatar' }, jest.fn()).catch((error) => error);
+
+    expect(incrementWithExpiry.mock.calls.slice(2).map(([key]) => key)).toEqual([
+      'uploads:newcomers:2026-10-17:avatar:files',
+      'uploads:newcomers:2026-10-17:avatar:bytes',
+      `uploads:newcomers:2026-10-17:avatar:account:${USER}:files`,
+      `uploads:newcomers:2026-10-17:avatar:account:${USER}:bytes`,
+      'uploads:newcomers:2026-10-17:avatar:refusals',
+    ]);
+    expect(refusal.details).toEqual(expect.objectContaining({ files_limit: 200, ceiling: true }));
+  });
+
+  test('карточка в каталоге, панель, дом сида (known) — потолка новых нет: только свои счётчики', async () => {
+    pool.query.mockResolvedValue({ rows: [{ confirmed: true, known: true }] });
+    countersAfter(5, 4096);
+
+    await expect(sendWithinDailyAllowance(upload, async () => ({}))).resolves.toEqual({});
+    expect(incrementWithExpiry).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([
+    ['500', '1000', 500, 1000],
+    ['abc', '0', 200, 600],
+    [' 250 ', '-5', 250, 600],
+  ])('UPLOAD_NEWCOMERS_DAILY_FILES=%p, _MB=%p — потолок %i файлов и %i МБ', async (files, mb, ceilingFiles, ceilingMb) => {
+    process.env.UPLOAD_NEWCOMERS_DAILY_FILES = files;
+    process.env.UPLOAD_NEWCOMERS_DAILY_MB = mb;
+    countersAfter(5, 4096);
+    ceilingAfter(ceilingFiles + 1, MB, { refusals: 1 });
+
+    const refusal = await sendWithinDailyAllowance(upload, jest.fn()).catch((error) => error);
+
+    expect(refusal.details).toEqual(expect.objectContaining({
+      files_limit: ceilingFiles, bytes_limit: ceilingMb * MB, ceiling: true,
+    }));
   });
 });

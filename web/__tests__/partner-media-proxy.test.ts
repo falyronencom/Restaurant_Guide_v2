@@ -210,3 +210,55 @@ describe('proxyMediaUpload — a backend refusal passes through with its term', 
     expect(res.headers.get('retry-after')).toBeNull();
   });
 });
+
+/*
+ * Thread «2Г: общие пределы» (10.11.2026): the upload went to the API without
+ * the site's secret and the visitor, so the API counted it by the site's own
+ * address whenever it refused the token — one budget for every such visitor.
+ */
+describe('proxyMediaUpload — names the visitor of the request', () => {
+  const SECRET = 'k'.repeat(44);
+  const FRESH_ACCESS = [
+    'h',
+    Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url'),
+    's',
+  ].join('.');
+
+  afterEach(() => {
+    delete process.env.SITE_REQUEST_SECRET;
+  });
+
+  it('the secret and the visitor go upstream with the Bearer', async () => {
+    process.env.API_URL = 'https://backend.test';
+    process.env.SITE_REQUEST_SECRET = SECRET;
+    cookies({ rg_at: FRESH_ACCESS });
+    upstreamFetch.mockResolvedValueOnce(new Response('{"success":true}', {
+      status: 201,
+      headers: { 'content-type': 'application/json' },
+    }));
+
+    await proxyMediaUpload(new Request('http://localhost/api/partner/media', {
+      method: 'POST',
+      headers: {
+        'content-type': 'multipart/form-data; boundary=x',
+        'x-forwarded-for': '203.0.113.45, 152.233.10.1',
+      },
+      body: '--x--',
+    }), '/api/v1/partner/media/upload');
+
+    expect(upstreamFetch.mock.calls[0][1].headers).toMatchObject({
+      authorization: `Bearer ${FRESH_ACCESS}`,
+      'X-Site-Secret': SECRET,
+      'X-Site-Visitor': '203.0.113.45',
+    });
+  });
+
+  it('without a secret — the headers it sent before, nothing more', async () => {
+    cookies({ rg_at: FRESH_ACCESS });
+    upstreamFetch.mockResolvedValueOnce(new Response('{}', { status: 201 }));
+
+    await proxyMediaUpload(upload(), '/api/v1/partner/media/upload');
+
+    expect(Object.keys(upstreamFetch.mock.calls[0][1].headers).sort()).toEqual(['authorization', 'content-type']);
+  });
+});
