@@ -18,10 +18,10 @@ import pool from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { MEDIA_REFUSALS, UPLOAD_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
+import { VENUE_PHOTO_TYPES, storedMediaType } from '../constants/mediaKinds.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import { discardUnrecordedUpload } from './unrecordedUpload.js';
-import { VENUE_PHOTO_TYPES, storedMediaType } from '../constants/mediaKinds.js';
 import logger from '../utils/logger.js';
 
 /**
