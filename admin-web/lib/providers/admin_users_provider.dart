@@ -40,6 +40,9 @@ class AdminUsersProvider extends ChangeNotifier {
 
   String? _statusFilter;
   String? _roleFilter;
+
+  /// `pending` — очередь «Фото на проверке» (миграция 041); `null` — все.
+  String? _avatarFilter;
   String _searchQuery = '';
 
   String? _selectedId;
@@ -64,6 +67,7 @@ class AdminUsersProvider extends ChangeNotifier {
   int get totalCount => _totalCount;
   String? get statusFilter => _statusFilter;
   String? get roleFilter => _roleFilter;
+  String? get avatarFilter => _avatarFilter;
   String get searchQuery => _searchQuery;
   String? get selectedId => _selectedId;
   AdminUser? get selectedUser => _selectedUser;
@@ -74,7 +78,10 @@ class AdminUsersProvider extends ChangeNotifier {
   String? get submitError => _submitError;
   String? get lastResult => _lastResult;
   bool get hasActiveFilters =>
-      _statusFilter != null || _roleFilter != null || _searchQuery.isNotEmpty;
+      _statusFilter != null ||
+      _roleFilter != null ||
+      _avatarFilter != null ||
+      _searchQuery.isNotEmpty;
 
   Future<void> loadUsers({int page = 1}) async {
     final seq = ++_listSeq;
@@ -89,6 +96,7 @@ class AdminUsersProvider extends ChangeNotifier {
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
         status: _statusFilter,
         role: _roleFilter,
+        avatar: _avatarFilter,
       );
       if (seq != _listSeq) return;
       // Разблокировал последнего на странице «Заблокированных» — предыдущая
@@ -197,6 +205,25 @@ class AdminUsersProvider extends ChangeNotifier {
         return (changed, 'Имя сброшено на «Пользователь»');
       });
 
+  /// Одобрить фото, которое модератор видит в карточке, — по его ссылке:
+  /// сменил человек фото, пока модератор смотрел, — сервер откажет, и в
+  /// карточке встанет новое (миграция 041).
+  Future<bool> approveAvatar() => _act((id) async {
+        final url = _selectedUser?.avatarUrl;
+        if (url == null) return (false, kUserActionNothingChanged);
+        final changed = await _service.approveAvatar(id, avatarUrl: url);
+        return (changed, 'Фото одобрено — другие люди видят его рядом с отзывами');
+      });
+
+  /// Снять фото: для всех, и для самого человека; файл нашего облака уходит.
+  Future<bool> removeAvatar({String? reason}) => _act((id) async {
+        final url = _selectedUser?.avatarUrl;
+        if (url == null) return (false, kUserActionNothingChanged);
+        final changed =
+            await _service.removeAvatar(id, avatarUrl: url, reason: reason);
+        return (changed, 'Фото снято — вместо него у всех буква');
+      });
+
   /// Действие без оптимизма: блокировка трогает отзывы и рейтинг, и экран
   /// показывает то, что вернул сервер, а не догадку о нём.
   ///
@@ -262,9 +289,16 @@ class AdminUsersProvider extends ChangeNotifier {
     loadUsers();
   }
 
+  void setAvatarFilter(String? avatar) {
+    _avatarFilter = avatar;
+    _closeCard();
+    loadUsers();
+  }
+
   void resetFilters() {
     _statusFilter = null;
     _roleFilter = null;
+    _avatarFilter = null;
     _searchQuery = '';
     _closeCard();
     loadUsers();
@@ -296,6 +330,7 @@ class AdminUsersProvider extends ChangeNotifier {
     _totalCount = 0;
     _statusFilter = null;
     _roleFilter = null;
+    _avatarFilter = null;
     _searchQuery = '';
     _selectedId = null;
     _selectedUser = null;

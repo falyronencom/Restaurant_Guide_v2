@@ -49,8 +49,10 @@ class _FakeUserService implements AdminUserService {
     String? search,
     String? status,
     String? role,
+    String? avatar,
   }) async {
-    calls.add('list search=${search ?? ''} status=${status ?? ''}');
+    calls.add('list search=${search ?? ''} status=${status ?? ''}'
+        '${avatar == null ? '' : ' avatar=$avatar'}');
     final failure = readFailure;
     if (failure != null) throw failure;
     return AdminUserListResponse(
@@ -106,6 +108,15 @@ class _FakeUserService implements AdminUserService {
   @override
   Future<bool> resetName(String id, {required String reason}) =>
       _act('reset-name', id, reason);
+
+  @override
+  Future<bool> approveAvatar(String id, {required String avatarUrl}) =>
+      _act('avatar-approve', id, avatarUrl);
+
+  @override
+  Future<bool> removeAvatar(String id,
+          {required String avatarUrl, String? reason}) =>
+      _act('avatar-remove', id, '$avatarUrl; ${reason ?? ''}');
 }
 
 AdminUser _user({

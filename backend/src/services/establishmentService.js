@@ -10,6 +10,7 @@
  * Controllers call services, services call models.
  */
 
+import { LEGACY_VENUE_TYPES, isVenuePhoto } from '../constants/mediaKinds.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
@@ -926,12 +927,14 @@ export const getEstablishmentById = async (establishmentId, partnerId) => {
     ]);
 
     // Map media to frontend-expected format
-    // Priority: is_primary flag → first interior photo → first any photo
+    // Priority: is_primary flag → first venue photo → first any photo. The
+    // venue's photos are the room, the facade and the dishes together
+    // (constants/mediaKinds.js): the partner sees and may delete all of them.
     const primaryMedia = media.find(m => m.is_primary)
-      || media.find(m => m.type === 'interior')
+      || media.find(m => isVenuePhoto(m.type))
       || media[0]
       || null;
-    const interiorPhotos = media.filter(m => m.type === 'interior').map(m => m.url);
+    const interiorPhotos = media.filter(m => isVenuePhoto(m.type)).map(m => m.url);
     const menuPhotos = media.filter(m => m.type === 'menu').map(m => m.url);
 
     // Normalize moderation_notes: TEXT column stores JSON string, parse to object
@@ -1220,9 +1223,18 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       // Enforce photo bucket limits on the sync path — it replaces the bucket
       // state wholesale (final count = incoming array length) and otherwise
       // bypasses the per-upload check in mediaService.
+      // A card over the venue's limit since the facade and the dishes became
+      // its photos (migration 042) saves what it has: the limit refuses only a
+      // save that would hold more photos than the card has now.
+      const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
+      const ofBucket = (bucket) => existingMedia
+        .filter(m => (bucket === 'interior' ? isVenuePhoto(m.type) : m.type === bucket) && m.file_type !== 'pdf');
       for (const [field, bucket] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
         const incoming = updates[field];
-        if (Array.isArray(incoming) && incoming.length > MEDIA_LIMITS[bucket]) {
+        const allowed = bucket === 'interior'
+          ? Math.max(MEDIA_LIMITS.interior, ofBucket('interior').length)
+          : MEDIA_LIMITS[bucket];
+        if (Array.isArray(incoming) && incoming.length > allowed) {
           throw new AppError(
             ESTABLISHMENT_REFUSALS.photoLimit(bucket, MEDIA_LIMITS[bucket]),
             403,
@@ -1231,7 +1243,6 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         }
       }
 
-      const existingMedia = await MediaModel.getEstablishmentMedia(establishmentId);
       const primaryPhotoUrl = updates.primary_photo || null;
 
       // What the save changes in each bucket, worked out before the first write.
@@ -1246,13 +1257,18 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         if (updates[field] === undefined) continue;
         const keyOf = type === 'menu' ? menuFileKey : (url) => url;
         const newUrls = type === 'menu' ? oneLinkPerFile(updates[field] || [], keyOf) : (updates[field] || []);
-        const existingOfType = existingMedia.filter(m => m.type === type);
+        // The venue's bucket holds the facade and dish rows of before 042 too.
+        const existingOfType = existingMedia.filter(m => (type === 'interior' ? isVenuePhoto(m.type) : m.type === type));
         const existingKeys = new Set(existingOfType.map(m => keyOf(m.url)));
         const newKeys = new Set(newUrls.map(keyOf));
         plans.push({
           type,
           existingOfType,
-          toDelete: existingOfType.filter(m => !newKeys.has(keyOf(m.url))),
+          // A facade or dish row of before migration 042 goes only by its own
+          // DELETE: a form opened before the deploy never had it in its list,
+          // and its save must not take it (Phase 3.5 review of PR 2). After 042
+          // every venue row is `interior` and goes as before.
+          toDelete: existingOfType.filter(m => !newKeys.has(keyOf(m.url)) && !LEGACY_VENUE_TYPES.includes(m.type)),
           toInsert: newUrls.filter(url => !existingKeys.has(keyOf(url))),
         });
       }
@@ -1350,9 +1366,11 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
       // is_primary flags set on createMedia/updateMedia above touch ONLY the media
       // row, so calling this unconditionally is what keeps the establishment column
       // from going stale (the empty-catalog-thumbnail bug). Choose the partner's
-      // pick, else an existing primary, else the first interior photo.
+      // pick, else an existing primary, else the first venue photo — the
+      // facade and the dishes among them: a facade cover set by the team's
+      // import stays the cover (H8 §3, PR 2 of the thread «Фото людей»).
       const updatedMedia = await MediaModel.getEstablishmentMedia(establishmentId);
-      const interiorPhotos = updatedMedia.filter(m => m.type === 'interior');
+      const interiorPhotos = updatedMedia.filter(m => isVenuePhoto(m.type));
       if (interiorPhotos.length > 0) {
         const chosen = interiorPhotos.find(m => m.url === primaryPhotoUrl)
           || interiorPhotos.find(m => m.is_primary)

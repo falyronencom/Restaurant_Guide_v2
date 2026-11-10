@@ -20,6 +20,8 @@ jest.mock('@/lib/api/endpoints/reviews', () => ({
 
 import { revalidatePath } from 'next/cache';
 
+import { _resetForTests as resetDrops } from '@/lib/cached-page-drops';
+
 import { getReviews } from '@/lib/api/endpoints/establishments';
 import {
   createReview,
@@ -60,6 +62,8 @@ const DELETE_INPUT = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // A fresh hour of page drops (lib/cached-page-drops.ts) for every test.
+  resetDrops();
 });
 
 describe('createReviewAction — success', () => {

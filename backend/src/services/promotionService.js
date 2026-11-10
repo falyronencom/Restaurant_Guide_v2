@@ -16,6 +16,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { PROMOTION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import { discardUnrecordedUpload } from './unrecordedUpload.js';
+import { refuseChangeOfDisputedCardById } from './ownershipDispute.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -60,6 +61,9 @@ export const createPromotion = async (partnerId, establishmentId, data, file = n
       'ESTABLISHMENT_NOT_FOUND',
     );
   }
+  // A card parked by an account takeover: no promotion until the moderator
+  // decides whom it belongs to (services/ownershipDispute.js).
+  await refuseChangeOfDisputedCardById(establishmentId);
 
   // Check active promotion count
   const activeCount = await PromotionModel.getActiveCount(establishmentId);
@@ -186,6 +190,8 @@ export const updatePromotion = async (partnerId, promotionId, data, file = null)
       'PROMOTION_NOT_FOUND',
     );
   }
+  // Before the new picture goes up (services/ownershipDispute.js).
+  await refuseChangeOfDisputedCardById(promotion.establishment_id);
 
   // Upload new image if provided
   let imageUrls = {};
@@ -292,6 +298,7 @@ export const deactivatePromotion = async (partnerId, promotionId) => {
       'PROMOTION_NOT_FOUND',
     );
   }
+  await refuseChangeOfDisputedCardById(promotion.establishment_id);
 
   const deactivated = await PromotionModel.deactivatePromotion(promotionId);
 

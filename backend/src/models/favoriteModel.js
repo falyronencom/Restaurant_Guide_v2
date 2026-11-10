@@ -230,7 +230,13 @@ export const getUserFavorites = async (userId, options = {}) => {
       ) as establishment_primary_image
     FROM favorites f
     JOIN establishments e ON f.establishment_id = e.id
-    WHERE f.user_id = $1
+    -- Only a card in the catalogue: the name and the photos of a draft, a card
+    -- on moderation, a rejected, suspended or archived one are not public
+    -- (DISCOVERY 09.11.2026, finding 4). The row stays — the card back in the
+    -- catalogue is back in the favourites. Not a null name instead: the app
+    -- reads the name as required (Establishment.fromJson), and one such row
+    -- would fail the whole list.
+    WHERE f.user_id = $1 AND e.status = 'active'
     ORDER BY f.created_at DESC
     LIMIT $2 OFFSET $3
   `;
@@ -260,15 +266,18 @@ export const getUserFavorites = async (userId, options = {}) => {
  * 
  * This is used for pagination metadata, allowing the API to tell clients
  * how many total favorites exist and how many pages are available.
- * 
+ * The same cards as getUserFavorites lists — those in the catalogue — so that
+ * the count and the pages agree with the list.
+ *
  * @param {string} userId - UUID of the user
  * @returns {Promise<number>} Total count of user's favorites
  */
 export const countUserFavorites = async (userId) => {
   const query = `
     SELECT COUNT(*) as count
-    FROM favorites
-    WHERE user_id = $1
+    FROM favorites f
+    JOIN establishments e ON e.id = f.establishment_id
+    WHERE f.user_id = $1 AND e.status = 'active'
   `;
 
   try {
@@ -335,11 +344,14 @@ export const isFavorite = async (userId, establishmentId) => {
  * @returns {Promise<boolean>} True if establishment exists and is active
  */
 export const establishmentExists = async (establishmentId) => {
+  // Only a card in the catalogue can be added (DISCOVERY 09.11.2026, finding
+  // 4): the favourites list shows nothing else. The app reverts the heart on
+  // the refusal and says «Не удалось обновить избранное».
   const query = `
     SELECT EXISTS(
-      SELECT 1 
-      FROM establishments 
-      WHERE id = $1 AND status != 'archived'
+      SELECT 1
+      FROM establishments
+      WHERE id = $1 AND status = 'active'
     ) as exists
   `;
 

@@ -16,6 +16,7 @@
  * Base path: /api/v1/partner/media when mounted in v1/index.js
  */
 
+import { storedMediaType } from '../../constants/mediaKinds.js';
 import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
@@ -120,7 +121,9 @@ router.post(
   async (req, res, next) => {
     try {
       const userId = req.user.userId;
-      const { type } = req.body;
+      // A facade or a dish photo is a photo of the venue (constants/mediaKinds.js,
+      // PR 2 of the thread «Фото людей»): it goes into the venue's folder.
+      const type = storedMediaType(req.body.type);
 
       // Check if file was uploaded
       if (!req.file) {

@@ -7,6 +7,8 @@
  *   POST /api/v1/admin/users/:id/block          — block, body { reason }
  *   POST /api/v1/admin/users/:id/unblock        — unblock, body { reason, restore_reviews? }
  *   POST /api/v1/admin/users/:id/reset-name     — name to «Пользователь», body { reason }
+ *   POST /api/v1/admin/users/:id/avatar/approve — other people see the photo, body { avatar_url }
+ *   POST /api/v1/admin/users/:id/avatar/remove  — take the photo down, body { avatar_url, reason? }
  *
  * Thin layer: the rules and the texts are in services/adminUserService.js.
  */
@@ -20,7 +22,7 @@ const requestMeta = (req) => ({
   userAgent: req.get('user-agent'),
 });
 
-/** GET /api/v1/admin/users?search=&status=active|blocked&page=&per_page= */
+/** GET /api/v1/admin/users?search=&status=active|blocked&avatar=pending&page=&per_page= */
 export const listUsers = asyncHandler(async (req, res) => {
   const result = await adminUserService.getUsers({
     page: parseInt(req.query.page, 10) || 1,
@@ -28,6 +30,7 @@ export const listUsers = asyncHandler(async (req, res) => {
     search: req.query.search,
     status: req.query.status,
     role: req.query.role,
+    avatar: req.query.avatar,
     viewer: isViewer(req.user.role),
   });
 
@@ -66,6 +69,29 @@ export const unblockUser = asyncHandler(async (req, res) => {
 export const resetUserName = asyncHandler(async (req, res) => {
   const result = await adminUserService.resetUserName(
     req.params.id,
+    req.body?.reason,
+    req.user.userId,
+    requestMeta(req),
+  );
+  res.status(200).json({ success: true, data: result });
+});
+
+/** POST /api/v1/admin/users/:id/avatar/approve — body { avatar_url } */
+export const approveAvatar = asyncHandler(async (req, res) => {
+  const result = await adminUserService.approveAvatar(
+    req.params.id,
+    req.body?.avatar_url,
+    req.user.userId,
+    requestMeta(req),
+  );
+  res.status(200).json({ success: true, data: result });
+});
+
+/** POST /api/v1/admin/users/:id/avatar/remove — body { avatar_url, reason? } */
+export const removeAvatar = asyncHandler(async (req, res) => {
+  const result = await adminUserService.removeAvatar(
+    req.params.id,
+    req.body?.avatar_url,
     req.body?.reason,
     req.user.userId,
     requestMeta(req),

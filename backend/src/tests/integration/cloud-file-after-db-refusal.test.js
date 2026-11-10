@@ -113,6 +113,26 @@ const loseConnectionOn = (pattern, { committed }) =>
     throw connectionLost();
   });
 
+/**
+ * То же на соединении транзакции: запись фото профиля с миграции 041 идёт в
+ * транзакции (authService.updateUserProfile, getClient → pool.connect), и
+ * подмена на уровне пула её не видит. Каждое соединение, выданное в тесте,
+ * отвечает на запрос `pattern` через `onMatch`.
+ */
+const clientStatementSpy = (pattern, onMatch) => {
+  const connect = pool.connect.bind(pool);
+  return jest.spyOn(pool, 'connect').mockImplementation(async (...args) => {
+    // pool.query берёт соединение сам, с обратным вызовом: его не трогаем.
+    if (typeof args[args.length - 1] === 'function') return connect(...args);
+    const client = await connect(...args);
+    const original = client.query.bind(client);
+    jest.spyOn(client, 'query').mockImplementation((text, ...rest) => (
+      typeof text === 'string' && pattern.test(text) ? onMatch(original, text, rest) : original(text, ...rest)
+    ));
+    return client;
+  });
+};
+
 /** Записи журнала с этим public_id: [сообщение, …]. */
 const warnedAbout = (warn, publicId) =>
   warn.mock.calls.filter(([, context]) => context?.publicId === publicId).map(([message]) => message);
@@ -494,7 +514,7 @@ describe('аватар', () => {
 
   test('база отказала после загрузки — файл удалён, ответ прежний (500)', async () => {
     const { user, accessToken } = await newUser();
-    refuseStatement(AVATAR_UPDATE);
+    clientStatementSpy(AVATAR_UPDATE, (original) => original(REFUSED_SQL));
 
     const res = await uploadAvatar(accessToken);
 
@@ -511,7 +531,7 @@ describe('аватар', () => {
     const { user, accessToken } = await newUser();
     const oldUrl = deliveryUrl(`avatars/${user.id}/old0007`);
     await query('UPDATE users SET avatar_url = $1 WHERE id = $2', [oldUrl, user.id]);
-    refuseStatement(AVATAR_UPDATE);
+    clientStatementSpy(AVATAR_UPDATE, (original) => original(REFUSED_SQL));
 
     const res = await uploadAvatar(accessToken);
 
@@ -522,7 +542,7 @@ describe('аватар', () => {
 
   test('запись не нашла учётку (её отключили в это время) — файл удалён', async () => {
     const { user, accessToken } = await newUser();
-    statementSpy(AVATAR_UPDATE, async () => ({ rows: [], rowCount: 0 }));
+    clientStatementSpy(AVATAR_UPDATE, async () => ({ rows: [], rowCount: 0 }));
 
     const res = await uploadAvatar(accessToken);
 
@@ -530,9 +550,14 @@ describe('аватар', () => {
     expect(destroy.mock.calls).toEqual([[`avatars/${user.id}/fresh0001`]]);
   });
 
+  // Запись — в транзакции: «после записи» — это обрыв на COMMIT, который
+  // сервер успел выполнить.
   test('связь оборвалась после записи — файл цел, учётка на него ссылается, журнал его называет', async () => {
     const { user, accessToken } = await newUser();
-    loseConnectionOn(AVATAR_UPDATE, { committed: true });
+    clientStatementSpy(/^\s*COMMIT\s*$/, async (original, text, rest) => {
+      await original(text, ...rest);
+      throw connectionLost();
+    });
     const warn = jest.spyOn(logger, 'warn');
 
     const res = await uploadAvatar(accessToken);
