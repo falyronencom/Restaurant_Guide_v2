@@ -110,8 +110,8 @@ describe('createRateLimiter: the counter expires when its bucket ends', () => {
     jest.restoreAllMocks();
   });
 
+  // A day-long window is the Minsk calendar day — its own describe below.
   test.each([
-    [86400, '2026-10-20T23:30:00.000Z', 1800],
     [3600, '2026-10-20T14:59:50.000Z', 10],
     [60, '2026-10-20T14:00:00.500Z', 60],
   ])('window %i s at %s — expiry %i s, key of that bucket', async (windowSeconds, at, expiry) => {
@@ -127,6 +127,128 @@ describe('createRateLimiter: the counter expires when its bucket ends', () => {
       `ratelimit:test:1.1.1.1:${Math.floor(nowMs / (windowSeconds * 1000))}`,
       expiry,
     );
+  });
+});
+
+// A day-long limit counts the Minsk calendar day (thread «2Г: общие пределы»,
+// point 3.02, 10.11.2026). The day's limits per address — registrations, the
+// resends of the code, the password resets — counted UTC days, which end at
+// 03:00 in Minsk, while the project's day's allowance of letters
+// (services/mailAllowance.js) counts the Minsk day. Across 03:00 one address
+// had two days of its limits inside one day of letters: 20 + 20 registrations
+// and 10 + 10 resends, more codes than the whole day's 50.
+describe('a day-long window is the Minsk calendar day', () => {
+  /** A Redis that counts: key → value, and the expiry each key was given. */
+  const counting = () => {
+    const values = new Map();
+    const expiries = new Map();
+    incrementWithExpiry.mockImplementation(async (key, seconds) => {
+      if (!values.has(key)) expiries.set(key, seconds);
+      values.set(key, (values.get(key) ?? 0) + 1);
+      return values.get(key);
+    });
+    getTTL.mockImplementation(async (key) => expiries.get(key) ?? -2);
+    return { values, expiries };
+  };
+
+  /** One request at `iso` through `limiter`: its status, and the key it was counted under. */
+  const at = async (limiter, iso, req = { ip: '9.9.9.9', method: 'POST', path: '/x' }) => {
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(iso));
+    const before = incrementWithExpiry.mock.calls.length;
+    const res = buildResponse();
+    await limiter({ ...req }, res, jest.fn());
+    const [key, expiry] = incrementWithExpiry.mock.calls[before];
+    return { refused: res.status.mock.calls.some(([code]) => code === 429), key, expiry };
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    incrementWithExpiry.mockReset();
+    getTTL.mockReset();
+  });
+
+  test('one counter from Minsk midnight to Minsk midnight — 03:00 in Minsk (UTC midnight) is not a boundary', async () => {
+    counting();
+    const limiter = createRateLimiter({ limit: 10, windowSeconds: 86400, keyPrefix: 'day' });
+
+    const firstMoment = await at(limiter, '2026-11-09T21:00:00.000Z'); // 00:00:00, 10.11 in Minsk
+    const beforeUtcMidnight = await at(limiter, '2026-11-09T23:59:59.000Z'); // 02:59:59
+    const afterUtcMidnight = await at(limiter, '2026-11-10T00:00:00.000Z'); // 03:00:00
+    const lastMoment = await at(limiter, '2026-11-10T20:59:59.000Z'); // 23:59:59
+    const nextDay = await at(limiter, '2026-11-10T21:00:00.000Z'); // 00:00:00, 11.11
+
+    expect(beforeUtcMidnight.key).toBe(firstMoment.key);
+    expect(afterUtcMidnight.key).toBe(firstMoment.key);
+    expect(lastMoment.key).toBe(firstMoment.key);
+    expect(nextDay.key).not.toBe(firstMoment.key);
+    // The counter expires at the next Minsk midnight, whatever moment made it.
+    expect(firstMoment.expiry).toBe(86400);
+    expect(nextDay.expiry).toBe(86400);
+  });
+
+  test('between 03:00 and midnight in Minsk the day keeps the number the UTC day had — a counter of before the deploy goes on', async () => {
+    counting();
+    const limiter = createRateLimiter({ limit: 10, windowSeconds: 86400, keyPrefix: 'day' });
+    const nowMs = Date.parse('2026-11-10T10:00:00.000Z'); // 13:00 in Minsk
+
+    const { key } = await at(limiter, '2026-11-10T10:00:00.000Z');
+
+    expect(key).toBe(`ratelimit:day:9.9.9.9:${Math.floor(nowMs / 86400000)}`);
+  });
+
+  test.each([
+    ['00:00:00 in Minsk', '2026-11-09T21:00:00.000Z', 86400],
+    ['02:30:00 in Minsk', '2026-11-09T23:30:00.000Z', 77400],
+    ['03:30:00 in Minsk', '2026-11-10T00:30:00.000Z', 73800],
+    ['23:59:59 in Minsk', '2026-11-10T20:59:59.000Z', 1],
+  ])('the counter made at %s expires at the next Minsk midnight — in %i s', async (_label, iso, expiry) => {
+    counting();
+    const limiter = createRateLimiter({ limit: 10, windowSeconds: 86400, keyPrefix: 'day' });
+
+    expect((await at(limiter, iso)).expiry).toBe(expiry);
+  });
+
+  test('ten resends before 03:00 in Minsk and the eleventh after it — refused: one address, one day', async () => {
+    counting();
+    const limiter = createRateLimiter({
+      limit: 10, windowSeconds: 86400, keyPrefix: 'verify-send-address', byAddress: true,
+    });
+    const req = { ip: '9.9.9.9', user: { userId: 'u-1' }, method: 'POST', path: '/send-verification-code' };
+
+    for (let i = 0; i < 10; i += 1) {
+      expect((await at(limiter, '2026-11-09T23:50:00.000Z', req)).refused).toBe(false); // 02:50
+    }
+    expect((await at(limiter, '2026-11-10T00:10:00.000Z', req)).refused).toBe(true); // 03:10
+  });
+
+  test('the tenth of a day passes, and the next Minsk day starts afresh', async () => {
+    counting();
+    const limiter = createRateLimiter({ limit: 10, windowSeconds: 86400, keyPrefix: 'day' });
+
+    for (let i = 0; i < 9; i += 1) await at(limiter, '2026-11-10T10:00:00.000Z');
+    expect((await at(limiter, '2026-11-10T20:59:59.000Z')).refused).toBe(false); // the 10th, 23:59:59
+    expect((await at(limiter, '2026-11-10T20:59:59.000Z')).refused).toBe(true); // the 11th
+    expect((await at(limiter, '2026-11-10T21:00:00.000Z')).refused).toBe(false); // 00:00, 11.11
+  });
+
+  test('spendRouteLimit (the day of new accounts) counts the same day: retry after — till Minsk midnight', async () => {
+    counting();
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-09T23:30:00.000Z')); // 02:30 in Minsk
+    const { spendRouteLimit } = await import('../../middleware/rateLimiter.js');
+    const day = { limit: 1, windowSeconds: 86400, keyPrefix: 'new-accounts-day' };
+    const req = { ip: '9.9.9.9', path: '/oauth' };
+
+    await spendRouteLimit(req, day);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-11-10T00:30:00.000Z')); // 03:30
+    const refused = await spendRouteLimit(req, day);
+
+    expect(refused.granted).toBe(false);
+    expect(refused.retryAfter).toBe(73800);
+    expect(refused.resetAt).toBe(Date.parse('2026-11-10T21:00:00.000Z') / 1000);
   });
 });
 

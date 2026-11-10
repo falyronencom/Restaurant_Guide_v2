@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { getMenuItems } from '@/lib/api/endpoints/establishments';
 import { currentVisitor } from '@/lib/api/visitor';
 import type { PublicMenuItem } from '@/lib/api/types';
+import { mayDropCachedPage } from '@/lib/cached-page-drops';
 import { isDetailPathOf } from '@/lib/detail-path';
 
 export type ReloadMenuResult =
@@ -22,7 +23,9 @@ export type ReloadMenuResult =
  * failed render (no menu in its HTML), and without this it would keep it for
  * up to an hour (revalidate = 3600). The path is only revalidated when it is a
  * detail address of THIS slug, so the action cannot be pointed at an
- * arbitrary route.
+ * arbitrary route, and only within the hour's allowance of drops
+ * (lib/cached-page-drops.ts): the page's next render spends the site's own
+ * budget on the API.
  */
 export async function reloadMenuAction(input: {
   slug: string;
@@ -36,7 +39,7 @@ export async function reloadMenuAction(input: {
   } catch {
     return { ok: false };
   }
-  if (isDetailPathOf(input.detailPath, input.slug)) {
+  if (isDetailPathOf(input.detailPath, input.slug) && await mayDropCachedPage()) {
     revalidatePath(input.detailPath);
   }
   return { ok: true, menuItems: result.menu_items };
