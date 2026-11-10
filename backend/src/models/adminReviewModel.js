@@ -11,6 +11,7 @@
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 import { likeContains } from '../utils/likePattern.js';
+import { avatarStateSql } from './avatarModerationModel.js';
 
 /**
  * Build dynamic WHERE clause for admin review queries
@@ -148,6 +149,11 @@ export const getAdminReviews = async (filters = {}, limit = 20, offset = 0) => {
       r.user_id as author_id,
       u.name as author_name,
       u.email as author_email,
+      -- The author's photo whatever its state, and the state: the moderator
+      -- approves or takes it down beside the review (migration 041). A viewer
+      -- gets none (adminReviewService.toViewerReview, viewer projection).
+      ${filters.viewer ? 'NULL::text' : 'u.avatar_url'} as author_avatar_url,
+      ${filters.viewer ? 'NULL::text' : avatarStateSql('u')} as author_avatar_state,
       e.name as establishment_name,
       e.city as establishment_city,
       e.id as establishment_id,

@@ -134,7 +134,11 @@ const withHiddenCause = (review) => {
 const toViewerReview = (review) => {
   // Whether the author is blocked, and why a review was hidden, are facts
   // about a person and the moderator's free text: not for a viewer.
-  const withheld = { author_is_active: null, hidden_by: null, hidden_reason: null };
+  // The author's photo as the moderator sees it, approved or not (migration
+  // 041): not for a viewer either — the viewer projection withholds the key too.
+  const withheld = {
+    author_is_active: null, hidden_by: null, hidden_reason: null, author_avatar_url: null,
+  };
   if (review.is_visible) {
     return { ...review, ...withheld, author_id: null, author_email: null, viewer_redacted: false };
   }

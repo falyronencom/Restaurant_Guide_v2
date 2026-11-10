@@ -12,6 +12,18 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { publicAvatarSql } from './avatarModerationModel.js';
+
+/**
+ * The author's photo in a review answer: only a photo a moderator approved
+ * (models/avatarModerationModel.js), and only on a card in the catalogue. The
+ * reads by id (GET /establishments/:id/reviews, GET /reviews/:id) also reach
+ * the reviews of a draft, a suspended or a rejected card — the partner's
+ * cabinet reads its own reviews by the same unauthenticated call, so the
+ * reviews stay and the photos go (DISCOVERY 09.11.2026, finding 1). `u` and `e`
+ * are the aliases of users and of the review's establishment.
+ */
+const AUTHOR_AVATAR_SQL = `CASE WHEN e.status = 'active' THEN ${publicAvatarSql('u')} END`;
 
 /**
  * Create a new review in the database
@@ -87,10 +99,11 @@ export const findReviewById = async (reviewId, _includeDeleted = false) => {
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
-      u.avatar_url as author_avatar,
+      ${AUTHOR_AVATAR_SQL} as author_avatar,
       u.is_active as author_is_active
     FROM reviews r
     JOIN users u ON r.user_id = u.id
+    LEFT JOIN establishments e ON e.id = r.establishment_id
     WHERE r.id = $1
   `;
 
@@ -179,10 +192,11 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
-      u.avatar_url as author_avatar,
+      ${AUTHOR_AVATAR_SQL} as author_avatar,
       u.is_active as author_is_active
     FROM reviews r
     JOIN users u ON r.user_id = u.id
+    LEFT JOIN establishments e ON e.id = r.establishment_id
     WHERE ${conditions.join(' AND ')}
     ORDER BY ${orderClause}
     LIMIT $${paramIdx} OFFSET $${paramIdx + 1}

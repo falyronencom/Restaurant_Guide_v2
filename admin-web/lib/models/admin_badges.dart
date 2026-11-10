@@ -9,11 +9,16 @@ class AdminBadges {
   final int menuFlags;
   final int menuFlagsAgedOver7d;
 
+  /// Фото людей, ждущие решения модератора (миграция 041). Прежний сервер
+  /// поля не знает — тогда ноль, и бейджа нет.
+  final int avatarsPending;
+
   const AdminBadges({
     this.establishmentsPending = 0,
     this.establishmentsSuspended = 0,
     this.menuFlags = 0,
     this.menuFlagsAgedOver7d = 0,
+    this.avatarsPending = 0,
   });
 
   factory AdminBadges.fromJson(Map<String, dynamic> json) {
@@ -22,6 +27,7 @@ class AdminBadges {
       establishmentsSuspended: json['establishments_suspended'] as int? ?? 0,
       menuFlags: json['menu_flags'] as int? ?? 0,
       menuFlagsAgedOver7d: json['menu_flags_aged_over_7d'] as int? ?? 0,
+      avatarsPending: json['avatars_pending'] as int? ?? 0,
     );
   }
 }

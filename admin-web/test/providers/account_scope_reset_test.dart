@@ -131,6 +131,7 @@ class _FakeUserService implements AdminUserService {
     String? search,
     String? status,
     String? role,
+    String? avatar,
   }) async =>
       const AdminUserListResponse(
           users: <AdminUser>[_person], total: 1, page: 1, pages: 1);

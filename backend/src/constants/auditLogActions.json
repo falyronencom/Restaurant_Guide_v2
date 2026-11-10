@@ -104,6 +104,16 @@
       "summary": "Имя пользователя сброшено"
     },
     {
+      "action": "user_avatar_approve",
+      "entity_type": "user",
+      "summary": "Фото пользователя одобрено"
+    },
+    {
+      "action": "user_avatar_remove",
+      "entity_type": "user",
+      "summary": "Фото пользователя снято"
+    },
+    {
       "action": "user_delete_account",
       "entity_type": "user",
       "summary": "Пользователь удалил учётную запись",
@@ -179,6 +189,9 @@
     "establishment_name",
     "establishment_city",
     "batch_id",
-    "batch_size"
+    "batch_size",
+    "avatar_url",
+    "avatar_state",
+    "file"
   ]
 }
