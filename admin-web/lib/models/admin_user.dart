@@ -6,6 +6,7 @@
 library;
 
 import 'package:restaurant_guide_admin_web/config/panel_roles.dart';
+import 'package:restaurant_guide_admin_web/widgets/person_photo.dart';
 
 /// Последняя блокировка или разблокировка из журнала.
 class AdminUserBlockAction {
@@ -130,6 +131,13 @@ class AdminUser {
   /// Пустые имя и контакты означают «скрыто от просмотрщика», а не «их нет».
   final bool viewerRedacted;
 
+  /// Фото человека как он его поставил — в любом состоянии (миграция 041).
+  /// Просмотрщику не приходит (`null`).
+  final String? avatarUrl;
+
+  /// Видят ли фото другие люди.
+  final PersonPhotoState avatarState;
+
   const AdminUser({
     required this.id,
     this.name,
@@ -148,6 +156,8 @@ class AdminUser {
     this.blockHistory = const <AdminUserBlockAction>[],
     this.establishments,
     this.viewerRedacted = false,
+    this.avatarUrl,
+    this.avatarState = PersonPhotoState.none,
   });
 
   factory AdminUser.fromJson(Map<String, dynamic> json) {
@@ -191,8 +201,19 @@ class AdminUser {
               .toList()
           : null,
       viewerRedacted: json['viewer_redacted'] == true,
+      avatarUrl: json['avatar_url'] as String?,
+      avatarState: PersonPhotoState.fromWire(json['avatar_state']),
     );
   }
+
+  /// Фото ждёт решения модератора и модератор его видит — можно одобрить
+  /// или снять. Просмотрщику ссылка не приходит, кнопки ему и не служат.
+  bool get canModeratePhoto =>
+      avatarState == PersonPhotoState.pending && avatarUrl != null && !isDeleted;
+
+  /// Фото можно снять: и ждущее, и одобренное.
+  bool get canRemovePhoto =>
+      avatarState != PersonPhotoState.none && avatarUrl != null && !isDeleted;
 
   /// Почта или телефон — чем человек входит.
   String? get contact {

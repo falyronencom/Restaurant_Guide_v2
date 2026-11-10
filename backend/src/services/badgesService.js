@@ -18,6 +18,7 @@
 
 import * as BadgesModel from '../models/badgesModel.js';
 import * as QualityHealthModel from '../models/qualityHealthModel.js';
+import { countPendingAvatars } from '../models/avatarModerationModel.js';
 import logger from '../utils/logger.js';
 
 /** Время жизни кэша. Нижняя граница диапазона 30–60 с из брифа. */
@@ -47,6 +48,7 @@ export const invalidateCache = () => {
  *   establishments_suspended: int,
  *   menu_flags: int,
  *   menu_flags_aged_over_7d: int,
+ *   avatars_pending: int,
  *   generated_at: ISO-строка
  * }
  *
@@ -78,9 +80,10 @@ export const getBadges = async ({ force = false } = {}) => {
   }
 
   try {
-    const [queues, flags] = await Promise.all([
+    const [queues, flags, avatarsPending] = await Promise.all([
       BadgesModel.getEstablishmentQueueCounts(),
       QualityHealthModel.getHangingFlags(),
+      countPendingAvatars(),
     ]);
 
     const value = {
@@ -88,6 +91,10 @@ export const getBadges = async ({ force = false } = {}) => {
       establishments_suspended: queues.suspended,
       menu_flags: flags.hanging_count,
       menu_flags_aged_over_7d: flags.aged_over_7d,
+      // Фото людей, ждущие модератора (миграция 041): очередь фильтра
+      // «Фото на проверке» экрана «Пользователи». До миграции — все фото с
+      // ссылкой у людей и партнёров: одобренных ещё нет.
+      avatars_pending: avatarsPending,
       generated_at: new Date(now).toISOString(),
     };
 

@@ -313,9 +313,10 @@ router.post(
 // ============================================================================
 
 /**
- * GET /api/v1/admin/users?search=&status=active|blocked|deleted&role=user|partner|panel&page=1&per_page=20
+ * GET /api/v1/admin/users?search=&status=active|blocked|deleted&role=user|partner|panel&avatar=pending&page=1&per_page=20
  *
- * The people of the platform. Read tier: a viewer sees the list without names
+ * The people of the platform; avatar=pending — the queue of photos waiting for
+ * a moderator. Read tier: a viewer sees the list without names
  * and contacts and may not search (adminUserService.getUsers).
  */
 router.get(
@@ -372,6 +373,32 @@ router.post(
   authenticate,
   writeAccess,
   adminUserController.resetUserName,
+);
+
+/**
+ * POST /api/v1/admin/users/:id/avatar/approve — body { avatar_url }
+ *
+ * Other people see the person's photo from now on — the link the moderator saw
+ * (migration 041); journal in the same transaction.
+ */
+router.post(
+  '/users/:id/avatar/approve',
+  authenticate,
+  writeAccess,
+  adminUserController.approveAvatar,
+);
+
+/**
+ * POST /api/v1/admin/users/:id/avatar/remove — body { avatar_url, reason? }
+ *
+ * Take the photo down for everybody, the person included; its file leaves the
+ * cloud through the file queue; journal in the same transaction.
+ */
+router.post(
+  '/users/:id/avatar/remove',
+  authenticate,
+  writeAccess,
+  adminUserController.removeAvatar,
 );
 
 // ============================================================================

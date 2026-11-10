@@ -41,6 +41,7 @@ export const TEST_STATE_TABLES = [
   'establishments',
   'refresh_tokens',
   'avatar_deletions',
+  'avatar_file_deletions',
   'users',
 ];
 

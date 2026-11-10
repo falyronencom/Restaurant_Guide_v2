@@ -232,6 +232,20 @@ void main() {
     expect(find.text('12'), findsOneWidget);
   });
 
+  testWidgets('фото на проверке — бейдж на «Пользователях» (миграция 041)',
+      (tester) async {
+    await pumpRail(tester, badges: const AdminBadges(avatarsPending: 5));
+
+    final usersItem = find.ancestor(
+      of: find.text('Пользователи'),
+      matching: find.byType(InkWell),
+    );
+    expect(
+      find.descendant(of: usersItem.first, matching: find.text('5')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('разобранная очередь бейджа не рисует — молчание есть норма',
       (tester) async {
     await pumpRail(
