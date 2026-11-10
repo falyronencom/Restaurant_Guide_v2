@@ -19,6 +19,10 @@
  * прямо в Redis перед границей. Ожидания — литералы: 20 в сутки, текст лимитеров.
  */
 import { jest } from '@jest/globals';
+import { minskDate } from '../../utils/minskDay.js';
+
+/** The number of the Minsk day — the day bucket of every day-long limiter (middleware/rateLimiter.js bucketAt). */
+const minskDayIndex = () => Date.parse(`${minskDate(new Date(Date.now()))}T00:00:00.000Z`) / 86400000;
 
 const mockVerifyIdToken = jest.fn();
 const MockOAuth2Client = jest.fn();
@@ -41,7 +45,7 @@ const SITE_SECRET = 'site-secret-of-this-test-long-enough-to-count';
 const SITE_VISITOR = '203.0.113.77';
 const OTHER_VISITOR = '203.0.113.78';
 
-const dayIndex = () => Math.floor(Date.now() / 86400000);
+const dayIndex = () => minskDayIndex();
 
 /** Счётчик новых учёток адреса за сутки. */
 const dayKey = (address = '::ffff:127.0.0.1') =>

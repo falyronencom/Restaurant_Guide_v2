@@ -12,6 +12,8 @@ jest.mock('@/lib/api/endpoints/establishments', () => ({
 
 import { revalidatePath } from 'next/cache';
 
+import { _resetForTests as resetDrops } from '@/lib/cached-page-drops';
+
 import { getMenuItems } from '@/lib/api/endpoints/establishments';
 import { ApiError } from '@/lib/api/types';
 import { isDetailPathOf } from '@/lib/detail-path';
@@ -24,6 +26,8 @@ const ITEM = { id: 'i1', item_name: 'Борщ' };
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // A fresh hour of page drops (lib/cached-page-drops.ts) for every test.
+  resetDrops();
 });
 
 it('returns the items and busts the literal detail path', async () => {

@@ -1,6 +1,8 @@
 /// Data models for admin review management
 library;
 
+import 'package:restaurant_guide_admin_web/widgets/person_photo.dart';
+
 /// Single review in admin list view
 class AdminReviewItem {
   final String id;
@@ -54,6 +56,13 @@ class AdminReviewItem {
   /// сказал (просмотрщику не отдаёт, прежний сервер не знал).
   final bool? authorIsActive;
 
+  /// Фото автора как он его поставил, в любом состоянии (миграция 041).
+  /// Просмотрщику не приходит.
+  final String? authorAvatarUrl;
+
+  /// Видят ли фото автора другие люди.
+  final PersonPhotoState authorAvatarState;
+
   /// Почему отзыв скрыт, по журналу: [ReviewHiddenBy.moderator] — модератор
   /// скрыл его сам, [ReviewHiddenBy.block] — скрыт блокировкой автора.
   /// `null` — записи нет (скрипт оператора, до журнала) или отзыв не скрыт.
@@ -87,6 +96,8 @@ class AdminReviewItem {
     this.authorIsActive,
     this.hiddenBy,
     this.hiddenReason,
+    this.authorAvatarUrl,
+    this.authorAvatarState = PersonPhotoState.none,
   });
 
   /// Автор заблокирован — сказано сервером явно.
@@ -122,6 +133,8 @@ class AdminReviewItem {
       authorId: json['author_id'] as String?,
       authorName: json['author_name'] as String?,
       authorEmail: json['author_email'] as String?,
+      authorAvatarUrl: json['author_avatar_url'] as String?,
+      authorAvatarState: PersonPhotoState.fromWire(json['author_avatar_state']),
       establishmentName: json['establishment_name'] as String?,
       establishmentCity: json['establishment_city'] as String?,
       establishmentId: json['establishment_id'] as String?,
@@ -186,6 +199,8 @@ class AdminReviewItem {
       authorAverageRating: authorAverageRating,
       viewerRedacted: viewerRedacted,
       authorIsActive: authorIsActive,
+      authorAvatarUrl: authorAvatarUrl,
+      authorAvatarState: authorAvatarState,
       // Причина скрытия — о прежнем состоянии: показанный оптимистично отзыв
       // её больше не несёт, скрытый — получит при перечитке.
       hiddenBy: (isVisible ?? this.isVisible) ? null : hiddenBy,

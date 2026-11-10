@@ -15,6 +15,7 @@ import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/separated_wrap.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_search_decoration.dart';
+import 'package:restaurant_guide_admin_web/widgets/person_photo.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_skeleton.dart';
 
@@ -819,7 +820,8 @@ class _ReviewCard extends StatelessWidget {
             ),
           )
         else
-          _Avatar(
+          PersonPhoto(
+            url: review.authorAvatarUrl,
             label: hasName ? name : review.authorEmail,
             muted: !hasName,
           ),
@@ -933,36 +935,6 @@ class _StateChip extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: state.labelColor,
-        ),
-      ),
-    );
-  }
-}
-
-class _Avatar extends StatelessWidget {
-  final String? label;
-  final bool muted;
-
-  const _Avatar({required this.label, required this.muted});
-
-  @override
-  Widget build(BuildContext context) {
-    final trimmed = label?.trim() ?? '';
-
-    return Container(
-      width: 22,
-      height: 22,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: muted ? AppTheme.textGrey : AppTheme.primaryOrangeDark,
-        shape: BoxShape.circle,
-      ),
-      child: Text(
-        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase(),
-        style: const TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: AppTheme.textOnPrimary,
         ),
       ),
     );
@@ -1104,6 +1076,19 @@ class _DetailPanel extends StatelessWidget {
                           icon: const Icon(Icons.person_outline, size: 18),
                           label: const Text('Открыть автора'),
                         ),
+                        // Фото автора ждёт модератора: решение — в карточке
+                        // человека, где кнопки «Одобрить фото» и «Снять фото».
+                        if (review.authorAvatarState ==
+                                PersonPhotoState.pending &&
+                            review.authorAvatarUrl != null)
+                          TextButton.icon(
+                            key: const ValueKey<String>('review-author-photo'),
+                            onPressed: () =>
+                                context.go(userCardLocation(review.authorId!)),
+                            icon: const Icon(Icons.face_retouching_natural,
+                                size: 18),
+                            label: const Text('Проверить фото автора'),
+                          ),
                         // Все отзывы этого человека — здесь же, с отметками
                         // для «Скрыть выбранные» (A2-09).
                         if (provider.authorId != review.authorId)
@@ -1496,29 +1481,51 @@ class _Facts extends StatelessWidget {
     final name = review.authorName?.trim();
     final hasName = name != null && name.isNotEmpty;
 
+    // Фото автора — каким он его поставил, и видят ли его другие (решение
+    // Координатора 09.11.2026: другим — только после одобрения). Решает
+    // модератор в карточке человека («Проверить фото» ниже).
+    final photoState = review.authorAvatarUrl == null
+        ? null
+        : personPhotoStateLabel(review.authorAvatarState);
+
     return _Fact(
       label: 'Автор',
-      value: Row(
-        spacing: 8,
+      value: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
         children: <Widget>[
-          _Avatar(
-            label: hasName ? name : review.authorEmail,
-            muted: !hasName,
+          Row(
+            spacing: 8,
+            children: <Widget>[
+              PersonPhoto(
+                url: review.authorAvatarUrl,
+                label: hasName ? name : review.authorEmail,
+                muted: !hasName,
+                size: 40,
+              ),
+              Expanded(
+                child: Text(
+                  hasName
+                      ? name
+                      : review.viewerRedacted
+                          ? kRedactedForViewerLabel
+                          : 'Без имени',
+                  style: hasName
+                      ? AppTheme.canonFieldValue
+                      : AppTheme.canonFieldValueEmpty,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: Text(
-              hasName
-                  ? name
-                  : review.viewerRedacted
-                      ? kRedactedForViewerLabel
-                      : 'Без имени',
-              style: hasName
-                  ? AppTheme.canonFieldValue
-                  : AppTheme.canonFieldValueEmpty,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+          if (photoState != null)
+            Text(
+              photoState,
+              key: const ValueKey<String>('review-author-photo-state'),
+              style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             ),
-          ),
         ],
       ),
       footnote: review.authorEmail,

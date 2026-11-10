@@ -18,7 +18,6 @@ import * as authService from '../services/authService.js';
 import { verifyGoogleToken, verifyYandexToken } from '../services/oauthService.js';
 import {
   uploadAvatar as cloudinaryUploadAvatar,
-  deleteImage,
   hasPlainTransformations,
   isOwnedAsset,
   ownCloudPublicId,
@@ -624,7 +623,6 @@ export async function uploadAvatar(req, res, next) {
       });
     }
 
-    // Fetch current avatar URL to delete old Cloudinary image later
     const currentUser = await authService.findUserById(userId);
     // The account was deleted or switched off after the check at the door (the
     // status is cached for seconds, and multer read the body in between): nothing
@@ -635,13 +633,14 @@ export async function uploadAvatar(req, res, next) {
         error: { code: 'USER_NOT_FOUND', message: AUTH_REFUSALS.accountNotFound },
       });
     }
-    const oldAvatarUrl = currentUser.avatar_url;
 
     // Upload new avatar to Cloudinary, within the account's daily upload
     // allowance, shared with every uploader (services/uploadAllowance.js): a
     // spent one is a 429 AppError, passed on to errorHandler below.
     const uploadResult = await sendWithinDailyAllowance(
-      { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit },
+      // The avatars' own pool of the new accounts' ceiling: a guest's avatar
+      // does not take the day of the new partners' cards.
+      { userId, bytes: req.file.size, message: UPLOAD_REFUSALS.dailyLimit, pool: 'avatar' },
       () => cloudinaryUploadAvatar(tempFilePath, userId),
     );
     const avatarUrl = uploadResult.secure_url;
@@ -659,22 +658,11 @@ export async function uploadAvatar(req, res, next) {
       throw error;
     }
 
-    // Delete the old avatar from Cloudinary. The stored link is not trusted to
-    // name our asset (PUT /auth/profile used to store any URL): only an asset
-    // on our cloud inside the caller's own avatar folder is destroyed —
-    // deleteImage refuses the rest (review 02.10.2026, N1). The CDN's copies go
-    // with it: once the file is gone, the deletion of the account no longer sees
-    // it in the folder and cannot reach them.
-    const oldPublicId = ownCloudPublicId(oldAvatarUrl);
-    if (oldPublicId) {
-      deleteImage(oldPublicId, [ownedFolders.avatars(userId)], { invalidate: true }).catch((err) => {
-        logger.warn('Failed to delete old avatar from Cloudinary', {
-          oldPublicId,
-          error: err.message,
-        });
-      });
-    }
-
+    // The old avatar leaves the cloud with the CDN's copies: updateUserProfile
+    // queues its file in the transaction that writes the new link
+    // (services/avatarFiles.js, migration 041) — only a file of our cloud inside
+    // the caller's own avatar folder (review 02.10.2026, N1). The new photo is
+    // the caller's at once; other people see it after a moderator approves it.
     return res.status(200).json({
       success: true,
       data: {
