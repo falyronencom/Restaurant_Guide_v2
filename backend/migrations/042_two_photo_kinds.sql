@@ -31,9 +31,12 @@
 
 BEGIN;
 
--- The UPDATE locks the moved rows until COMMIT: wait for other locks at most
--- 5 s instead of queueing a partner's save behind a long transaction — on a
--- timeout nothing is applied, run it again.
+-- The new table's foreign key locks establishment_media against writes until
+-- COMMIT (SHARE ROW EXCLUSIVE), and the UPDATE its moved rows: the transaction
+-- is short, and it waits for other locks at most 5 s instead of queueing a
+-- partner's save behind a long one — on a timeout nothing is applied, run it
+-- again. Operator: SELECT type, count(*) FROM establishment_media GROUP BY 1
+-- before and after; establishment_media_kinds_042 has the moved count.
 SET LOCAL lock_timeout = '5s';
 
 CREATE TABLE IF NOT EXISTS establishment_media_kinds_042 (

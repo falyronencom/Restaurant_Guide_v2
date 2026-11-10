@@ -10,7 +10,7 @@
  * Controllers call services, services call models.
  */
 
-import { isVenuePhoto } from '../constants/mediaKinds.js';
+import { LEGACY_VENUE_TYPES, isVenuePhoto } from '../constants/mediaKinds.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
@@ -1231,7 +1231,9 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         .filter(m => (bucket === 'interior' ? isVenuePhoto(m.type) : m.type === bucket) && m.file_type !== 'pdf');
       for (const [field, bucket] of [['interior_photos', 'interior'], ['menu_photos', 'menu']]) {
         const incoming = updates[field];
-        const allowed = Math.max(MEDIA_LIMITS[bucket], ofBucket(bucket).length);
+        const allowed = bucket === 'interior'
+          ? Math.max(MEDIA_LIMITS.interior, ofBucket('interior').length)
+          : MEDIA_LIMITS[bucket];
         if (Array.isArray(incoming) && incoming.length > allowed) {
           throw new AppError(
             ESTABLISHMENT_REFUSALS.photoLimit(bucket, MEDIA_LIMITS[bucket]),
@@ -1262,7 +1264,11 @@ export const updateEstablishment = async (establishmentId, partnerId, updates) =
         plans.push({
           type,
           existingOfType,
-          toDelete: existingOfType.filter(m => !newKeys.has(keyOf(m.url))),
+          // A facade or dish row of before migration 042 goes only by its own
+          // DELETE: a form opened before the deploy never had it in its list,
+          // and its save must not take it (Phase 3.5 review of PR 2). After 042
+          // every venue row is `interior` and goes as before.
+          toDelete: existingOfType.filter(m => !newKeys.has(keyOf(m.url)) && !LEGACY_VENUE_TYPES.includes(m.type)),
           toInsert: newUrls.filter(url => !existingKeys.has(keyOf(url))),
         });
       }

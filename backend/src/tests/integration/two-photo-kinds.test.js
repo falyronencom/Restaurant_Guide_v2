@@ -108,6 +108,21 @@ describe('кабинет: сохранение не меняет обложку-
     expect(before).toBe(photos.facade.preview_url);
     expect(await cover()).toBe(photos.facade.preview_url);
   });
+
+  // Форма, открытая до выкатки: прежний сервер отдавал в «Фото» только зал, и
+  // автосохранение сайта шлёт этот список (ревью Phase 3.5 PR 2, обычное и по
+  // линзе). До миграции 042 такое сохранение не стирает фасад и блюда.
+  test('форма, открытая до выкатки (без фасада и блюд): строки целы, обложка — фасад', async () => {
+    const photos = await seededCard();
+
+    await asPartner('put', `/api/v1/partner/establishments/${card.id}`)
+      .send({ interior_photos: [photos.hall1.url, photos.hall2.url], menu_photos: [photos.menu.url], primary_photo: photos.facade.url })
+      .expect(200);
+
+    const ids = (await query('SELECT id FROM establishment_media WHERE establishment_id = $1', [card.id])).rows.map((r) => r.id);
+    expect(ids.sort()).toEqual([photos.facade.id, photos.hall1.id, photos.hall2.id, photos.dish.id, photos.menu.id].sort());
+    expect(await cover()).toBe(photos.facade.preview_url);
+  });
 });
 
 describe('партнёр и модератор видят все фото заведения', () => {
