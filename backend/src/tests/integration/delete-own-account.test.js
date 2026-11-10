@@ -766,8 +766,10 @@ describe('DELETE /auth/account — юр. данные карточки, кото
       'SELECT partner_id, company_name, tax_id, contact_person, contact_email FROM partner_documents WHERE establishment_id = $1',
       [establishment.id],
     );
+    // Реквизиты прежнего с карточкой не переходят (вариант А, 10.11.2026):
+    // у нового — только то, что он вписал сам.
     expect(docs.rows).toEqual([{
-      partner_id: next.user.id, company_name: 'ООО «Вкус»', tax_id: '191234567',
+      partner_id: next.user.id, company_name: null, tax_id: null,
       contact_person: 'Пётр Новиков', contact_email: 'petr@test.com',
     }]);
     expect((await userRow(previous.user.id)).name).toBe('Гость');

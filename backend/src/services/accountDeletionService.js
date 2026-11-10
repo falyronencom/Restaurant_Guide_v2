@@ -423,10 +423,10 @@ export const eraseLeftovers = async (client, userId) => {
     [userId],
   )).rowCount;
 
-  // A legal record under this person's id: of a card an earlier claim passed
-  // to another holder (a claim now takes the record to the new holder and
-  // clears the previous holder's contacts — adminService.claimEstablishment —
-  // so what a new holder writes is never under this id), or of no card. The
+  // A legal record under this person's id: of a card a claim before
+  // 10.11.2026 passed to another holder (a claim now removes the previous
+  // holder's record — adminService.claimEstablishment — so what a new holder
+  // writes is never under this id), or of no card. The
   // person gave it, and of a sole trader it is the person: the contact, the
   // organisation's name, the УНП and the link to the scan go — the record as
   // a whole (critic 2Г, П3-02). Not emptied in place: the cabinet's save

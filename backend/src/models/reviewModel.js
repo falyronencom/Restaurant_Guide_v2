@@ -792,7 +792,15 @@ export const executeInTransaction = async (callback) => {
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
-    logger.error('Transaction rolled back', { error: error.message });
+    // A refusal the service meant (AppError below 500: the author's account
+    // switched off, a review gone) rolls back too, but it is not a failure of
+    // the server: a line of the journal, not an error (critic 2Г, review of
+    // 10.11.2026).
+    if (error?.isOperational === true && error.statusCode < 500) {
+      logger.info('Transaction rolled back: refused', { code: error.code });
+    } else {
+      logger.error('Transaction rolled back', { error: error.message });
+    }
     throw error;
   } finally {
     client.release();

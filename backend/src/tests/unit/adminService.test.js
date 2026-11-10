@@ -64,7 +64,7 @@ jest.unstable_mockModule('../../models/ocrJobModel.js', () => ({
 
 jest.unstable_mockModule('../../models/partnerDocumentsModel.js', () => ({
   findByEstablishmentId: jest.fn(),
-  passToHolder: jest.fn(),
+  dropPreviousHolderRecords: jest.fn(),
 }));
 
 jest.unstable_mockModule('../../models/auditLogModel.js', () => ({
@@ -226,7 +226,7 @@ beforeEach(() => {
   MediaModel.getOcrEligibleMedia.mockResolvedValue([]);
   MediaModel.getEstablishmentMedia.mockResolvedValue([]);
   PartnerDocumentsModel.findByEstablishmentId.mockResolvedValue(null);
-  PartnerDocumentsModel.passToHolder.mockResolvedValue(0);
+  PartnerDocumentsModel.dropPreviousHolderRecords.mockResolvedValue(0);
   OcrJobModel.hasCompletedJobForMedia.mockResolvedValue(false);
   OcrJobModel.enqueue.mockResolvedValue(undefined);
   EstablishmentService.validateCityCoordinates.mockReturnValue({ valid: true });
@@ -916,7 +916,7 @@ describe('claimEstablishment', () => {
     );
     // The legal record goes with the card on the same client (account
     // deletion, 19.10.2026): the previous holder's contacts leave it.
-    expect(PartnerDocumentsModel.passToHolder).toHaveBeenCalledWith(client, EST_ID, TARGET_USER_ID);
+    expect(PartnerDocumentsModel.dropPreviousHolderRecords).toHaveBeenCalledWith(client, EST_ID, TARGET_USER_ID);
     // The order the title names — the claim, the legal record and the role
     // inside one transaction: a role written after COMMIT would leave a
     // committed owner without the partner role if that write failed.
@@ -924,7 +924,7 @@ describe('claimEstablishment', () => {
     const order = {
       begin: at(client.query, ([sql]) => sql === 'BEGIN'),
       claim: at(EstablishmentModel.claimEstablishment, () => true),
-      legal: at(PartnerDocumentsModel.passToHolder, () => true),
+      legal: at(PartnerDocumentsModel.dropPreviousHolderRecords, () => true),
       role: at(client.query, ([sql]) => String(sql).includes("UPDATE users SET role = 'partner'")),
       commit: at(client.query, ([sql]) => sql === 'COMMIT'),
     };
