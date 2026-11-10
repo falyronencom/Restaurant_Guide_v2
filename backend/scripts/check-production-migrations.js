@@ -120,6 +120,14 @@ const MARKERS = [
     query: `SELECT 1 FROM information_schema.tables
             WHERE table_schema = 'public' AND table_name = 'avatar_deletions'`,
   },
+  {
+    id: '041',
+    label: 'users.avatar_approved_url column (a photo reaches other people after a moderator approves it)',
+    query: `SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'users'
+              AND column_name = 'avatar_approved_url'`,
+  },
 ];
 
 function maskUrl(url) {
