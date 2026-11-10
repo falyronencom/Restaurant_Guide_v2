@@ -52,7 +52,6 @@ const TEXT = {
   pdfOverCloudLimit: 'Файл PDF больше 10 МБ — уменьшите его или загрузите меню фотографиями',
   pdfLimit: 'Можно добавить не больше 2 файлов меню в формате PDF.',
   interiorLimit: 'Можно добавить не больше 30 фото интерьера.',
-  dishesLimit: 'Можно добавить не больше 30 фото.',
   promotionImageTooLarge: 'Картинка больше 10 МБ. Выберите фото поменьше.',
 };
 
@@ -257,9 +256,12 @@ describe('медиа карточки: отказы по типу и лимит�
     expect(refusal(res)).toEqual({ status: 403, code: 'PDF_LIMIT_EXCEEDED', message: TEXT.pdfLimit });
   });
 
+  // Since PR 2 of the thread «Фото людей» (amendments of CAT-E-2.1 and
+  // CAT-E-2.3) a dish photo is a photo of the venue: it counts against the
+  // venue's limit and is refused with the venue's text.
   test.each([
     ['interior', TEXT.interiorLimit],
-    ['dishes', TEXT.dishesLimit],
+    ['dishes', TEXT.interiorLimit],
   ])('лимит фото (%s): 31-е — отказ', async (type, message) => {
     for (let position = 0; position < 30; position += 1) {
       await MediaModel.createMedia({

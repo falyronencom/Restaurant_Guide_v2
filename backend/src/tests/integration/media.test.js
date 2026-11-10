@@ -229,7 +229,10 @@ describe('Media System - Upload Operations', () => {
       expect(response.body.data.type).toBe('menu');
     });
 
-    test('should upload exterior photo successfully', async () => {
+    // Since PR 2 of the thread «Фото людей» (amendments of CAT-E-2.1 and
+    // CAT-E-2.3) a facade or a dish photo is a photo of the venue: accepted,
+    // stored as `interior`.
+    test('should upload exterior photo successfully — stored as a photo of the venue', async () => {
       const response = await request(app)
         .post(`/api/v1/partner/establishments/${establishment.id}/media`)
         .set('Authorization', `Bearer ${partnerToken}`)
@@ -237,10 +240,10 @@ describe('Media System - Upload Operations', () => {
         .attach('file', Buffer.from('fake image'), 'exterior.jpg')
         .expect(201);
 
-      expect(response.body.data.type).toBe('exterior');
+      expect(response.body.data.type).toBe('interior');
     });
 
-    test('should upload dishes photo successfully', async () => {
+    test('should upload dishes photo successfully — stored as a photo of the venue', async () => {
       const response = await request(app)
         .post(`/api/v1/partner/establishments/${establishment.id}/media`)
         .set('Authorization', `Bearer ${partnerToken}`)
@@ -248,7 +251,7 @@ describe('Media System - Upload Operations', () => {
         .attach('file', Buffer.from('fake image'), 'dish.jpg')
         .expect(201);
 
-      expect(response.body.data.type).toBe('dishes');
+      expect(response.body.data.type).toBe('interior');
     });
 
     test('should reject invalid media type', async () => {
@@ -725,7 +728,7 @@ describe('Media System - Upload Operations', () => {
       expect(mediaList.body.data).toHaveLength(30);
     });
 
-    test('rejects 31st interior photo; exterior and dishes counters unaffected', async () => {
+    test('rejects 31st venue photo, whatever kind it is sent as', async () => {
       for (let i = 0; i < 30; i++) {
         await request(app)
           .post(`/api/v1/partner/establishments/${establishment.id}/media`)
@@ -744,21 +747,17 @@ describe('Media System - Upload Operations', () => {
 
       expect(response.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
 
-      // Per-type counters: exterior and dishes have their own counts against
-      // the interior limit value, so they are still accepted.
-      await request(app)
-        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-        .set('Authorization', `Bearer ${partnerToken}`)
-        .field('type', 'exterior')
-        .attach('file', Buffer.from('exterior 1'), 'exterior-1.jpg')
-        .expect(201);
-
-      await request(app)
-        .post(`/api/v1/partner/establishments/${establishment.id}/media`)
-        .set('Authorization', `Bearer ${partnerToken}`)
-        .field('type', 'dishes')
-        .attach('file', Buffer.from('dishes 1'), 'dishes-1.jpg')
-        .expect(201);
+      // The facade and the dishes are photos of the venue (PR 2 of the thread
+      // «Фото людей»): they share the one limit, so they are refused too.
+      for (const type of ['exterior', 'dishes']) {
+        const refused = await request(app)
+          .post(`/api/v1/partner/establishments/${establishment.id}/media`)
+          .set('Authorization', `Bearer ${partnerToken}`)
+          .field('type', type)
+          .attach('file', Buffer.from(`${type} 1`), `${type}-1.jpg`)
+          .expect(403);
+        expect(refused.body.error.code).toBe('MEDIA_LIMIT_EXCEEDED');
+      }
     });
 
     test('rejects 31st menu photo; interior bucket unaffected', async () => {
