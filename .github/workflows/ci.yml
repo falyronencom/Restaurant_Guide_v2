@@ -110,6 +110,8 @@ jobs:
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/040_avatar_deletions.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/041_avatar_moderation.sql
 
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/042_two_photo_kinds.sql
+
       - name: Создать backend/.env.test
         # Файл гитигнорен, а setup-env.js и globalSetup.js читают его по пути.
         # Значения — исключительно тестовые, секретов здесь нет by construction.

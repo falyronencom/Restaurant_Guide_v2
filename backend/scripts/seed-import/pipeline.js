@@ -9,7 +9,9 @@
  * (draft) until the final activation phase.
  *
  * Direct model writes (MediaModel, is_seed, primary_image_url, activation) are
- * deliberate: the service create path cannot emit exterior/dishes media, writes
+ * deliberate: the service create path cannot take the facade cover from the
+ * exterior/ folder (since PR 2 of the thread «Фото людей» the facade and the
+ * dishes are stored as photos of the venue, `interior`), writes
  * degenerate identical URLs, cannot set is_seed, and its only draft→active path
  * (admin moderate) is pending-only with notifications unwanted for seed. All DB
  * invariants are still enforced by the establishment_media CHECKs + the canon
@@ -19,6 +21,7 @@
 import { ATTRIBUTE_CANON } from './contract.js';
 import * as registry from './registry.js';
 import { uploadMedia } from './media.js';
+import { storedMediaType } from '../../src/constants/mediaKinds.js';
 
 const PHASE_ORDER = ['creating', 'created', 'media_done', 'ocr_enqueued', 'activated'];
 const atLeast = (phase, target) => PHASE_ORDER.indexOf(phase) >= PHASE_ORDER.indexOf(target);
@@ -91,12 +94,19 @@ async function ensureMedia(ctx, estId, rec, mediaItems, reg) {
   if (reg && atLeast(reg.phase, 'media_done')) return;
 
   const mediaState = (reg && reg.media_state) || {};
-  const perType = {}; // position counter per media type
+  // Position counter per STORED kind: the facade, the room and the dishes are
+  // one kind — photos of the venue (src/constants/mediaKinds.js, PR 2 of the
+  // thread «Фото людей») — and count on together, the facade first, so the
+  // guest's gallery opens on the facade cover and goes on through the room.
+  const perKind = {};
   let firstExteriorRelpath = null;
 
   for (const item of mediaItems) {
     if (item.type === 'exterior' && firstExteriorRelpath === null) firstExteriorRelpath = item.relpath;
-    const position = (perType[item.type] = (perType[item.type] ?? -1) + 1);
+    const kind = storedMediaType(item.type);
+    const position = (perKind[kind] = (perKind[kind] ?? -1) + 1);
+    // The cover is the first facade photo, as before: the folder says what it
+    // is, the row says it is a photo of the venue.
     const isPrimary = item.relpath === firstExteriorRelpath;
 
     let st = mediaState[item.relpath];
@@ -119,7 +129,7 @@ async function ensureMedia(ctx, estId, rec, mediaItems, reg) {
 
     const row = await ctx.MediaModel.createMedia({
       establishment_id: estId,
-      type: st.type,
+      type: storedMediaType(st.type),
       file_type: st.file_type,
       url: st.url,
       preview_url: st.preview_url,

@@ -115,6 +115,12 @@ const MARKERS = [
               AND column_name = 'share_count'`,
   },
   {
+    id: '042',
+    label: 'establishment_media_kinds_042 table (the facade and the dishes became photos of the venue)',
+    query: `SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'establishment_media_kinds_042'`,
+  },
+  {
     id: '040',
     label: 'avatar_deletions table (a deleted account\'s pictures leave the cloud)',
     query: `SELECT 1 FROM information_schema.tables

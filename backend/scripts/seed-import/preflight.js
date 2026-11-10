@@ -18,7 +18,7 @@
  */
 
 import { normalizeRow, contentHash } from './sheet.js';
-import { scanMedia, checkE1 } from './media.js';
+import { scanMedia, checkE1, adviseE1 } from './media.js';
 import { ALL_COLUMNS } from './contract.js';
 
 /**
@@ -78,6 +78,7 @@ export async function preflight({ db, rows, headers, mediaRoot, housePartnerId, 
       const unmet = checkE1(scan.counts);
       if (unmet.length) { errors.push(`row ${rowNum} (${record.stable_id}): E1 not met — ${unmet.join('; ')}`); continue; }
     }
+    for (const advice of adviseE1(scan.counts)) warnings.push(`row ${rowNum} (${record.stable_id}): E1 advice — ${advice}`);
 
     record.content_hash = contentHash(record);
     ready.push({ record, mediaItems: scan.items });

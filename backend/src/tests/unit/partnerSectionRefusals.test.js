@@ -264,7 +264,8 @@ describe('Отказы партнёру вне карточки: исходни�
       "'Failed to fetch media'",
       "'Failed to update media'",
       "'Failed to delete media'",
-      // Вызов с двумя аргументами: разбор обрывает его на первой запятой.
+      // Вызовы с двумя аргументами: разбор обрывает их на первой запятой.
+      'ESTABLISHMENT_REFUSALS.photoOverLimit(currentCount',
       'ESTABLISHMENT_REFUSALS.photoLimit(type',
     ];
     expect(notFrom('MEDIA_REFUSALS|UPLOAD_REFUSALS|ESTABLISHMENT_REFUSALS', found, { allowed: serverFailures }))

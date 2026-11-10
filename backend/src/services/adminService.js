@@ -8,6 +8,7 @@
  * Architecture: Controller → Service → Model (same pattern as establishmentService.js)
  */
 
+import { isVenuePhoto } from '../constants/mediaKinds.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as MenuItemModel from '../models/menuItemModel.js';
@@ -221,8 +222,10 @@ export const getEstablishmentForModeration = async (
       file_type: m.file_type,
     });
 
+    // The venue's photos: the room, the facade and the dishes (constants/
+    // mediaKinds.js) — the moderator sees every photo the guests will see.
     const interiorPhotos = media
-      .filter(m => m.type === 'interior')
+      .filter(m => isVenuePhoto(m.type))
       .map(m => ({ ...projectMedia(m), is_primary: m.is_primary }));
 
     // page_count: PDFs only, from the latest recognition job; null when no

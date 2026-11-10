@@ -129,6 +129,11 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   unknownCuisine: 'Такой кухни нет в списке. Выберите кухню заново.',
   photoLimit: (bucket, limit) =>
     `Можно добавить не больше ${limit} ${PHOTO_BUCKET_NAMES[bucket] ?? 'фото'}.`,
+  // A card that holds more venue photos than the limit since the facade and
+  // the dishes became photos of the venue (migration 042, PR 2 of the thread
+  // «Фото людей»): nothing is deleted; a new photo waits until there are fewer.
+  photoOverLimit: (count, limit) =>
+    `У заведения уже ${count} фото — больше, чем можно (${limit}). Новое фото добавится, когда их станет меньше ${limit}: удалите лишние.`,
   // A save that adds a third menu PDF (review of PR #56, finding 1: the limit
   // of the card's upload now holds on the save too). The app and the site do
   // not let a partner pick a third one. Approved by the Coordinator on

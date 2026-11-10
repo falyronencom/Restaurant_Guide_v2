@@ -85,12 +85,26 @@ const UNFINISHED_IMPORT_SQL = `
 
 const UNFINISHED_IMPORT_NEEDS = ['public.seed_import_registry.media_state', 'public.seed_import_registry.phase'];
 
+// deleted — the holder deleted the account: its journal mark user_delete_account
+// (accountDeletionService); the clean-up of wizard files reads it
+// (scripts/lib/mediaOrphanSweep.js).
 const USERS_SQL = `
   SELECT id::text AS id, role,
-         COALESCE((to_jsonb(u) ->> 'is_service_account')::boolean, false) AS service
+         COALESCE((to_jsonb(u) ->> 'is_service_account')::boolean, false) AS service,
+         EXISTS (SELECT 1 FROM public.audit_log del
+                  WHERE del.entity_type = 'user' AND del.entity_id = u.id
+                    AND del.action = 'user_delete_account') AS deleted
   FROM public.users u WHERE id = ANY($1::uuid[])`;
 
 const CARDS_SQL = 'SELECT id::text AS id, status FROM public.establishments WHERE id = ANY($1::uuid[])';
+
+// Cards deleted on purpose — by their partner or with the account
+// (EstablishmentModel.deleteEstablishment, accountDeletionService): the
+// journal's mark, the clean-up's positive word that the card is gone.
+const DELETED_CARDS_SQL = `
+  SELECT DISTINCT entity_id::text AS id FROM public.audit_log
+   WHERE entity_type = 'establishment' AND action = 'partner_delete_establishment'
+     AND entity_id = ANY($1::uuid[])`;
 
 /**
  * @param {pg.Client} client - connected
@@ -178,11 +192,15 @@ export const readDatabase = async (client, { tokenRegex, urlRegex, ownerIds, exp
 
     const users = new Map();
     const cards = new Map();
+    const deletedCards = new Set();
     if (ownerIds.users.length) {
-      for (const r of await q(USERS_SQL, [ownerIds.users])) users.set(r.id, { role: r.role, service: r.service === true });
+      for (const r of await q(USERS_SQL, [ownerIds.users])) {
+        users.set(r.id, { role: r.role, service: r.service === true, deleted: r.deleted === true });
+      }
     }
     if (ownerIds.cards.length) {
       for (const r of await q(CARDS_SQL, [ownerIds.cards])) cards.set(r.id, { status: r.status });
+      for (const r of await q(DELETED_CARDS_SQL, [ownerIds.cards])) deletedCards.add(r.id);
     }
 
     return {
@@ -191,7 +209,7 @@ export const readDatabase = async (client, { tokenRegex, urlRegex, ownerIds, exp
       cardRows,
       cardStatusesRead,
       countsCheck,
-      owners: { users, cards },
+      owners: { users, cards, deletedCards },
       scanned: { tables: byTable.size, columns: textColumns.length },
       queries: () => queries,
     };
