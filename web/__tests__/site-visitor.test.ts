@@ -275,3 +275,106 @@ describe('the callers that serve a visitor pass the visitor', () => {
     });
   });
 });
+
+/*
+ * The signed-in calls (thread «2Г: общие пределы», points 3.04 and 3.01,
+ * 10.11.2026). authedFetch and the sign-out went to the API without the
+ * visitor, so the API counted them as the site itself: a token it could not
+ * verify spent the site's own budget — the one its pages are rendered from —
+ * and the day's resends of the code, a limit per address whatever the
+ * account, were one counter for every visitor of the site. Ten presses of
+ * «прислать код ещё раз» anywhere, and no one could get a code till the day
+ * renewed. Every such call now names the visitor of the request it serves.
+ */
+describe('the signed-in calls pass the visitor of their request', () => {
+  const VISITOR = '203.0.113.44';
+  const cookies: Record<string, string> = {};
+  let fetchMock: jest.Mock;
+
+  const callTo = (path: string) =>
+    fetchMock.mock.calls.find(([url]) => String(url).endsWith(path));
+
+  beforeEach(() => {
+    process.env.API_URL = 'https://api.test';
+    process.env.SITE_REQUEST_SECRET = SECRET;
+    headerStore.set('x-forwarded-for', `${VISITOR}, 152.233.10.1`);
+    mockStore.get.mockImplementation((name: string) =>
+      (name in cookies ? { name, value: cookies[name] } : undefined));
+    fetchMock = jest.fn().mockResolvedValue({
+      status: 200,
+      json: () => Promise.resolve({ success: true, data: { sent: true, expiresAt: '2026-11-10T12:00:00Z' } }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    mockStore.get.mockReset();
+    for (const name of Object.keys(cookies)) delete cookies[name];
+  });
+
+  it('authedFetch — with a token the API will refuse, the visitor still goes with it', async () => {
+    cookies.rg_at = 'not-a-token';
+    const { authedFetch } = await import('@/lib/auth/session');
+
+    await authedFetch('/api/v1/users/me/profile');
+
+    expect(callTo('/api/v1/users/me/profile')?.[1].headers).toMatchObject({
+      Authorization: 'Bearer not-a-token',
+      'X-Site-Secret': SECRET,
+      'X-Site-Visitor': VISITOR,
+    });
+  });
+
+  it('the retry after a refused token — the visitor goes with the retry too', async () => {
+    cookies.rg_at = 'expired-token';
+    cookies.rg_rt = 'refresh-token';
+    fetchMock
+      .mockResolvedValueOnce({
+        status: 401,
+        json: () => Promise.resolve({ success: false, error: { code: 'TOKEN_EXPIRED' } }),
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        json: () => Promise.resolve({
+          success: true,
+          data: { accessToken: 'fresh-token', refreshToken: 'refresh-2', expiresIn: 14400 },
+        }),
+      });
+    const { authedFetch } = await import('@/lib/auth/session');
+
+    await authedFetch('/api/v1/users/me/profile');
+
+    const calls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/users/me/profile'));
+    expect(calls).toHaveLength(2);
+    expect(calls[1][1].headers).toMatchObject({
+      Authorization: 'Bearer fresh-token',
+      'X-Site-Visitor': VISITOR,
+    });
+  });
+
+  it('«прислать код ещё раз» — the resend names the visitor, not the site', async () => {
+    cookies.rg_at = 'access-token';
+    const { resendVerificationCodeAction } = await import('@/lib/auth/actions');
+
+    await resendVerificationCodeAction({ ok: false } as never, new FormData());
+
+    expect(callTo('/api/v1/auth/send-verification-code')?.[1].headers).toMatchObject({
+      'X-Site-Secret': SECRET,
+      'X-Site-Visitor': VISITOR,
+    });
+  });
+
+  it('the sign-out names the visitor', async () => {
+    cookies.rg_at = 'access-token';
+    cookies.rg_rt = 'refresh-token';
+    const { logoutAction } = await import('@/lib/auth/actions');
+
+    await logoutAction();
+
+    expect(callTo('/api/v1/auth/logout')?.[1].headers).toMatchObject({
+      Authorization: 'Bearer access-token',
+      'X-Site-Secret': SECRET,
+      'X-Site-Visitor': VISITOR,
+    });
+  });
+});
