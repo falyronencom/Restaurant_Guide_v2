@@ -87,6 +87,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { writeAuditLogInTransaction } from '../models/auditLogModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { avatarDeletionTableExists, enqueueAvatarDeletion } from '../models/avatarDeletionModel.js';
+import { avatarModerationReady } from '../models/avatarModerationModel.js';
 import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
 import * as NotificationService from './notificationService.js';
@@ -454,20 +455,35 @@ export const eraseLeftovers = async (client, userId) => {
     await ReviewModel.updateEstablishmentAggregates(establishmentId, client);
   }
 
+  // The link of the photo a moderator approved (migration 041,
+  // models/avatarModerationModel.js): the photo goes with the account row
+  // (avatar_url), its approval too. The column is not there before the
+  // migration — applied by hand after the deploy — so it is asked first; the
+  // catalogue read never fails the deletion (Phase 3.5 review of #209, LOW-1).
+  changed.avatar_approvals = (await avatarModerationReady(client))
+    ? (await client.query(
+      'UPDATE users SET avatar_approved_url = NULL WHERE id = $1 AND avatar_approved_url IS NOT NULL',
+      [userId],
+    )).rowCount
+    : 0;
+
   // The journal keeps what was done to the account, not who held it: the
-  // name a reset replaced (adminUserService.resetUserName, user_name) and
-  // the addresses an e-mail change wrote (scripts/lib/accountEmail.js,
-  // user_email) leave its earlier entries. A moderator's reason stays as it
-  // was written: it is the moderation record, free text the code cannot
-  // take apart (Phase 3.5 review). The review it was about is not copied
-  // into it: the audit screen reads the text from the review (above).
+  // name a reset replaced (adminUserService.resetUserName, user_name), the
+  // addresses an e-mail change wrote (scripts/lib/accountEmail.js,
+  // user_email) and the photo link a moderator approved or took down
+  // (adminUserService, user_avatar_approve / user_avatar_remove: avatar_url —
+  // a Google or Yandex photo is not ours to delete and outlives the account)
+  // leave its earlier entries. A moderator's reason stays as it was written:
+  // it is the moderation record, free text the code cannot take apart (Phase
+  // 3.5 review). The review it was about is not copied into it: the audit
+  // screen reads the text from the review (above).
   changed.journal_entries = (await client.query(
     `UPDATE audit_log
-        SET old_data = old_data - 'user_name' - 'user_email',
-            new_data = new_data - 'user_name' - 'user_email'
+        SET old_data = old_data - 'user_name' - 'user_email' - 'avatar_url',
+            new_data = new_data - 'user_name' - 'user_email' - 'avatar_url'
       WHERE entity_type = 'user' AND entity_id = $1
-        AND (old_data ?| ARRAY['user_name', 'user_email']
-             OR new_data ?| ARRAY['user_name', 'user_email'])`,
+        AND (old_data ?| ARRAY['user_name', 'user_email', 'avatar_url']
+             OR new_data ?| ARRAY['user_name', 'user_email', 'avatar_url'])`,
     [userId],
   )).rowCount;
 

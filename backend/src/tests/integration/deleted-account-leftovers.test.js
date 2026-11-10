@@ -228,6 +228,47 @@ describe('Удаление учётки: текст невидимых отзы�
 });
 
 // ============================================================================
+// Фото, одобренное модератором (миграция 041, PR #209) — ревью #209, LOW-1
+// ============================================================================
+
+describe('Удаление учётки: одобренное фото и его след в журнале', () => {
+  const PHOTO = 'https://lh3.googleusercontent.com/a/photo-of-the-person';
+
+  test('ссылка на одобренное фото стёрта; из записей журнала о фото ушла ссылка, решение модератора осталось', async () => {
+    const p = await person();
+    await query('UPDATE users SET avatar_url = $2, avatar_approved_url = $2 WHERE id = $1', [p.id, PHOTO]);
+    await query(
+      `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data)
+       VALUES (NULL, 'user_avatar_approve', 'user', $1, $2, $3)`,
+      [p.id, JSON.stringify({ avatar_url: PHOTO, avatar_state: 'pending' }), JSON.stringify({ avatar_state: 'approved' })],
+    );
+
+    await deleteAccount(p.accessToken).expect(200);
+
+    const row = (await query('SELECT avatar_url, avatar_approved_url FROM users WHERE id = $1', [p.id])).rows[0];
+    expect(row).toEqual({ avatar_url: null, avatar_approved_url: null });
+    const entry = (await query(
+      "SELECT old_data, new_data FROM audit_log WHERE entity_id = $1 AND action = 'user_avatar_approve'",
+      [p.id],
+    )).rows;
+    expect(entry).toEqual([{ old_data: { avatar_state: 'pending' }, new_data: { avatar_state: 'approved' } }]);
+    expect(JSON.stringify(entry)).not.toContain('googleusercontent');
+  });
+
+  test('на базе без миграции 041 (окно после выкатки) удаление проходит как раньше', async () => {
+    const p = await person();
+    await query('ALTER TABLE users DROP COLUMN avatar_approved_url');
+    try {
+      await deleteAccount(p.accessToken).expect(200);
+      expect((await query('SELECT is_active, name FROM users WHERE id = $1', [p.id])).rows[0])
+        .toEqual({ is_active: false, name: 'Гость' });
+    } finally {
+      await query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_approved_url VARCHAR(500)');
+    }
+  });
+});
+
+// ============================================================================
 // П3-02 — реквизиты записи о юрлице под удалённой учёткой
 // ============================================================================
 

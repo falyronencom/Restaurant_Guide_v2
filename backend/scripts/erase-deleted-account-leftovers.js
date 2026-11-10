@@ -84,6 +84,7 @@ const ACTOR = 'operator_script:erase-deleted-account-leftovers';
 const STEPS = Object.freeze([
   ['review_texts', 'texts of invisible reviews'],
   ['partner_documents', 'legal records with data'],
+  ['avatar_approvals', 'approved photo links'],
   ['favorites', 'favourites'],
   ['notifications', 'notices'],
   ['notification_preferences', 'notice settings'],
