@@ -21,20 +21,25 @@ import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import { discardUnrecordedUpload } from './unrecordedUpload.js';
+import { VENUE_PHOTO_TYPES, storedMediaType } from '../constants/mediaKinds.js';
 import logger from '../utils/logger.js';
 
 /**
  * Photo upload limits, unified across all subscription tiers (Phase C Slice 1).
  *
- * Limits are per media type bucket: 'menu' photos are tracked against the menu
- * limit; all other types (interior, exterior, dishes) are each tracked against
- * the interior limit value. Enforced at the service layer before Cloudinary
- * upload, and at establishment create/update media materialization paths.
+ * Two kinds of a card's photos (constants/mediaKinds.js, PR 2 of the thread
+ * «Фото людей»): 'menu' photos against the menu limit, the photos of the venue
+ * — interior, and the facade and dishes rows written before migration 042 —
+ * together against the interior limit. Enforced at the service layer before
+ * Cloudinary upload, and at establishment create/update media materialization
+ * paths.
  */
 export const MEDIA_LIMITS = { interior: 30, menu: 30 };
 
 /**
- * Valid media type values
+ * Media type values a client may send. 'exterior' and 'dishes' are stored as a
+ * photo of the venue ('interior', constants/mediaKinds.js): no client sends
+ * them, and an old build that would must not meet a refusal.
  */
 const VALID_MEDIA_TYPES = ['interior', 'exterior', 'menu', 'dishes'];
 
@@ -99,12 +104,15 @@ const discardUnrecordedMedia = (publicId, establishmentId, writeError) => discar
  *   allowance is spent (services/uploadAllowance.js)
  */
 export const uploadMedia = async (partnerId, establishmentId, file, metadata) => {
-  const { type, caption, is_primary = false } = metadata;
+  const { type: sentType, caption, is_primary = false } = metadata;
+  // A facade or a dish photo is a photo of the venue (PR 2 of the thread «Фото
+  // людей»): the folder, the row and the limit all take the stored kind.
+  const type = storedMediaType(sentType);
 
   try {
     // Validate media type (the route's validator refuses it first, with the
     // same text)
-    if (!VALID_MEDIA_TYPES.includes(type)) {
+    if (!VALID_MEDIA_TYPES.includes(sentType)) {
       throw new AppError(
         MEDIA_REFUSALS.uploadFormInvalid,
         422,
@@ -241,16 +249,22 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
     // Image upload path (unchanged)
     const mediaCounts = await MediaModel.getMediaCountByType(establishmentId);
 
-    // Determine which limit to check (menu uses menu limit, all others use interior limit)
+    // Which limit: the menu's, or the venue's — the room, the facade and the
+    // dishes together (constants/mediaKinds.js).
     const limitType = type === 'menu' ? 'menu' : 'interior';
-    const currentCount = mediaCounts[type] || 0;
+    const currentCount = limitType === 'menu'
+      ? (mediaCounts.menu || 0)
+      : VENUE_PHOTO_TYPES.reduce((n, t) => n + (mediaCounts[t] || 0), 0);
     const limit = MEDIA_LIMITS[limitType];
 
     if (currentCount >= limit) {
-      // The count is of this type's photos; the text names interior and menu
-      // photos, the other types as «фото» (ESTABLISHMENT_REFUSALS.photoLimit).
+      // Over the limit — a card that had the facade and the dishes apart
+      // before migration 042: nothing is deleted, the text says how many there
+      // are (ESTABLISHMENT_REFUSALS.photoOverLimit).
       throw new AppError(
-        ESTABLISHMENT_REFUSALS.photoLimit(type, limit),
+        currentCount > limit
+          ? ESTABLISHMENT_REFUSALS.photoOverLimit(currentCount, limit)
+          : ESTABLISHMENT_REFUSALS.photoLimit(type, limit),
         403,
         'MEDIA_LIMIT_EXCEEDED',
       );
