@@ -101,7 +101,9 @@ import {
   topFoldersOf,
 } from './lib/mediaOrphans.js';
 import { readDatabase } from './lib/mediaOrphansDb.js';
-import { SWEEP_REASON, SWEEP_TERM_DAYS, lastWizardUploads, planSweep, summarizeSweep } from './lib/mediaOrphanSweep.js';
+import {
+  ABSENCE_REASONS, SWEEP_REASON, SWEEP_TERM_DAYS, lastUploads, planSweep, summarizeSweep,
+} from './lib/mediaOrphanSweep.js';
 import { isNamedAnywhere, loadTextColumns } from '../src/models/mediaReferenceModel.js';
 
 const { Client } = pg;
@@ -274,10 +276,14 @@ const sweepList = async ({ cloud, refs, owners, topFolders, asOf, client }) => {
     const files = due.filter((f) => f.reason === reason);
     return [reason, { files: files.length, bytes: files.reduce((n, f) => n + f.bytes, 0) }];
   }));
-  const rows = summarizeSweep(due, owners, lastWizardUploads(cloud.assets))
+  const rows = summarizeSweep(due, owners, lastUploads(cloud.assets))
     .map((row) => ({ ...row, ownerId: row.ownerId.slice(0, 8) }));
+  // The server's wrong-database guard counts the same (services/mediaOrphanSweepLoop.js).
+  const folderFiles = cloud.assets.filter((a) => [GROUP.TEMP, GROUP.CARDS].includes(folderOf(a.public_id).group)).length;
+  const absent = due.filter((f) => ABSENCE_REASONS.includes(f.reason)).length;
   return {
     termDays: SWEEP_TERM_DAYS,
+    absence: { files: absent, ofFolderFiles: folderFiles },
     files: due.length,
     bytes: due.reduce((n, f) => n + f.bytes, 0),
     byReason,
@@ -289,8 +295,9 @@ const sweepList = async ({ cloud, refs, owners, topFolders, asOf, client }) => {
 const REASON_TITLE = {
   [SWEEP_REASON.QUIET_WIZARD]: `мастер молчит больше ${SWEEP_TERM_DAYS} дней`,
   [SWEEP_REASON.DELETED_ACCOUNT]: 'учётная запись удалена',
-  [SWEEP_REASON.ACCOUNT_GONE]: 'учётной записи в базе нет',
-  [SWEEP_REASON.CARD_GONE]: 'карточки в базе нет',
+  [SWEEP_REASON.ACCOUNT_GONE]: `учётной записи в базе нет, загрузок больше ${SWEEP_TERM_DAYS} дней`,
+  [SWEEP_REASON.DELETED_CARD]: 'карточку удалили (запись журнала)',
+  [SWEEP_REASON.CARD_GONE]: `карточки в базе нет, загрузок больше ${SWEEP_TERM_DAYS} дней`,
 };
 const ROLE_WORD = { user: 'пользователь', partner: 'партнёр', admin: 'панель', viewer: 'панель' };
 
@@ -311,6 +318,11 @@ const printSweep = (sw) => {
     if (b.files) console.log(`    ${REASON_TITLE[reason]}: ${b.files} (${formatBytes(b.bytes)})`);
   }
   console.log(`  Повторная проверка ссылок по всем текстовым колонкам базы: из ${sw.recheck.planned} нашлась ссылка у ${sw.recheck.stillNamed} — их в списке нет`);
+  const absentOverHalf = sw.absence.files >= 20 && sw.absence.files > sw.absence.ofFolderFiles / 2;
+  const absentNote = absentOverHalf
+    ? ' — ⛔ больше половины: сервер такой прогон не начнёт, база не того облака или не того момента'
+    : '';
+  console.log(`  Файлов, чьего хозяина нет в базе: ${sw.absence.files} из ${sw.absence.ofFolderFiles} в папках мастера и карточек${absentNote}`);
   if (sw.owners.length) {
     console.log('  По учёткам и карточкам (первые 8 знаков номера):');
     for (const row of sw.owners) {

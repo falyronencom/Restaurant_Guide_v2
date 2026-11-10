@@ -97,10 +97,17 @@ afterAll(async () => {
   await clearAllData();
 });
 
+const markCardDeleted = (cardId) => query(
+  `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data)
+   VALUES (NULL, 'partner_delete_establishment', 'establishment', $1, '{}'::jsonb, '{}'::jsonb)`,
+  [cardId],
+);
+
 /**
  * Стенд на все правила разом: тихий партнёр с карточкой и сиротами, занятый
- * человек, удалённая учётка, учётки нет, удалённая карточка, переданная
- * карточка.
+ * человек, удалённая учётка, удалённая карточка (метка журнала), давно
+ * пропавшие учётка и карточка, свежие файлы учётки и карточки, которых база не
+ * знает (так выглядит база из старого бэкапа), переданная карточка.
  */
 const stand = async () => {
   const quiet = await addUser();
@@ -112,8 +119,13 @@ const stand = async () => {
   const deleted = await addUser({ role: 'user' });
   await markDeleted(deleted);
 
+  const deletedCard = randomUUID();
+  await markCardDeleted(deletedCard);
+
   const ghost = randomUUID();
   const goneCard = randomUUID();
+  const newGhost = randomUUID();
+  const newCard = randomUUID();
 
   // Карточку завёл прежний владелец, её передали: файл лежит в его папке мастера.
   const previous = await addUser();
@@ -127,32 +139,50 @@ const stand = async () => {
     asset(temp(busy, 'orphanOld'), daysAgo(90)),
     asset(temp(busy, 'fresh'), daysAgo(3)),
     asset(temp(deleted, 'draft'), daysAgo(1)),
-    asset(temp(ghost, 'x'), daysAgo(1)),
-    asset(cardFile(goneCard, 'y'), daysAgo(1)),
+    asset(cardFile(deletedCard, 'draftPhoto'), daysAgo(1)),
+    asset(temp(ghost, 'x'), daysAgo(45)),
+    asset(cardFile(goneCard, 'y'), daysAgo(45)),
+    asset(temp(newGhost, 'today'), daysAgo(0)),
+    asset(cardFile(newCard, 'today'), daysAgo(0)),
     asset(cardFile(quietCard, 'cabinet'), daysAgo(200)),
     asset(temp(previous, 'transferred'), daysAgo(200)),
     asset(`avatars/${quiet}/face`, daysAgo(200)),
   ];
-  return { quiet, busy, deleted, ghost, goneCard, quietCard, previous, assets };
+  return { quiet, busy, deleted, deletedCard, ghost, goneCard, newGhost, newCard, quietCard, previous, assets };
 };
 
 const list = (assets) => async () => ({ assets, cloudName: CLOUD });
 const destroyed = () => destroy.mock.calls.map(([id]) => id).sort();
+const DUE = (s) => [
+  cardFile(s.deletedCard, 'draftPhoto'),
+  cardFile(s.goneCard, 'y'),
+  temp(s.deleted, 'draft'),
+  temp(s.ghost, 'x'),
+  temp(s.quiet, 'orphan'),
+].sort();
 
 describe('петля сервера', () => {
-  test('удаляет только сирот тихих, удалённых и пропавших хозяев — со сбросом копий, из папки хозяина', async () => {
+  test('удаляет только сирот тихих и удалённых хозяев — со сбросом копий, из папки хозяина', async () => {
     const s = await stand();
 
     const outcome = await runOnce({ list: list(s.assets), asOf: AS_OF });
 
-    expect(destroyed()).toEqual([
-      cardFile(s.goneCard, 'y'),
-      temp(s.deleted, 'draft'),
-      temp(s.ghost, 'x'),
-      temp(s.quiet, 'orphan'),
-    ].sort());
+    expect(destroyed()).toEqual(DUE(s));
     for (const [, options] of destroy.mock.calls) expect(options).toEqual({ invalidate: true, resource_type: 'image' });
-    expect(outcome).toEqual({ due: 4, removed: 4, named: 0, failed: 0, refused: null });
+    expect(outcome).toEqual({
+      due: 5,
+      byReason: { quiet_wizard: 1, deleted_account: 1, account_gone: 1, deleted_card: 1, card_gone: 1 },
+      removed: 5, named: 0, failed: 0, refused: null, stopped: false,
+    });
+  });
+
+  test('свежие файлы учётки и карточки, которых база не знает, целы — база могла отстать', async () => {
+    const s = await stand();
+
+    await runOnce({ list: list(s.assets), asOf: AS_OF });
+
+    expect(destroyed()).not.toContain(temp(s.newGhost, 'today'));
+    expect(destroyed()).not.toContain(cardFile(s.newCard, 'today'));
   });
 
   test('карточка взяла файл между планом и удалением — файл цел', async () => {
@@ -165,7 +195,25 @@ describe('петля сервера', () => {
     });
 
     expect(destroyed()).not.toContain(temp(s.quiet, 'orphan'));
-    expect(outcome).toEqual(expect.objectContaining({ due: 4, removed: 3, named: 1 }));
+    expect(outcome).toEqual(expect.objectContaining({ due: 5, removed: 4, named: 1 }));
+  });
+
+  test('предел прогона считает только удаления: файлы, которые держит ссылка, его не съедают', async () => {
+    const s = await stand();
+
+    const outcome = await runOnce({
+      list: list(s.assets),
+      asOf: AS_OF,
+      maxDeletions: 2,
+      afterPlan: async () => {
+        // Первые по порядку файлы плана взяла карточка.
+        await attach(s.quietCard, cardFile(s.deletedCard, 'draftPhoto'));
+        await attach(s.quietCard, cardFile(s.goneCard, 'y'));
+      },
+    });
+
+    expect(outcome).toEqual(expect.objectContaining({ named: 2, removed: 2 }));
+    expect(destroy).toHaveBeenCalledTimes(2);
   });
 
   test('база не знает этого облака — отказ, ничего не удалено', async () => {
@@ -179,6 +227,20 @@ describe('петля сервера', () => {
     expect(errors).toHaveBeenCalled();
   });
 
+  test('хозяев большинства файлов в базе нет — отказ: база не та, ничего не удалено', async () => {
+    const s = await stand();
+    const strangers = Array.from({ length: 40 }, (_, i) => asset(temp(randomUUID(), `old${i}`), daysAgo(60)));
+    const errors = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+
+    const outcome = await runOnce({ list: list([...s.assets, ...strangers]), asOf: AS_OF });
+
+    expect(destroy).not.toHaveBeenCalled();
+    expect(outcome.refused).toBe('most owners are missing from the database');
+    expect(errors).toHaveBeenCalledWith(
+      'Media orphan sweep: refused, the database lacks the owners of most files', expect.anything(),
+    );
+  });
+
   test('сбой облака на одном файле не останавливает остальные', async () => {
     const s = await stand();
     destroy.mockRejectedValueOnce({ error: { message: 'Сломалось', http_code: 500 } });
@@ -186,7 +248,7 @@ describe('петля сервера', () => {
 
     const outcome = await runOnce({ list: list(s.assets), asOf: AS_OF });
 
-    expect(outcome).toEqual(expect.objectContaining({ due: 4, removed: 3, failed: 1 }));
+    expect(outcome).toEqual(expect.objectContaining({ due: 5, removed: 4, failed: 1 }));
   });
 });
 
@@ -220,16 +282,19 @@ describe('список для Координатора: scripts/media-orphans-au
       });
       expect(out.status).toBe(0);
       const { sweep } = JSON.parse(out.stdout);
-      expect(sweep.files).toBe(4);
-      expect(sweep.bytes).toBe(4 * 2048);
-      expect(sweep.recheck).toEqual({ planned: 4, stillNamed: 0 });
+      expect(sweep.files).toBe(5);
+      expect(sweep.bytes).toBe(5 * 2048);
+      expect(sweep.recheck).toEqual({ planned: 5, stillNamed: 0 });
+      expect(sweep.absence).toEqual({ files: 2, ofFolderFiles: 12 });
       expect(sweep.byReason).toEqual({
         quiet_wizard: { files: 1, bytes: 2048 },
         deleted_account: { files: 1, bytes: 2048 },
         account_gone: { files: 1, bytes: 2048 },
+        deleted_card: { files: 1, bytes: 2048 },
         card_gone: { files: 1, bytes: 2048 },
       });
       expect(sweep.owners.map((o) => [o.ownerId, o.reason]).sort()).toEqual([
+        [s.deletedCard.slice(0, 8), 'deleted_card'],
         [s.goneCard.slice(0, 8), 'card_gone'],
         [s.deleted.slice(0, 8), 'deleted_account'],
         [s.ghost.slice(0, 8), 'account_gone'],
@@ -244,7 +309,7 @@ describe('список для Координатора: scripts/media-orphans-au
       });
       expect(text.status).toBe(0);
       expect(text.stdout).toContain('УБОРКА ФАЙЛОВ МАСТЕРА');
-      expect(text.stdout).toContain('Кандидатов: 4 файла');
+      expect(text.stdout).toContain('Кандидатов: 5 файлов');
       expect(text.stdout).toContain(`учётка ${s.deleted.slice(0, 8)} (пользователь, удалена)`);
     } finally {
       rmSync(dir, { recursive: true, force: true });

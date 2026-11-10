@@ -240,9 +240,9 @@ const gracefulShutdown = createGracefulShutdown({
       stop: () => avatarDeletionLoop.stop(),
       failureMessage: 'Avatar deletion loop stop failed during shutdown',
     },
-    // Waits for the file in progress: one probe of the database and one call to
-    // the cloud at most, under its deadline. A run cut short is planned again
-    // the next day.
+    // Waits for the step in progress — a file (one probe of the database and
+    // one call to the cloud, under its deadline), or the listing or the read
+    // of the database under way. A run cut short is planned again the next day.
     {
       stop: () => mediaOrphanSweepLoop.stop(),
       failureMessage: 'Media orphan sweep stop failed during shutdown',

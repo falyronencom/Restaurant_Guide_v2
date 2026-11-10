@@ -12,14 +12,21 @@
  *   2. the whole database is read once, in one read-only transaction of a
  *      connection of its own (scripts/lib/mediaOrphansDb.js) — never a pooled
  *      one: that read switches its session to read-only;
- *   3. the plan: files nothing in the database names, of a quiet, deleted or
- *      missing owner;
- *   4. right before each removal the database is asked once more whether
+ *   3. the plan: files nothing in the database names, of a quiet owner or of
+ *      one the journal marks deleted;
+ *   4. the wrong-database guard: when the files whose owner's row is merely
+ *      not there are more than half of the folders' files, the database is not
+ *      this cloud's (another environment, an old backup) and nothing is removed
+ *      (Phase 3.5 review of PR 1b);
+ *   5. right before each removal the database is asked once more whether
  *      anything names the file now (models/mediaReferenceModel.js); a card
- *      saved since keeps it;
- *   5. the file is destroyed only inside its owner's folder, with the CDN's
- *      copies; at most MAX_DELETIONS_PER_RUN a run.
- * The journal gets numbers only — no file names, no account or card ids.
+ *      saved since keeps it. A card saved in the moment between that question
+ *      and the destroy loses the file — a window of one call, accepted;
+ *   6. the file is destroyed only inside its owner's folder, with the CDN's
+ *      copies; at most MAX_DELETIONS_PER_RUN destroys a run, the files kept by
+ *      the second question not counted.
+ * The loop's own lines carry numbers only; deleteImage notes each file it
+ * destroys, as it does for every deletion of the project.
  *
  * A run cut short (a restart, a stop) costs nothing: what is gone stays gone,
  * what is left is planned again the next day. No table, no state.
@@ -50,11 +57,19 @@ import {
   topFoldersOf,
 } from '../../scripts/lib/mediaOrphans.js';
 import { readDatabase } from '../../scripts/lib/mediaOrphansDb.js';
-import { planSweep } from '../../scripts/lib/mediaOrphanSweep.js';
+import { ABSENCE_REASONS, SWEEP_REASON, planSweep } from '../../scripts/lib/mediaOrphanSweep.js';
 import { CloudinaryReader, DELIVERY_TYPES, RESOURCE_TYPES } from '../../scripts/prod-snapshot/cloudinaryReader.js';
 import logger from '../utils/logger.js';
 
 const CLOUD_CALL_DEADLINE_MS = 20 * 1000;
+
+/**
+ * The wrong-database guard: files whose owner's row is not there, as a share
+ * of all files of the wizard and card folders, beyond which the run removes
+ * nothing; and the count below which the share is not judged (a small cloud).
+ */
+const ABSENCE_SHARE_LIMIT = 0.5;
+const ABSENCE_MIN_FILES = 20;
 
 let firstTimer = null;
 let intervalId = null;
@@ -132,15 +147,24 @@ const ownerFolder = (file) => (file.group === GROUP.TEMP
  * @param {Date} [options.asOf]
  * @param {Function} [options.afterPlan] - tests: called with the plan before
  *   the removals start — the moment a card may take a planned file
- * @returns {Promise<{due: number, removed: number, named: number, failed: number, refused: string|null}>}
+ * @param {number} [options.maxDeletions]
+ * @returns {Promise<{due: number, byReason: Object, removed: number, named: number, failed: number,
+ *   refused: string|null, stopped: boolean}>}
  */
 export const runOnce = async ({
   env = process.env, list = () => listCloud(env), asOf = new Date(), afterPlan = async () => {},
+  maxDeletions = MAX_DELETIONS_PER_RUN,
 } = {}) => {
-  const outcome = { due: 0, removed: 0, named: 0, failed: 0, refused: null };
+  const outcome = { due: 0, byReason: {}, removed: 0, named: 0, failed: 0, refused: null, stopped: false };
+  const stopped = () => {
+    if (stopRequested) outcome.stopped = true;
+    return stopRequested;
+  };
   try {
     const { assets, cloudName } = await list();
+    if (stopped()) return outcome;
     const { refs, owners, topFolders } = await readReferences(assets, cloudName);
+    if (stopped()) return outcome;
     // A database of another cloud would make every file an orphan.
     if (assets.length > 0 && (refs.clouds.ours === 0 || refs.clouds.others > refs.clouds.ours)) {
       outcome.refused = 'the database does not link this cloud';
@@ -150,12 +174,32 @@ export const runOnce = async ({
 
     const due = planSweep({ assets, refs, owners, topFolders, asOf });
     outcome.due = due.length;
+    for (const reason of Object.values(SWEEP_REASON)) {
+      outcome.byReason[reason] = due.filter((f) => f.reason === reason).length;
+    }
+    const folderFiles = assets.filter((a) => [GROUP.TEMP, GROUP.CARDS].includes(folderOf(a.public_id).group)).length;
+    const absent = ABSENCE_REASONS.reduce((n, reason) => n + outcome.byReason[reason], 0);
+    if (absent >= ABSENCE_MIN_FILES && absent > folderFiles * ABSENCE_SHARE_LIMIT) {
+      outcome.refused = 'most owners are missing from the database';
+      logger.error('Media orphan sweep: refused, the database lacks the owners of most files', {
+        absent, folderFiles,
+      });
+      return outcome;
+    }
     await afterPlan(due);
     const tables = await loadTextColumns(pool);
 
-    for (const file of due.slice(0, MAX_DELETIONS_PER_RUN)) {
-      if (stopRequested) break;
-      if (await isNamedAnywhere(pool, tables, file.public_id)) {
+    for (const file of due) {
+      if (outcome.removed + outcome.failed >= maxDeletions || stopped()) break;
+      let named;
+      try {
+        named = await isNamedAnywhere(pool, tables, file.public_id);
+      } catch {
+        // Not known whether anything names it: the file stays, the run goes on.
+        outcome.failed += 1;
+        continue;
+      }
+      if (named) {
         outcome.named += 1;
         continue;
       }
@@ -211,8 +255,10 @@ export const start = ({ env = process.env } = {}) => {
 };
 
 /**
- * Stop and wait for the file in progress — one probe and one call to the cloud
- * at most (20 s). Called during graceful shutdown.
+ * Stop and wait for the step in progress: a file — one probe and one call to
+ * the cloud at most (20 s) — or the listing or the read of the database under
+ * way, which the run then leaves without removing anything. Called during
+ * graceful shutdown.
  *
  * @returns {Promise<void>}
  */

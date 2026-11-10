@@ -5,15 +5,17 @@
  *
  * Ожидаемое — литералы из директивы: сирота — только файл без единой ссылки из
  * базы (и в журнале тоже); папка и возраст сами по себе не причина; срок — 30
- * дней от ПОСЛЕДНЕЙ загрузки человека в мастер; удалённая учётка и пропавшая
- * карточка — сразу; папка живой карточки не убирается.
+ * дней от ПОСЛЕДНЕЙ загрузки в папку хозяина; «сразу» — только по метке
+ * журнала (учётка удалена, карточка удалена); строки просто нет — ждёт срок
+ * (база из старого бэкапа не знает новых учёток — ревью по линзе PR 1б);
+ * папка живой карточки не убирается.
  */
 
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
-  SWEEP_REASON, SWEEP_TERM_DAYS, lastWizardUploads, planSweep, summarizeSweep,
+  SWEEP_REASON, SWEEP_TERM_DAYS, lastUploads, planSweep, summarizeSweep,
 } from '../../../scripts/lib/mediaOrphanSweep.js';
 import { resolveMediaOrphanSweepPolicy } from '../../config/mediaOrphanSweep.js';
 
@@ -30,6 +32,7 @@ const U = {
 const C = {
   alive: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   gone: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  deleted: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
 };
 const AS_OF = new Date('2026-11-10T00:00:00Z');
 const daysAgo = (n) => new Date(AS_OF.getTime() - n * 24 * 60 * 60 * 1000).toISOString();
@@ -45,6 +48,7 @@ const owners = {
     [U.deleted, { role: 'user', service: false, deleted: true }],
   ]),
   cards: new Map([[C.alive, { status: 'active' }]]),
+  deletedCards: new Set([C.deleted]),
 };
 
 const plan = (assets, byId = new Map(), extra = {}) => planSweep({
@@ -96,19 +100,36 @@ describe('срок — от последней загрузки человека
   });
 });
 
-describe('ушедший хозяин — сразу', () => {
-  test('удалённая учётка и учётка, которой нет в базе, — даже со свежими файлами', () => {
-    const files = [asset(temp(U.deleted, 'a'), daysAgo(1)), asset(temp(U.gone, 'b'), daysAgo(1))];
+describe('ушедший хозяин', () => {
+  test('по метке журнала — сразу: удалённая учётка и удалённая карточка, даже со свежими файлами', () => {
+    const files = [asset(temp(U.deleted, 'a'), daysAgo(1)), asset(card(C.deleted, 'b'), daysAgo(1))];
     expect(ids(plan(files))).toEqual([
+      [card(C.deleted, 'b'), SWEEP_REASON.DELETED_CARD],
       [temp(U.deleted, 'a'), SWEEP_REASON.DELETED_ACCOUNT],
-      [temp(U.gone, 'b'), SWEEP_REASON.ACCOUNT_GONE],
     ]);
   });
 
-  test('папка удалённой карточки — да; папка живой карточки — никогда', () => {
-    const files = [asset(card(C.gone, 'x'), daysAgo(1)), asset(card(C.alive, 'y'), daysAgo(400))];
-    expect(ids(plan(files))).toEqual([[card(C.gone, 'x'), SWEEP_REASON.CARD_GONE]]);
+  test('строки просто нет — свежие файлы ждут: база может быть старше облака', () => {
+    const files = [asset(temp(U.gone, 'fresh'), daysAgo(1)), asset(card(C.gone, 'fresh'), daysAgo(1))];
+    expect(plan(files)).toEqual([]);
   });
+
+  test('строки нет и папка молчит срок — уходят', () => {
+    const files = [asset(temp(U.gone, 'old'), daysAgo(40)), asset(card(C.gone, 'old'), daysAgo(40))];
+    expect(ids(plan(files))).toEqual([
+      [card(C.gone, 'old'), SWEEP_REASON.CARD_GONE],
+      [temp(U.gone, 'old'), SWEEP_REASON.ACCOUNT_GONE],
+    ]);
+  });
+
+  test('папка живой карточки — никогда', () => {
+    expect(plan([asset(card(C.alive, 'y'), daysAgo(400))])).toEqual([]);
+  });
+});
+
+test('закрытая доставка (private, authenticated) — не дело уборки', () => {
+  const files = [{ ...asset(temp(U.deleted, 'private'), daysAgo(1)), type: 'private' }];
+  expect(plan(files)).toEqual([]);
 });
 
 test('снимок: загруженное в момент чтения базы и позже — не судится', () => {
@@ -121,11 +142,11 @@ test('сводка по хозяевам: файлы, объём, последн
   const files = [
     asset(temp(U.quiet, 'a'), '2026-09-01T10:00:00Z', 300),
     asset(temp(U.quiet, 'b'), '2026-09-02T10:00:00Z', 200),
-    asset(card(C.gone, 'c'), daysAgo(1), 1000),
+    asset(card(C.deleted, 'c'), daysAgo(1), 1000),
   ];
   const due = plan(files);
-  expect(summarizeSweep(due, owners, lastWizardUploads(files))).toEqual([
-    expect.objectContaining({ ownerId: C.gone, group: 'cards', files: 1, bytes: 1000, reason: SWEEP_REASON.CARD_GONE }),
+  expect(summarizeSweep(due, owners, lastUploads(files))).toEqual([
+    expect.objectContaining({ ownerId: C.deleted, group: 'cards', files: 1, bytes: 1000, reason: SWEEP_REASON.DELETED_CARD }),
     expect.objectContaining({
       ownerId: U.quiet, role: 'partner', files: 2, bytes: 500, lastUpload: '2026-09-02', reason: SWEEP_REASON.QUIET_WIZARD,
     }),
