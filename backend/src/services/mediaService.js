@@ -22,6 +22,7 @@ import { VENUE_PHOTO_TYPES, storedMediaType } from '../constants/mediaKinds.js';
 import { enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { sendWithinDailyAllowance } from './uploadAllowance.js';
 import { discardUnrecordedUpload } from './unrecordedUpload.js';
+import { refuseChangeOfDisputedCard, refuseChangeOfDisputedCardById } from './ownershipDispute.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -141,6 +142,9 @@ export const uploadMedia = async (partnerId, establishmentId, file, metadata) =>
         'ESTABLISHMENT_NOT_FOUND',
       );
     }
+    // A card parked by an account takeover takes no new file until the
+    // moderator decides whom it belongs to — before anything reaches the cloud.
+    refuseChangeOfDisputedCard(establishment);
 
     // Branch: PDF uploads (menu only) vs image uploads
     const isPdfUpload = file.mimetype === 'application/pdf';
@@ -454,6 +458,9 @@ export const updateMediaDetails = async (partnerId, establishmentId, mediaId, up
         'ESTABLISHMENT_NOT_FOUND',
       );
     }
+    // A new cover, caption or order of a card parked by an account takeover:
+    // not until the moderator decides whom it belongs to.
+    await refuseChangeOfDisputedCardById(establishmentId);
 
     // Fetch media to verify it belongs to this establishment
     const media = await MediaModel.findMediaById(mediaId);
@@ -604,6 +611,9 @@ export const deleteMedia = async (partnerId, establishmentId, mediaId) => {
         'ESTABLISHMENT_NOT_FOUND',
       );
     }
+    // A card parked by an account takeover keeps its files until the moderator
+    // decides whom it belongs to.
+    await refuseChangeOfDisputedCardById(establishmentId);
 
     // Fetch media to verify it belongs to this establishment and get URLs
     const media = await MediaModel.findMediaById(mediaId);

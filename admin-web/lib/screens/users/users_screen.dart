@@ -7,6 +7,7 @@ import 'package:restaurant_guide_admin_web/config/theme.dart';
 import 'package:restaurant_guide_admin_web/models/admin_user.dart';
 import 'package:restaurant_guide_admin_web/providers/admin_users_provider.dart';
 import 'package:restaurant_guide_admin_web/providers/auth_provider.dart';
+import 'package:restaurant_guide_admin_web/providers/badges_provider.dart';
 import 'package:restaurant_guide_admin_web/screens/reviews/reviews_management_screen.dart';
 import 'package:restaurant_guide_admin_web/utils/error_text.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_column_message.dart';
@@ -14,6 +15,7 @@ import 'package:restaurant_guide_admin_web/widgets/admin_filter_dropdown.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_pagination.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_screen_header.dart';
 import 'package:restaurant_guide_admin_web/widgets/admin_search_decoration.dart';
+import 'package:restaurant_guide_admin_web/widgets/person_photo.dart';
 import 'package:restaurant_guide_admin_web/widgets/state/admin_error_toast.dart';
 
 /// Путь экрана. Ссылка из отзыва добавляет `?user=<id>`.
@@ -323,7 +325,25 @@ class _UserListColumn extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const SizedBox(height: 12),
+          // Очередь фото над списком, а не в шапке: третий отбор в шапке не
+          // помещается на окне 1024 (заголовок обрезался). Другие видят фото
+          // только после одобрения (решение Координатора 09.11.2026); число
+          // очереди — на пункте рейла «Пользователи».
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FilterChip(
+                key: const ValueKey<String>('users-avatar-filter'),
+                label: const Text('Фото на проверке'),
+                avatar: const Icon(Icons.face_retouching_natural, size: 18),
+                selected: provider.avatarFilter == 'pending',
+                onSelected: (on) => context
+                    .read<AdminUsersProvider>()
+                    .setAvatarFilter(on ? 'pending' : null),
+              ),
+            ),
+          ),
           Expanded(child: _body(context, provider)),
           if (provider.users.isNotEmpty)
             AdminPagination.narrow(
@@ -421,6 +441,11 @@ class _UserRow extends StatelessWidget {
               Row(
                 spacing: 8,
                 children: <Widget>[
+                  PersonPhoto(
+                    url: user.avatarUrl,
+                    label: user.name ?? user.email,
+                    muted: user.name?.trim().isNotEmpty != true,
+                  ),
                   Expanded(
                     child: Text(
                       displayUserName(user),
@@ -436,6 +461,9 @@ class _UserRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (user.avatarState == PersonPhotoState.pending &&
+                      user.avatarUrl != null)
+                    const _PhotoPendingChip(),
                   if (!user.isActive) _StateChip(user: user),
                 ],
               ),
@@ -487,6 +515,30 @@ class _StateChip extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w600,
           color: deleted ? AppTheme.textSecondary : AppTheme.errorStrong,
+        ),
+      ),
+    );
+  }
+}
+
+/// Метка строки: фото ждёт решения модератора.
+class _PhotoPendingChip extends StatelessWidget {
+  const _PhotoPendingChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.backgroundWarm,
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: const Text(
+        'фото на проверке',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: AppTheme.textSecondary,
         ),
       ),
     );
@@ -549,6 +601,12 @@ class _UserPanel extends StatelessWidget {
           children: <Widget>[
             _Heading(user: user),
             _Facts(user: user),
+            if (user.avatarState != PersonPhotoState.none)
+              _PhotoBlock(
+                provider: provider,
+                user: user,
+                canModerate: canModerate,
+              ),
             if (user.blockEntries.isNotEmpty)
               _BlockHistory(entries: user.blockEntries)
             else if (user.isBlocked)
@@ -791,6 +849,187 @@ String protectionText(AdminUserProtection protection) => switch (protection) {
             'модерации. Его блокировка решает и их судьбу — это отдельное '
             'решение, этой кнопкой его не заблокировать.',
     };
+
+/// Фото человека и решение по нему (решение Координатора 09.11.2026: другие
+/// люди видят фото профиля только после одобрения модератором; миграция 041).
+///
+/// «Одобрить» — у фото на проверке; «Снять» — у любого: фото пропадает у
+/// всех, и у самого человека, а файл нашего облака удаляется. Итог действия —
+/// подписью под кнопками блока «Действия», как у блокировки.
+class _PhotoBlock extends StatelessWidget {
+  final AdminUsersProvider provider;
+  final AdminUser user;
+  final bool canModerate;
+
+  const _PhotoBlock({
+    required this.provider,
+    required this.user,
+    required this.canModerate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final busy = provider.isSubmitting;
+    final isSelf = context.watch<AuthProvider>().currentUser?.id == user.id;
+    final showButtons = canModerate && !isSelf && user.canRemovePhoto;
+    // Ссылка не из облака и не из входа через Google или Яндекс — значение до
+    // шлюза 02.10.2026: панель её не открывает, сервер её не одобрит.
+    final foreign =
+        user.avatarUrl != null && personPhotoSource(user.avatarUrl) == null;
+
+    return Container(
+      key: const ValueKey<String>('user-photo-block'),
+      padding: const EdgeInsets.all(18),
+      decoration: AppTheme.canonCardDecoration(),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        spacing: 18,
+        children: <Widget>[
+          PersonPhoto(
+            url: user.avatarUrl,
+            label: user.name ?? user.email,
+            size: 96,
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 10,
+              children: <Widget>[
+                const Text('Фото профиля', style: AppTheme.canonFieldLabel),
+                // Просмотрщику сервер не отдаёт ни фото, ни его состояние
+                // (ревью по линзе PR 1а, находка 3) — блока у него нет.
+                Text(
+                  personPhotoStateLabel(user.avatarState),
+                  key: const ValueKey<String>('user-photo-state'),
+                  style: AppTheme.canonFieldValue,
+                ),
+                if (foreign)
+                  const Text(
+                    'Фото не из нашего облака и не из входа через Google или '
+                    'Яндекс: панель его не открывает. Его можно только снять.',
+                    key: ValueKey<String>('user-photo-foreign'),
+                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                  ),
+                if (canModerate && isSelf && user.canRemovePhoto)
+                  const Text(
+                    'Своё фото одобряет или снимает другой модератор.',
+                    style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                  ),
+                if (showButtons)
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: <Widget>[
+                      if (user.canModeratePhoto && !foreign)
+                        ElevatedButton.icon(
+                          key: const ValueKey<String>('user-photo-approve'),
+                          onPressed: busy ? null : () => _approve(context),
+                          style: AppTheme.canonCtaL(),
+                          icon: const Icon(Icons.check, size: 19),
+                          label: const Text('Одобрить фото'),
+                        ),
+                      OutlinedButton.icon(
+                        key: const ValueKey<String>('user-photo-remove'),
+                        onPressed: busy ? null : () => _remove(context),
+                        style: AppTheme.canonCtaOutlined(),
+                        icon: const Icon(Icons.hide_image_outlined, size: 19),
+                        label: const Text('Снять фото'),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approve(BuildContext context) async {
+    // Счётчик очереди — до await: обращаться к context после него нельзя.
+    final badges = context.read<BadgesProvider>();
+    if (await provider.approveAvatar()) await badges.load();
+  }
+
+  Future<void> _remove(BuildContext context) async {
+    final badges = context.read<BadgesProvider>();
+    final answer = await showDialog<_RemovePhotoAnswer>(
+      context: context,
+      builder: (_) => const _RemovePhotoDialog(),
+    );
+    if (answer == null) return;
+    if (await provider.removeAvatar(reason: answer.reason)) await badges.load();
+  }
+}
+
+/// Что модератор ответил в диалоге снятия: необязательная причина.
+class _RemovePhotoAnswer {
+  final String reason;
+
+  const _RemovePhotoAnswer(this.reason);
+}
+
+/// Подтверждение снятия фото. Причина необязательна: решение — одним
+/// действием; написанная — уходит в журнал. Контроллер — у самого диалога.
+class _RemovePhotoDialog extends StatefulWidget {
+  const _RemovePhotoDialog();
+
+  @override
+  State<_RemovePhotoDialog> createState() => _RemovePhotoDialogState();
+}
+
+class _RemovePhotoDialogState extends State<_RemovePhotoDialog> {
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Снять фото?'),
+      content: SizedBox(
+        width: 440,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 14,
+          children: <Widget>[
+            const Text(
+              'Фото пропадёт у всех, и у самого человека: вместо него будет '
+              'буква. Файл удалится из облака. Человек об этом не узнает.',
+              style: TextStyle(fontSize: 14, height: 1.45),
+            ),
+            TextField(
+              key: const ValueKey<String>('user-photo-remove-reason'),
+              controller: _reason,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'Причина — для журнала, необязательно',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        ElevatedButton(
+          key: const ValueKey<String>('user-photo-remove-confirm'),
+          onPressed: () =>
+              Navigator.of(context).pop(_RemovePhotoAnswer(_reason.text.trim())),
+          style: AppTheme.canonCtaL(backgroundColor: AppTheme.errorStrong),
+          child: const Text('Снять фото'),
+        ),
+      ],
+    );
+  }
+}
 
 class _Actions extends StatelessWidget {
   final AdminUsersProvider provider;

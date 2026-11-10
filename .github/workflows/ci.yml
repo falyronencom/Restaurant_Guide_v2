@@ -108,6 +108,7 @@ jobs:
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/038_menu_item_hidden_names.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/039_establishment_share_count.sql
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/040_avatar_deletions.sql
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/041_avatar_moderation.sql
 
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/042_two_photo_kinds.sql
 

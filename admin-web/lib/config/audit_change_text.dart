@@ -106,6 +106,10 @@ const Map<String, String> kAuditFieldLabels = <String, String>{
   'establishment_city': 'Город',
   // Пакетное скрытие отзывов одного автора (П7): по записи на отзыв.
   'batch_size': 'В пачке',
+  // Одобрение и снятие фото профиля (миграция 041).
+  'avatar_url': 'Фото профиля',
+  'avatar_state': 'Фото для других людей',
+  'file': 'Файл фото',
 };
 
 /// Статус карточки — в единственном числе, как о ней говорят в записи.
@@ -173,6 +177,23 @@ String describeAuditValue(String key, Object? value) {
             (reason is String ? sanityFlagLabel(reason) : 'есть');
       }
       return 'есть';
+    // Ссылка на фото — длинная и сама по себе ничего не говорит: «есть»;
+    // целиком она в исходной записи.
+    case 'avatar_url':
+      return 'есть';
+    case 'avatar_state':
+      return switch (value) {
+        'pending' => 'на проверке',
+        'approved' => 'одобрено',
+        'none' => 'нет',
+        _ => value.toString(),
+      };
+    case 'file':
+      return switch (value) {
+        'cloud' => 'удаляется из облака',
+        'external' => 'у Google или Яндекса, в нашем облаке его нет',
+        _ => value.toString(),
+      };
     case 'batch_size':
       return value is num
           ? countWithNoun(value.round(), 'отзыв', 'отзыва', 'отзывов')

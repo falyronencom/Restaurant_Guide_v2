@@ -130,7 +130,7 @@ describe('GET /api/v1/admin/badges — доступ', () => {
 // ===========================================================================
 
 describe('GET /api/v1/admin/badges — счётчики', () => {
-  it('отдаёт конверт и все четыре счётчика', async () => {
+  it('отдаёт конверт и все пять счётчиков', async () => {
     const res = await request(app)
       .get(BADGES_URL)
       .set('Authorization', `Bearer ${adminToken}`);
@@ -142,6 +142,8 @@ describe('GET /api/v1/admin/badges — счётчики', () => {
       establishments_suspended: 2,
       menu_flags: 2,
       menu_flags_aged_over_7d: 1,
+      // Фото людей на проверке (миграция 041): у партнёров стенда фото нет.
+      avatars_pending: 0,
       generated_at: expect.any(String),
     });
   });

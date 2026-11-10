@@ -15,7 +15,9 @@
  * The accounts that have not confirmed their e-mail also share one ceiling
  * for the day (services/unconfirmedAllowance.js; thread «Расходы
  * посторонних», 03.11.2026): an account is made in a minute, and each new
- * one had a fresh allowance of its own.
+ * one had a fresh allowance of its own. The confirmed accounts without a card
+ * in the catalogue share another (services/newcomerUploadCeiling.js; thread
+ * «2Г: общие пределы», 10.11.2026): a confirmed account costs one mailbox.
  *
  * Who counts: every upload of a file to the cloud, through one allowance per
  * account — the wizard's upload (routes/v1/tempMediaRoutes.js, PR #54), the
@@ -203,10 +205,15 @@ export class DailyUploadLimitError extends AppError {
   /**
    * @param {string} message - The sentence the uploader's clients read
    * @param {{ limits: { files: number, bytes: number }, retryAfter: number, resetAt: string,
-   *   unconfirmed?: true }} refusal - `unconfirmed`: the shared ceiling of the
-   *   accounts without a confirmed e-mail (services/unconfirmedAllowance.js) —
-   *   its details say so, as clients that word the refusal themselves need
-   *   to tell it from the account's own allowance
+   *   unconfirmed?: true, ceiling?: true }} refusal - `unconfirmed`: the shared
+   *   ceiling of the accounts without a confirmed e-mail
+   *   (services/unconfirmedAllowance.js) — its details say so, as clients that
+   *   word the refusal themselves need to tell it from the account's own
+   *   allowance; `ceiling`: the new accounts' ceiling of the day, or the
+   *   account's share in it — `files_limit`/`bytes_limit` name which
+   *   (services/newcomerUploadCeiling.js) — the clients word it as the
+   *   account's own allowance («на сегодня исчерпан… после полуночи»), which
+   *   holds for both, and the details tell the two apart for the log
    */
   constructor(message, refusal) {
     super(message, 429, 'RATE_LIMIT_EXCEEDED', {
@@ -215,6 +222,7 @@ export class DailyUploadLimitError extends AppError {
       retry_after: refusal.retryAfter,
       reset_at: refusal.resetAt,
       ...(refusal.unconfirmed ? { unconfirmed: true } : {}),
+      ...(refusal.ceiling ? { ceiling: true } : {}),
     });
     this.retryAfter = refusal.retryAfter;
   }
@@ -228,23 +236,33 @@ export class DailyUploadLimitError extends AppError {
  * for certain (cloudRefusedUpload) — after a timeout or a 5xx the file may be
  * stored all the same, so the reservation stays spent.
  *
- * @param {{ userId: string, bytes: number, message: string }} upload - Whose
- *   allowance, the file's size, and the sentence a refusal carries
+ * @param {{ userId: string, bytes: number, message: string, pool?: 'card'|'avatar' }} upload -
+ *   Whose allowance, the file's size, the sentence a refusal carries, and the
+ *   pool of the new accounts' ceiling the file counts in (the card's material
+ *   unless named — services/newcomerUploadCeiling.js)
  * @param {() => Promise<Object>} send - The cloud call
  * @returns {Promise<Object>} What `send` returned
  * @throws {DailyUploadLimitError} When the allowance is spent
  */
-export const sendWithinDailyAllowance = async ({ userId, bytes, message }, send) => {
+export const sendWithinDailyAllowance = async ({
+  userId, bytes, message, pool = 'card',
+}, send) => {
   const allowance = await reserveDailyUpload(userId, bytes);
   if (!allowance.granted) {
     throw new DailyUploadLimitError(message, allowance);
   }
 
   // An unconfirmed account spends the shared ceiling of the day too
-  // (services/unconfirmedAllowance.js); its refusal names what lifts it.
-  const shared = await reserveSharedUpload(userId, bytes);
+  // (services/unconfirmedAllowance.js); its refusal names what lifts it. A new
+  // confirmed account spends the new accounts' ceiling
+  // (services/newcomerUploadCeiling.js); its refusal is the caller's own
+  // sentence — the day's uploads are spent, go on tomorrow — true of both.
+  const shared = await reserveSharedUpload(userId, bytes, pool);
   if (!shared.granted) {
     await allowance.giveBack();
+    if (shared.ceiling) {
+      throw new DailyUploadLimitError(message, shared);
+    }
     throw new DailyUploadLimitError(UPLOAD_REFUSALS.unconfirmedDailyLimit, { ...shared, unconfirmed: true });
   }
 
