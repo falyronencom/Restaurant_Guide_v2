@@ -1358,9 +1358,9 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
       client,
     );
 
-    // 3b. The card's legal record goes with it; the previous holder's
-    // contacts leave the card (PartnerDocumentsModel.passToHolder).
-    await PartnerDocumentsModel.passToHolder(client, establishmentId, targetUserId);
+    // 3b. The previous holder's legal record does not go with the card: the
+    // new holder enters their own (PartnerDocumentsModel.dropPreviousHolderRecords).
+    await PartnerDocumentsModel.dropPreviousHolderRecords(client, establishmentId, targetUserId);
 
     // 3c. Upgrade user to partner role (idempotent)
     // Execute within transaction using same client for atomicity

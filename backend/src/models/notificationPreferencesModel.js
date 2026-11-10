@@ -8,6 +8,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { activeAccountRow } from './activeAccountSql.js';
 
 /** Default preferences returned when no row exists for a user */
 const DEFAULTS = {
@@ -79,7 +80,10 @@ export const getByUserId = async (userId) => {
  * @param {boolean} [prefs.reviews_push_enabled]
  * @param {boolean} [prefs.promotions_push_enabled]
  * @param {boolean} [prefs.menu_push_enabled]
- * @returns {Promise<Object>} Updated preferences
+ * @returns {Promise<Object|null>} Updated preferences; null when the account is
+ *   not active — the row is written only for an active account, read under a
+ *   share lock (activeAccountSql.js), so a request that waited for the
+ *   deletion of the account leaves nothing under it (critic 2Г, item 2.03)
  */
 export const upsert = async (userId, prefs) => {
   const {
@@ -101,7 +105,8 @@ export const upsert = async (userId, prefs) => {
   const query = withMenu
     ? `
     INSERT INTO notification_preferences (user_id, booking_push_enabled, reviews_push_enabled, promotions_push_enabled, menu_push_enabled)
-    VALUES ($1, COALESCE($2, TRUE), COALESCE($3, TRUE), COALESCE($4, TRUE), $5)
+    SELECT account.id, COALESCE($2::boolean, TRUE), COALESCE($3::boolean, TRUE), COALESCE($4::boolean, TRUE), $5::boolean
+    FROM ${activeAccountRow('$1')} account
     ON CONFLICT (user_id)
     DO UPDATE SET
       booking_push_enabled = COALESCE($2, notification_preferences.booking_push_enabled),
@@ -113,7 +118,8 @@ export const upsert = async (userId, prefs) => {
   `
     : `
     INSERT INTO notification_preferences (user_id, booking_push_enabled, reviews_push_enabled, promotions_push_enabled)
-    VALUES ($1, COALESCE($2, TRUE), COALESCE($3, TRUE), COALESCE($4, TRUE))
+    SELECT account.id, COALESCE($2::boolean, TRUE), COALESCE($3::boolean, TRUE), COALESCE($4::boolean, TRUE)
+    FROM ${activeAccountRow('$1')} account
     ON CONFLICT (user_id)
     DO UPDATE SET
       booking_push_enabled = COALESCE($2, notification_preferences.booking_push_enabled),
@@ -135,7 +141,7 @@ export const upsert = async (userId, prefs) => {
 
   try {
     const result = await pool.query(query, params);
-    return withDefaults(result.rows[0]);
+    return result.rows[0] ? withDefaults(result.rows[0]) : null;
   } catch (error) {
     logger.error('Error upserting notification preferences', {
       error: error.message,

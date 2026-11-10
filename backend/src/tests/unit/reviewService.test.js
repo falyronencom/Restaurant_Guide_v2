@@ -374,18 +374,39 @@ describe('reviewService', () => {
         .mockResolvedValueOnce({ ...mockReview, ...updates });
       ReviewModel.updateReview.mockResolvedValue({ ...mockReview, ...updates });
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
+      // The edit, the author's account and the recount share one transaction.
+      ReviewModel.executeInTransaction.mockImplementation((callback) => callback(TX_CLIENT));
+      TX_CLIENT.query.mockReset();
+      TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: true }] });
     });
 
     test('should update review when user owns it', async () => {
       const result = await updateReview(reviewId, userId, updates);
 
       expect(result).toMatchObject(updates);
-      expect(ReviewModel.updateReview).toHaveBeenCalledWith(reviewId, updates);
+      expect(ReviewModel.updateReview).toHaveBeenCalledWith(reviewId, updates, TX_CLIENT);
 
-      // Verify aggregates updated
+      // Verify aggregates updated, in the same transaction
       expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(
-        mockReview.establishment_id
+        mockReview.establishment_id,
+        TX_CLIENT,
       );
+    });
+
+    test('the account of the author is held in share mode first; switched off or deleted — 403, nothing written (2Г, 2.03)', async () => {
+      TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: false }] });
+
+      await expect(updateReview(reviewId, userId, updates)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'USER_INACTIVE',
+      });
+
+      expect(TX_CLIENT.query).toHaveBeenCalledWith(
+        'SELECT is_active FROM users WHERE id = $1 FOR SHARE',
+        [userId],
+      );
+      expect(ReviewModel.updateReview).not.toHaveBeenCalled();
+      expect(ReviewModel.updateEstablishmentAggregates).not.toHaveBeenCalled();
     });
 
     test('should throw error when review not found', async () => {
@@ -433,7 +454,7 @@ describe('reviewService', () => {
 
       await updateReview(reviewId, userId, { content: 'Only content changed' });
 
-      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(mockReview.establishment_id);
+      expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(mockReview.establishment_id, TX_CLIENT);
     });
 
     // Deleted between the read and the write (the read found it live): the
@@ -473,17 +494,38 @@ describe('reviewService', () => {
       ReviewModel.findReviewById.mockResolvedValue(mockReview);
       ReviewModel.softDeleteReview.mockResolvedValue(true);
       ReviewModel.updateEstablishmentAggregates.mockResolvedValue(undefined);
+      // The delete, the author's account and the recount share one transaction.
+      ReviewModel.executeInTransaction.mockImplementation((callback) => callback(TX_CLIENT));
+      TX_CLIENT.query.mockReset();
+      TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: true }] });
     });
 
     test('should soft delete review when user owns it', async () => {
       await deleteReview(reviewId, userId);
 
-      expect(ReviewModel.softDeleteReview).toHaveBeenCalledWith(reviewId);
+      expect(ReviewModel.softDeleteReview).toHaveBeenCalledWith(reviewId, TX_CLIENT);
 
-      // Verify aggregates updated after deletion
+      // Verify aggregates updated after deletion, in the same transaction
       expect(ReviewModel.updateEstablishmentAggregates).toHaveBeenCalledWith(
-        mockReview.establishment_id
+        mockReview.establishment_id,
+        TX_CLIENT,
       );
+    });
+
+    test('the account of the author is held in share mode first; switched off or deleted — 403, nothing deleted (2Г)', async () => {
+      TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: false }] });
+
+      await expect(deleteReview(reviewId, userId)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'USER_INACTIVE',
+      });
+
+      expect(TX_CLIENT.query).toHaveBeenCalledWith(
+        'SELECT is_active FROM users WHERE id = $1 FOR SHARE',
+        [userId],
+      );
+      expect(ReviewModel.softDeleteReview).not.toHaveBeenCalled();
+      expect(ReviewModel.updateEstablishmentAggregates).not.toHaveBeenCalled();
     });
 
     test('should throw error when user does not own review', async () => {

@@ -15,7 +15,7 @@
  * below says whether its wording is approved or still awaits the word.
  */
 
-import { SUPPORT_EMAIL } from './authRefusals.js';
+import { ACCOUNT_INACTIVE_TEXT, SUPPORT_EMAIL } from './authRefusals.js';
 
 /** Required fields named in the submit refusal, in the accusative («заполните: …»). */
 const MISSING_FIELD_NAMES = {
@@ -154,6 +154,11 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   // so that the rule above holds without exceptions. Approved by the
   // Coordinator, 15.10.2026.
   createFailed: 'Не удалось создать заведение. Попробуйте ещё раз позже.',
+
+  // 403 USER_INACTIVE: the card was sent while the account was being switched
+  // off or deleted (critic 2Г, 2.01) — the words of the sign-in check, one
+  // text for the whole server (constants/authRefusals.js).
+  accountInactive: ACCOUNT_INACTIVE_TEXT,
   updateFailed: 'Не удалось сохранить изменения. Попробуйте ещё раз позже.',
   submitFailed: 'Не удалось отправить на модерацию. Попробуйте ещё раз позже.',
   fetchFailed: 'Не удалось загрузить заведение. Попробуйте ещё раз позже.',

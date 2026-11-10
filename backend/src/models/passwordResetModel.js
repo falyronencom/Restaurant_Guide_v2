@@ -15,6 +15,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { holdActiveAccount } from './activeAccountSql.js';
 
 /**
  * Find a valid (unused, unexpired) token row by its hash.
@@ -74,8 +75,13 @@ const COUNT_RECENT_QUERY = `
  * @param {Object} limit
  * @param {number} limit.max - Tokens allowed within the window
  * @param {number} limit.minutes - The window
- * @returns {Promise<{token: Object|null, recentCount: number}>} token is null
- *   when the limit is reached; recentCount — tokens in the window before this one
+ * @returns {Promise<{token: Object|null, recentCount: number, inactive?: true}>}
+ *   token is null when the limit is reached, or — with inactive: true — when
+ *   the account is not active; recentCount — tokens in the window before this one
+ *
+ * The account is held in share mode first (activeAccountSql.js): a request
+ * that read the account before its deletion committed and writes after it
+ * leaves no link under it and sends no letter (critic 2Г, item 2.03).
  */
 export const createTokenWithinLimit = async (userId, tokenHash, expiresAt, { max, minutes }) => {
   const insertQuery = `
@@ -90,6 +96,10 @@ export const createTokenWithinLimit = async (userId, tokenHash, expiresAt, { max
     // Advisory: no row is locked, other accounts and other writers of the
     // table do not wait.
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`password_reset_tokens:${userId}`]);
+    if (!await holdActiveAccount(client, userId)) {
+      await client.query('ROLLBACK');
+      return { token: null, recentCount: 0, inactive: true };
+    }
     // A statement of its own, after the lock: under READ COMMITTED it sees
     // every token committed by the requests that held the lock before.
     const recentCount = (await client.query(COUNT_RECENT_QUERY, [userId, String(minutes)])).rows[0].count;
