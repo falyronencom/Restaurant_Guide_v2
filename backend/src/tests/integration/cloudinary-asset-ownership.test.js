@@ -29,6 +29,7 @@ import request from 'supertest';
 import { jest } from '@jest/globals';
 import { v2 as cloudinarySdk } from 'cloudinary';
 import app from '../../server.js';
+import * as avatarDeletionLoop from '../../services/avatarDeletionLoop.js';
 import { clearAllData, query } from '../utils/database.js';
 import { createTestEstablishment, createUserAndGetTokens } from '../utils/auth.js';
 
@@ -107,6 +108,14 @@ describe('Путь A: POST /auth/avatar уничтожает прежний ав
       .attach('avatar', Buffer.from('fake-jpeg'), JPEG)
       .expect(200);
 
+    // С миграции 041 прежний файл уходит через очередь удаления, записанную в
+    // транзакции замены, — её проходит петля (avatarDeletionLoop).
+    const { rows: tasks } = await query(
+      'SELECT public_id, reason, status FROM avatar_file_deletions WHERE user_id = $1', [user.id],
+    );
+    expect(tasks).toEqual([{ public_id: `avatars/${user.id}/oldface0001`, reason: 'replaced', status: 'pending' }]);
+    await avatarDeletionLoop.tick();
+
     expect(destroy).toHaveBeenCalledTimes(1);
     // Со сбросом кэша: после этого файла нет в папке, и удаление учётной записи
     // копии CDN уже не достанет.
@@ -152,8 +161,10 @@ describe('Путь A: POST /auth/avatar уничтожает прежний ав
       .set('Authorization', `Bearer ${token}`)
       .attach('avatar', Buffer.from('fake-jpeg'), JPEG)
       .expect(200);
+    await avatarDeletionLoop.tick();
 
     expect(destroy).not.toHaveBeenCalled();
+    expect((await query('SELECT 1 FROM avatar_file_deletions')).rows).toEqual([]);
     expect((await storedUser(user.id)).avatar_url)
       .toBe(`https://res.cloudinary.com/test/image/upload/v1759700000/avatars/${user.id}/fresh0001.jpg`);
   });

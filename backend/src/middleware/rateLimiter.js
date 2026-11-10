@@ -4,6 +4,7 @@ import { RATE_LIMIT_MESSAGE } from '../constants/rateLimitRefusal.js';
 import { decodeAccessToken, extractTokenFromHeader } from '../utils/jwt.js';
 import { addressKey } from '../utils/clientAddress.js';
 import logger from '../utils/logger.js';
+import { minskDate, secondsUntilMinskMidnight } from '../utils/minskDay.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -116,6 +117,9 @@ export const resolveRateLimitTiers = (env) => {
  */
 export { RATE_LIMIT_MESSAGE };
 
+/** A day-long window — the Minsk calendar day (bucketAt). */
+const DAY_SECONDS = 86400;
+
 /**
  * The bucket a moment falls in: windows of `windowSeconds` laid end to end from
  * the Unix epoch, so a 60 s window starts on every UTC minute and a 3600 s one
@@ -125,11 +129,28 @@ export { RATE_LIMIT_MESSAGE };
  * or hour whatever the variable said, and the counter outlived its bucket by up
  * to a window — X-RateLimit-Reset could name a moment up to an hour too late.
  *
+ * A window of exactly a day is the Minsk calendar day (utils/minskDay.js), the
+ * day of every daily allowance of the product — the letters, the uploads, the
+ * recognition (thread «2Г: общие пределы», point 3.02, 10.11.2026). Until then
+ * it was the UTC day, which ends at 03:00 in Minsk: one address had two days
+ * of its limits on registrations and code resends inside one day of the
+ * project's letters, and could spend more codes than the whole day's
+ * allowance. The bucket's number is then the Minsk date's day count from the
+ * epoch — between 03:00 and midnight in Minsk the number the UTC day had, so a
+ * counter made before the change goes on counting its own day.
+ *
  * @param {number} windowSeconds - Window length, whole seconds above zero
  * @param {number} nowMs - The moment, milliseconds since the epoch
  * @returns {{ index: number, secondsLeft: number }} secondsLeft: 1..windowSeconds
  */
 const bucketAt = (windowSeconds, nowMs) => {
+  if (windowSeconds === DAY_SECONDS) {
+    const now = new Date(nowMs);
+    return {
+      index: Date.parse(`${minskDate(now)}T00:00:00.000Z`) / (DAY_SECONDS * 1000),
+      secondsLeft: secondsUntilMinskMidnight(now),
+    };
+  }
   const windowMs = windowSeconds * 1000;
   const index = Math.floor(nowMs / windowMs);
   return { index, secondsLeft: Math.ceil(((index + 1) * windowMs - nowMs) / 1000) };

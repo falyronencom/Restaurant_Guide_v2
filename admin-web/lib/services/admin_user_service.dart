@@ -26,11 +26,13 @@ class AdminUserService {
     String? search,
     String? status,
     String? role,
+    String? avatar,
   }) async {
     final queryParams = <String, dynamic>{'page': page, 'per_page': perPage};
     if (search != null && search.isNotEmpty) queryParams['search'] = search;
     if (status != null && status.isNotEmpty) queryParams['status'] = status;
     if (role != null && role.isNotEmpty) queryParams['role'] = role;
+    if (avatar != null && avatar.isNotEmpty) queryParams['avatar'] = avatar;
 
     final response = await _apiClient.get(
       '/api/v1/admin/users',
@@ -88,9 +90,42 @@ class AdminUserService {
   Future<bool> resetName(String id, {required String reason}) async =>
       _changed(await _act(id, 'reset-name', reason));
 
+  /// POST /api/v1/admin/users/:id/avatar/approve — `{ avatar_url }`: другие
+  /// видят фото с этой ссылки (миграция 041). Ссылка — та, что модератор
+  /// видел: сменил человек фото — сервер откажет 409 «обновите список».
+  Future<bool> approveAvatar(String id, {required String avatarUrl}) async =>
+      _changed(await _post(id, 'avatar/approve',
+          <String, dynamic>{'avatar_url': avatarUrl}));
+
+  /// POST /api/v1/admin/users/:id/avatar/remove — `{ avatar_url, reason? }`:
+  /// фото снято для всех, файл нашего облака уходит из него.
+  Future<bool> removeAvatar(
+    String id, {
+    required String avatarUrl,
+    String? reason,
+  }) async =>
+      _changed(await _post(id, 'avatar/remove', <String, dynamic>{
+        'avatar_url': avatarUrl,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      }));
+
   // Флаг потерян — считаем, что изменилось: так говорит и сам ответ 200.
   static bool _changed(Map<String, dynamic>? data) =>
       data == null || data['changed'] != false;
+
+  Future<Map<String, dynamic>?> _post(
+    String id,
+    String action,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _apiClient.post(
+      '/api/v1/admin/users/${idPathSegment(id)}/$action',
+      data: body,
+    );
+    final answer = response.data;
+    final data = answer is Map<String, dynamic> ? answer['data'] : null;
+    return data is Map<String, dynamic> ? data : null;
+  }
 
   Future<Map<String, dynamic>?> _act(
     String id,

@@ -4,8 +4,10 @@
  * requests a minute on the global limiter and its own daily allowances — so until
  * then 20 registrations a minute from one address multiplied them without end. 20
  * a day leaves room for a family, an office or a café behind one address; the
- * site's visitors count by the address the site vouches for. Counted per UTC day
- * (the limiter's buckets start at the epoch).
+ * site's visitors count by the address the site vouches for. Counted per Minsk
+ * day, the day of the letters' allowance (middleware/rateLimiter.js bucketAt;
+ * the UTC day until 10.11.2026 — then one address had two days of these limits
+ * inside one day of letters).
  *
  * Two counters, because they hold different things.
  *
