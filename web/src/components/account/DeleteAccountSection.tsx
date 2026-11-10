@@ -16,6 +16,8 @@ import {
   DELETED_ITEMS,
   DRAFTS_ITEM,
   KEPT_ITEMS,
+  OUTSIDE_COPIES_LEAD,
+  OUTSIDE_COPIES_TEXT,
   SUPPORT_EMAIL,
   isDeletionWord,
 } from '@/lib/account/deletion';
@@ -173,7 +175,10 @@ export function DeleteAccountSection({ onEnded }: Props) {
             </ul>
           </div>
           <p className="text-body-m text-foreground">
-            Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту или телефон.
+            <span className="font-medium">{OUTSIDE_COPIES_LEAD}</span> {OUTSIDE_COPIES_TEXT}
+          </p>
+          <p className="text-body-m text-foreground">
+            Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту.
           </p>
           <div className="flex flex-col gap-2">
             <label htmlFor="delete-account-word" className="text-body-s text-figma-text-dark">

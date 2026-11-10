@@ -41,6 +41,9 @@ const OWNS_CARDS_TEXT = 'У вас есть карточки заведений.
   + 'другому владельцу, — напишите в поддержку: support@nirivio.by';
 const WORD_LABEL = 'Чтобы подтвердить, введите слово УДАЛИТЬ';
 const DRAFTS_LINE = 'Черновики карточек заведений, которые не публиковались';
+const OUTSIDE_COPIES = 'Что может остаться вне приложения. Учётная запись удаляется из приложения и с сайта сразу. Какое'
+  + '-то время следы ещё хранятся в служебных местах: в журналах сервера — до 7 дней, в отправленных вам пись'
+  + 'мах у почтовой службы — до 30 дней, в зашифрованных копиях базы — до 3 месяцев. Эти копии не публикуются: они нужны, чтобы восстановить сервис при сбое и проверять обновления.';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -70,6 +73,13 @@ it('allowed — the warning, and the button works only with the word', async () 
 
   expect(await screen.findByText('Что удалится')).toBeInTheDocument();
   expect(screen.getByText('Ваши отзывы и оценки — автором будет «Гость», без фото')).toBeInTheDocument();
+  // The Coordinator's text about copies outside the app, word for word
+  // (09.11.2026; critic 2Г, item 4), and a new account on the same e-mail only:
+  // neither the app nor the site signs up by phone (П3-04).
+  expect(document.body).toHaveTextContent(OUTSIDE_COPIES);
+  expect(screen.getByText('Вернуть учётную запись будет нельзя. Новую можно завести на ту же почту.'))
+    .toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent(/на ту же почту или телефон/);
   const button = screen.getByRole('button', { name: 'Удалить учётную запись' });
   expect(button).toBeDisabled();
 
