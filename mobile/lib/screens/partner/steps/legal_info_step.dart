@@ -63,6 +63,8 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
 
   @override
   Widget build(BuildContext context) {
+    // Слушает провайдер ради подписей под полями УНП и e-mail.
+    final provider = context.watch<PartnerRegistrationProvider>();
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -94,13 +96,19 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
             title: 'УНП',
             description: 'Введите УНП вашего заведения',
             required: true,
-            child: _buildTextField(
-              controller: _unpController,
-              hint: '9 символов',
-              keyboardType: TextInputType.number,
-              maxLength: 9,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              onChanged: (_) => _updateProvider(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTextField(
+                  controller: _unpController,
+                  hint: '9 символов',
+                  keyboardType: TextInputType.number,
+                  maxLength: 9,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (_) => _updateProvider(),
+                ),
+                ..._buildFieldError(provider.unpError),
+              ],
             ),
           ),
 
@@ -136,11 +144,17 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
             title: 'E-mail',
             description: 'Добавьте e-mail для связи с вами',
             required: true,
-            child: _buildTextField(
-              controller: _contactEmailController,
-              hint: 'E-mail',
-              keyboardType: TextInputType.emailAddress,
-              onChanged: (_) => _updateProvider(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTextField(
+                  controller: _contactEmailController,
+                  hint: 'E-mail',
+                  keyboardType: TextInputType.emailAddress,
+                  onChanged: (_) => _updateProvider(),
+                ),
+                ..._buildFieldError(provider.contactEmailError),
+              ],
             ),
           ),
 
@@ -244,6 +258,21 @@ class _LegalInfoStepState extends State<LegalInfoStep> {
       ],
     );
   }
+
+  /// Подпись под полем: почему «Продолжить» серая. Тот же вид, что у
+  /// телефона на шаге «О заведении».
+  List<Widget> _buildFieldError(String? message) => [
+        if (message != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppTheme.errorRed,
+            ),
+          ),
+        ],
+      ];
 
   /// Build text field
   Widget _buildTextField({

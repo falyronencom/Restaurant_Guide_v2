@@ -280,6 +280,32 @@ class PartnerRegistrationProvider with ChangeNotifier {
     return digits.length == 12 ? phoneCodeMessage : phoneLengthMessage;
   }
 
+  // Подписи под полями шага «Ваши данные»: почему «Продолжить» серая. Без них
+  // при УНП короче 9 цифр или почте не по формату шаг молчал (находка № 11
+  // нитки «Часы работы», 11.11.2026). Тексты — первые фразы утверждённых
+  // отказов сервера (`ESTABLISHMENT_REFUSALS.unpInvalid` и `contactEmailInvalid`
+  // в backend/src/constants/establishmentRefusals.js); их хвост «Проверьте …
+  // на шаге «Ваши данные»» здесь лишний — партнёр уже на этом шаге.
+
+  /// Под полем УНП, пока УНП не из 9 цифр.
+  static const unpMessage = 'УНП — это 9 цифр.';
+
+  /// Под полем e-mail, пока адрес не по формату.
+  static const contactEmailMessage = 'Адрес электронной почты указан неверно.';
+
+  /// Подпись под полем УНП; null, пока поле пустое или УНП верный. Как у
+  /// телефона ([phoneError]) — видна и во время ввода.
+  String? get unpError {
+    final unp = _data.unp ?? '';
+    return unp.isEmpty || _isValidUNP(unp) ? null : unpMessage;
+  }
+
+  /// Подпись под полем e-mail; null, пока поле пустое или адрес верный.
+  String? get contactEmailError {
+    final email = _data.contactEmail ?? '';
+    return email.isEmpty || _isValidEmail(email) ? null : contactEmailMessage;
+  }
+
   /// Validate Step 4: Media
   bool _validateMediaStep() {
     // Меню — фото меню или PDF: экран и просит «предпочтительнее единый файл
