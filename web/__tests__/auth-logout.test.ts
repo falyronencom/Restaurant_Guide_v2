@@ -67,6 +67,9 @@ describe('logoutAction', () => {
         method: 'POST',
         body: JSON.stringify({ refreshToken: 'rt' }),
       }),
+      // The visitor of the request (site-visitor.test.ts pins its value);
+      // no request headers in this file, so none is found.
+      { visitor: null },
     );
     const init = mockFetch.mock.calls[0][1] as {
       headers: Record<string, string>;

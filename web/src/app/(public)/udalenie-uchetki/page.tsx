@@ -6,6 +6,9 @@ import {
   DELETED_ITEMS,
   DRAFTS_ITEM,
   KEPT_ITEMS,
+  NEW_ACCOUNT_NOTE,
+  OUTSIDE_COPIES_LEAD,
+  OUTSIDE_COPIES_TEXT,
   SUPPORT_EMAIL,
 } from '@/lib/account/deletion';
 
@@ -107,8 +110,12 @@ export default function AccountDeletionPage() {
         <ul className="list-disc pl-l text-body-m text-foreground">
           {KEPT_ITEMS.map((item) => <li key={item}>{item}</li>)}
         </ul>
-        <p className="text-body-m text-figma-text-grey">
-          Новую учётную запись можно завести на ту же почту или телефон.
+        <p className="text-body-m text-figma-text-grey">{NEW_ACCOUNT_NOTE}</p>
+      </section>
+
+      <section className="mt-m flex flex-col gap-s">
+        <p className="text-body-m text-foreground">
+          <span className="font-medium">{OUTSIDE_COPIES_LEAD}</span> {OUTSIDE_COPIES_TEXT}
         </p>
       </section>
     </main>

@@ -26,6 +26,10 @@
  */
 
 import { jest } from '@jest/globals';
+import { minskDate } from '../../utils/minskDay.js';
+
+/** The number of the Minsk day — the day bucket of every day-long limiter (middleware/rateLimiter.js bucketAt). */
+const minskDayIndex = () => Date.parse(`${minskDate(new Date(Date.now()))}T00:00:00.000Z`) / 86400000;
 import { randomUUID } from 'crypto';
 import request from 'supertest';
 import { v2 as cloudinarySdk } from 'cloudinary';
@@ -239,7 +243,7 @@ const insertMenuFile = async (account, name) => (await query(
 
 /** Сколько перезапусков учётка потратила сегодня (лимитер маршрута, 5 в сутки). */
 const restartsToday = async (account) => Number(await redisClient.get(
-  `ratelimit:ocr_restart:${account.id}:${Math.floor(Date.now() / 86400000)}`,
+  `ratelimit:ocr_restart:${account.id}:${minskDayIndex()}`,
 ));
 
 /**

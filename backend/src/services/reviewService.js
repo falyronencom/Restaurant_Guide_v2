@@ -16,6 +16,7 @@ import * as NotificationService from './notificationService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
 import { ACCOUNT_INACTIVE_TEXT } from '../constants/authRefusals.js';
+import { holdActiveAccount } from '../models/activeAccountSql.js';
 import { incrementWithExpiry, decrement, getCounter } from '../config/redis.js';
 import { secondsUntilMinskMidnight } from '../utils/minskDay.js';
 
@@ -504,19 +505,34 @@ export const updateReview = async (reviewId, userId, updates) => {
   const ratingChanged = updates.rating !== undefined && updates.rating !== currentReview.rating;
 
   try {
-    // Update the review. A deleted one is not updated — deleted before the
-    // read above (by its author elsewhere, or by a moderator) or between the
-    // read and this write — and answers as deleting it again does: 404.
-    // Until 2026-11-02 it was 500 «Сбой на сервере» (minor defects П4).
-    const updatedReview = await ReviewModel.updateReview(reviewId, updates);
-    if (!updatedReview) {
-      throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
-    }
+    const updatedReview = await ReviewModel.executeInTransaction(async (client) => {
+      // The author's account first, under a share lock, as createReview does
+      // (activeAccountSql.js). The deletion of the account holds the row FOR
+      // UPDATE and erases the text of the author's hidden and deleted
+      // reviews: an edit that waited for it is refused, instead of writing
+      // a text under «Гость» — into a hidden review, the text the deletion
+      // has just erased (critic 2Г, items 2.02 and 2.03). A block from the
+      // panel is waited for the same way.
+      if (!await holdActiveAccount(client, userId)) {
+        throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+      }
 
-    // Recount on every update, not only when the rating changed: the UPDATE
-    // fired the rating trigger, which counts hidden reviews too, and a
-    // text-only edit would otherwise leave a hidden review in the rating.
-    await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id);
+      // Update the review. A deleted one is not updated — deleted before the
+      // read above (by its author elsewhere, or by a moderator) or between the
+      // read and this write — and answers as deleting it again does: 404.
+      // Until 2026-11-02 it was 500 «Сбой на сервере» (minor defects П4).
+      const updated = await ReviewModel.updateReview(reviewId, updates, client);
+      if (!updated) {
+        throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
+      }
+
+      // Recount on every update, not only when the rating changed: the UPDATE
+      // fired the rating trigger, which counts hidden reviews too, and a
+      // text-only edit would otherwise leave a hidden review in the rating.
+      // In the same transaction: the text and the rating land together.
+      await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id, client);
+      return updated;
+    });
     if (ratingChanged) {
       logger.info('Establishment aggregates updated after review rating change', {
         reviewId,
@@ -602,16 +618,28 @@ export const deleteReview = async (reviewId, userId) => {
   }
 
   try {
-    // Soft delete the review
-    const deleted = await ReviewModel.softDeleteReview(reviewId);
-    
-    if (!deleted) {
-      throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
-    }
+    await ReviewModel.executeInTransaction(async (client) => {
+      // The author's account first, under a share lock, as updateReview does
+      // (activeAccountSql.js). A delete that waited for the deletion of the
+      // account came too late to have its text erased with the other
+      // invisible reviews — it would leave a deleted review with its text
+      // under «Гость»; it is refused, and the review stays visible under
+      // «Гость», as every visible review of a deleted account (critic 2Г,
+      // Phase 3.5 lens review).
+      if (!await holdActiveAccount(client, userId)) {
+        throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+      }
 
-    // Update establishment aggregate statistics synchronously
-    // This ensures the deleted review no longer counts toward ratings
-    await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id);
+      // Soft delete the review
+      const deleted = await ReviewModel.softDeleteReview(reviewId, client);
+      if (!deleted) {
+        throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
+      }
+
+      // Update establishment aggregate statistics synchronously, in the same
+      // transaction: the deleted review no longer counts toward ratings
+      await ReviewModel.updateEstablishmentAggregates(currentReview.establishment_id, client);
+    });
 
     logger.info('Review deleted successfully', {
       reviewId,

@@ -449,10 +449,16 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
   // (walkthrough of the moderator panel, wave 3, Phase 3.5 lens review).
   // `batch_id` — the panel's own mark of one «Скрыть выбранные» — stays with
   // an admin too; a viewer keeps `batch_size` (walkthrough, after wave 3).
+  //
+  // A photo approved or taken down (migration 041) carries the link of a
+  // person's face and the moderator's reason: the same as a block — a viewer
+  // learns that it happened and when.
   const changeColumns = viewer
-    ? `CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
+    ? `CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name',
+                              'user_avatar_approve', 'user_avatar_remove')
           THEN NULL ELSE al.old_data END as old_data,
-      CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name')
+      CASE WHEN al.action IN ('user_block', 'user_unblock', 'user_reset_name',
+                              'user_avatar_approve', 'user_avatar_remove')
           THEN NULL
         WHEN al.action IN ('review_hide', 'review_show', 'review_delete')
           THEN al.new_data - 'reason' - 'batch_id'
@@ -505,6 +511,8 @@ export const getAuditLogEntries = async (filters = {}, limit = 20, offset = 0) =
         WHEN al.action = 'user_block' AND al.entity_type = 'user' THEN 'Пользователь заблокирован'
         WHEN al.action = 'user_unblock' AND al.entity_type = 'user' THEN 'Пользователь разблокирован'
         WHEN al.action = 'user_reset_name' AND al.entity_type = 'user' THEN 'Имя пользователя сброшено'
+        WHEN al.action = 'user_avatar_approve' AND al.entity_type = 'user' THEN 'Фото пользователя одобрено'
+        WHEN al.action = 'user_avatar_remove' AND al.entity_type = 'user' THEN 'Фото пользователя снято'
         WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' AND al.user_id IS NULL THEN 'Учётная запись удалена по заявке в поддержку'
         WHEN al.action = 'user_delete_account' AND al.entity_type = 'user' THEN 'Пользователь удалил учётную запись'
         WHEN al.action = 'change_email' AND al.entity_type = 'user' THEN 'Адрес e-mail учётной записи изменён'

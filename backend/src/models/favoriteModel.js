@@ -17,6 +17,7 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { activeAccountRow } from './activeAccountSql.js';
 
 /**
  * Add an establishment to user's favorites
@@ -26,15 +27,22 @@ import logger from '../utils/logger.js';
  * query succeeds without error and returns the existing favorite. This
  * makes the API idempotent as specified in the directive.
  * 
+ * The row goes in only for an active account, read under a share lock in the
+ * same statement (activeAccountSql.js): a request that waited for the deletion
+ * of the account writes nothing after it — before 10.11.2026 its favourite
+ * stayed under the deleted account and in the card's counter for good
+ * (critic 2Г, item 2.03).
+ *
  * @param {string} userId - UUID of the user adding the favorite
  * @param {string} establishmentId - UUID of the establishment being favorited
- * @returns {Promise<Object>} The created or existing favorite object
+ * @returns {Promise<Object|null>} The created or existing favorite object;
+ *   null when the account is not active (switched off or deleted)
  * @throws {Error} If database operation fails (e.g., establishment doesn't exist)
  */
 export const addFavorite = async (userId, establishmentId) => {
   const query = `
     INSERT INTO favorites (user_id, establishment_id, created_at)
-    VALUES ($1, $2, CURRENT_TIMESTAMP)
+    SELECT account.id, $2, CURRENT_TIMESTAMP FROM ${activeAccountRow('$1')} account
     ON CONFLICT (user_id, establishment_id) DO NOTHING
     RETURNING 
       id,
@@ -48,15 +56,18 @@ export const addFavorite = async (userId, establishmentId) => {
   try {
     const result = await pool.query(query, values);
     
-    // If ON CONFLICT triggered, result.rows will be empty
-    // In this case, we need to fetch the existing favorite
+    // No row written: the favorite was there already (ON CONFLICT), or the
+    // account is not active. The first answers with the existing record, the
+    // second with null.
     if (result.rows.length === 0) {
-      // Favorite already existed, fetch it
-      logger.info('Favorite already exists, fetching existing record', {
-        userId,
-        establishmentId,
-      });
-      return await getFavorite(userId, establishmentId);
+      const existing = await getFavorite(userId, establishmentId);
+      if (existing) {
+        logger.info('Favorite already exists, fetching existing record', {
+          userId,
+          establishmentId,
+        });
+      }
+      return existing;
     }
 
     logger.info('Favorite added', {
@@ -230,7 +241,13 @@ export const getUserFavorites = async (userId, options = {}) => {
       ) as establishment_primary_image
     FROM favorites f
     JOIN establishments e ON f.establishment_id = e.id
-    WHERE f.user_id = $1
+    -- Only a card in the catalogue: the name and the photos of a draft, a card
+    -- on moderation, a rejected, suspended or archived one are not public
+    -- (DISCOVERY 09.11.2026, finding 4). The row stays — the card back in the
+    -- catalogue is back in the favourites. Not a null name instead: the app
+    -- reads the name as required (Establishment.fromJson), and one such row
+    -- would fail the whole list.
+    WHERE f.user_id = $1 AND e.status = 'active'
     ORDER BY f.created_at DESC
     LIMIT $2 OFFSET $3
   `;
@@ -260,15 +277,18 @@ export const getUserFavorites = async (userId, options = {}) => {
  * 
  * This is used for pagination metadata, allowing the API to tell clients
  * how many total favorites exist and how many pages are available.
- * 
+ * The same cards as getUserFavorites lists — those in the catalogue — so that
+ * the count and the pages agree with the list.
+ *
  * @param {string} userId - UUID of the user
  * @returns {Promise<number>} Total count of user's favorites
  */
 export const countUserFavorites = async (userId) => {
   const query = `
     SELECT COUNT(*) as count
-    FROM favorites
-    WHERE user_id = $1
+    FROM favorites f
+    JOIN establishments e ON e.id = f.establishment_id
+    WHERE f.user_id = $1 AND e.status = 'active'
   `;
 
   try {
@@ -335,11 +355,14 @@ export const isFavorite = async (userId, establishmentId) => {
  * @returns {Promise<boolean>} True if establishment exists and is active
  */
 export const establishmentExists = async (establishmentId) => {
+  // Only a card in the catalogue can be added (DISCOVERY 09.11.2026, finding
+  // 4): the favourites list shows nothing else. The app reverts the heart on
+  // the refusal and says «Не удалось обновить избранное».
   const query = `
     SELECT EXISTS(
-      SELECT 1 
-      FROM establishments 
-      WHERE id = $1 AND status != 'archived'
+      SELECT 1
+      FROM establishments
+      WHERE id = $1 AND status = 'active'
     ) as exists
   `;
 

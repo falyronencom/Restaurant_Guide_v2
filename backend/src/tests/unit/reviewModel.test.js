@@ -33,6 +33,7 @@ jest.unstable_mockModule('../../utils/logger.js', () => ({
 }));
 
 const ReviewModel = await import('../../models/reviewModel.js');
+const logger = (await import('../../utils/logger.js')).default;
 
 describe('reviewModel', () => {
   beforeEach(() => {
@@ -652,6 +653,29 @@ describe('reviewModel', () => {
       expect(mockClientQuery).toHaveBeenCalledWith('BEGIN');
       expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
       expect(mockClientRelease).toHaveBeenCalled();
+    });
+
+    test('a refusal the service meant (an AppError below 500) is not logged as an error', async () => {
+      mockClientQuery.mockResolvedValue(undefined);
+      const refusal = Object.assign(new Error('Учётная запись отключена'), {
+        isOperational: true, statusCode: 403, code: 'USER_INACTIVE',
+      });
+
+      await expect(ReviewModel.executeInTransaction(jest.fn().mockRejectedValue(refusal)))
+        .rejects.toBe(refusal);
+
+      expect(mockClientQuery).toHaveBeenCalledWith('ROLLBACK');
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('Transaction rolled back: refused', { code: 'USER_INACTIVE' });
+    });
+
+    test('a failure is still logged as an error', async () => {
+      mockClientQuery.mockResolvedValue(undefined);
+
+      await expect(ReviewModel.executeInTransaction(jest.fn().mockRejectedValue(new Error('db down'))))
+        .rejects.toThrow('db down');
+
+      expect(logger.error).toHaveBeenCalledWith('Transaction rolled back', { error: 'db down' });
     });
 
     test('should always release client even on ROLLBACK error', async () => {

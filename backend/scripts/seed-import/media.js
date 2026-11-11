@@ -95,8 +95,10 @@ export function scanMedia(mediaRoot, stableId) {
     items.push({ relpath: `${PDF_SUBFOLDER}/${abspath.split(/[\\/]/).pop()}`, abspath, type: 'menu', file_type: 'pdf', bytes });
   }
 
-  // Bucket limits.
-  if (counts.interior > MEDIA_LIMITS.interior) errors.push(`${stableId}: ${counts.interior} interior photos > ${MEDIA_LIMITS.interior}`);
+  // Bucket limits. The facade, the room and the dishes are one kind on the card
+  // (src/constants/mediaKinds.js): they share the venue's limit.
+  const venuePhotos = counts.exterior + counts.interior + counts.dishes;
+  if (venuePhotos > MEDIA_LIMITS.interior) errors.push(`${stableId}: ${venuePhotos} venue photos (exterior + interior + dishes) > ${MEDIA_LIMITS.interior}`);
   if (counts.menu > MEDIA_LIMITS.menu) errors.push(`${stableId}: ${counts.menu} menu photos > ${MEDIA_LIMITS.menu}`);
   if (counts.menu_pdf > PDF_MAX_COUNT) errors.push(`${stableId}: ${counts.menu_pdf} menu PDFs > ${PDF_MAX_COUNT}`);
 
@@ -107,15 +109,32 @@ export function scanMedia(mediaRoot, stableId) {
  * CAT-E-2.3 publication minimum for a scanned card. Returns an array of unmet
  * requirements (empty = passes). Media-side only; description length is checked
  * in sheet normalization.
+ *
+ * «≥ 1 фото фасада» is no longer a requirement (amendment of CAT-E-2.3, the
+ * Coordinator's word 09.11.2026 21:22:55Z): it is advice — adviseE1.
  */
 export function checkE1(counts) {
   const unmet = [];
   const totalPhotos = counts.exterior + counts.interior + counts.dishes + counts.menu;
   const menuSources = counts.menu + counts.menu_pdf;
   if (totalPhotos < E1_MIN_TOTAL_PHOTOS) unmet.push(`${totalPhotos} photos < ${E1_MIN_TOTAL_PHOTOS}`);
-  if (counts.exterior < E1_MIN_EXTERIOR) unmet.push(`${counts.exterior} exterior < ${E1_MIN_EXTERIOR}`);
   if (menuSources < 1) unmet.push('no menu source (photo or PDF)');
   return unmet;
+}
+
+/**
+ * CAT-E-2.3 advice for a scanned card — warnings, never a refusal: a facade
+ * photo makes the cover the guest recognises the place by.
+ *
+ * @param {Object} counts - scanMedia().counts
+ * @returns {string[]}
+ */
+export function adviseE1(counts) {
+  const advice = [];
+  if (counts.exterior < E1_MIN_EXTERIOR) {
+    advice.push(`${counts.exterior} exterior < ${E1_MIN_EXTERIOR}: a facade photo is advised for the cover`);
+  }
+  return advice;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -57,6 +57,29 @@ it('says what is deleted and what stays without the name', () => {
   expect(within(kept).getByText('Ваши отзывы и оценки — автором будет «Гость», без фото')).toBeInTheDocument();
 });
 
+/**
+ * The Coordinator's text about copies outside the app (09.11.2026, «Текст да,
+ * 3 месяца» — critic 2Г, item 4), word for word as approved: a literal here,
+ * not the constant the page renders.
+ */
+const OUTSIDE_COPIES = 'Что может остаться вне приложения. Учётная запись удаляется из приложения и с сайта сразу. Какое'
+  + '-то время следы ещё хранятся в служебных местах: в журналах сервера — до 7 дней, в отправленных вам пись'
+  + 'мах у почтовой службы — до 30 дней, в зашифрованных копиях базы — до 3 месяцев. Эти копии не публикуются: они нужны, чтобы восстановить сервис при сбое и проверять обновления.';
+
+it('what may stay outside the app — the approved text, word for word', () => {
+  render(<AccountDeletionPage />);
+
+  expect(document.body).toHaveTextContent(OUTSIDE_COPIES);
+});
+
+it('a new account — on the same e-mail; no promise of a phone the app and the site cannot sign up by (П3-04)', () => {
+  render(<AccountDeletionPage />);
+
+  const kept = screen.getByRole('heading', { name: 'Что остаётся без вашего имени' }).parentElement!;
+  expect(kept).toHaveTextContent('Новую учётную запись можно завести на ту же почту.');
+  expect(document.body).not.toHaveTextContent(/завести на ту же почту или телефон/);
+});
+
 it('has its own title — the layout adds «| Nirivio» — and canonical address', () => {
   expect(metadata.title).toBe('Как удалить учётную запись');
   expect(metadata.alternates).toEqual({ canonical: '/udalenie-uchetki' });

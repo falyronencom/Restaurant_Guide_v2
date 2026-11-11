@@ -677,8 +677,37 @@ export const deleteAvatarFolder = async (
 };
 
 /**
+ * Remove one file of a person's avatar folder — the photo a moderator took down,
+ * the one the person cleared or replaced (migration 041). Called by
+ * services/avatarDeletionLoop.js for each task of avatar_file_deletions.
+ *
+ * The file is destroyed only inside avatars/<userId>/ (deleteImage refuses the
+ * rest: `{ result: 'refused' }`), with the CDN's copies, under the same deadline
+ * as every call of the folder's deletion: a destroy that got no answer would
+ * otherwise hold the loop and its shutdown for good. One call through the Upload
+ * API — no listing, so the Admin API's hourly limit is not touched.
+ *
+ * @param {string} publicId - the file
+ * @param {string} userId - UUID of the folder's owner
+ * @param {Object} [options]
+ * @param {number} [options.deadlineMs] - bound of the call to the cloud
+ * @returns {Promise<{result: string}>} 'ok', 'not found' (gone already), 'refused'
+ * @throws {Error} When the id is not a UUID (no call is made), the call fails or
+ *   gets no answer
+ */
+export const deleteAvatarFile = async (publicId, userId, { deadlineMs = CLOUD_CALL_DEADLINE_MS } = {}) => {
+  if (typeof userId !== 'string' || !USER_ID_PATTERN.test(userId)) {
+    throw new Error('Avatar file delete refused: the user id is not a UUID');
+  }
+  return withinDeadline(
+    deleteImage(publicId, [ownedFolders.avatars(userId)], { invalidate: true }),
+    deadlineMs,
+  );
+};
+
+/**
  * Extract public_id from Cloudinary URL
- * 
+ *
  * When deleting media, we need to extract the public_id from the stored URL
  * to call the deletion API. This function parses various Cloudinary URL formats
  * to extract the public_id.

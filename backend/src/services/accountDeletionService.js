@@ -17,7 +17,10 @@
  *   1. Reviews stay with their text and rating; the author reads «Гость»,
  *      without a picture. A review shows the author's name and avatar from the
  *      users row, so the row's name becomes DELETED_USER_NAME and its avatar
- *      goes; the reviews themselves are not touched — no rating moves.
+ *      goes, and the site is told to rebuild its cached pages (siteRefresh.js).
+ *      A review nobody but the panel reads — deleted by the person or by a
+ *      moderator, hidden by a moderator or by a block — loses its text
+ *      (Coordinator, 09.11.2026: «стирать»; eraseLeftovers). No rating moves.
  *   2. Bookings: the establishment keeps the date, the time and the number of
  *      guests; the name and the phone are wiped (the name lives on the users
  *      row; contact_phone is NOT NULL in the schema, so it becomes ''; the
@@ -82,10 +85,13 @@ import { deleteImage, ownCloudPublicId, ownedFolders } from '../config/cloudinar
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { writeAuditLogInTransaction } from '../models/auditLogModel.js';
+import * as ReviewModel from '../models/reviewModel.js';
 import { avatarDeletionTableExists, enqueueAvatarDeletion } from '../models/avatarDeletionModel.js';
+import { avatarModerationReady } from '../models/avatarModerationModel.js';
 import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
 import * as NotificationService from './notificationService.js';
+import { refreshEstablishmentPages } from './siteRefresh.js';
 import logger from '../utils/logger.js';
 import { ACCOUNT_INACTIVE_TEXT, SUPPORT_EMAIL } from '../constants/authRefusals.js';
 
@@ -302,6 +308,225 @@ export const lockAccount = async (client, userId) =>
   (await client.query(`${ACCOUNT_SQL} FOR UPDATE`, [userId])).rows[0];
 
 /**
+ * The person's unfinished cards go — the rule of the partner's own delete, in
+ * the DELETE itself, plus «nobody else has used it» (module comment, 3); each
+ * card with that delete's journal entry (the audit screen has nothing to join
+ * a deleted card to: name and city are kept in old_data). A draft being sent
+ * to moderation at this moment holds its row: the DELETE waits for it and,
+ * finding it pending, leaves it. The deletion's first step, and the operator's
+ * sweep of accounts deleted earlier (scripts/erase-deleted-account-leftovers.js).
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {string} userId
+ * @param {Object} by - { actorId, label }: who deletes, for the journal
+ * @returns {Promise<number>} cards deleted
+ */
+export const deleteUnfinishedCards = async (client, userId, { actorId = null, label = null } = {}) => {
+  const drafts = await client.query(
+    `WITH deleted AS (
+       DELETE FROM establishments e
+       WHERE e.partner_id = $1
+         AND e.status = ANY($2::text[])
+         AND e.published_at IS NULL
+         AND NOT ${usedByOthersSql('e')}
+       RETURNING e.id, e.name, e.city, e.status
+     ), logged AS (
+       INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data)
+       SELECT $3::uuid, 'partner_delete_establishment', 'establishment', d.id,
+              jsonb_build_object('name', d.name, 'city', d.city, 'status', d.status),
+              CASE WHEN $4::text IS NULL THEN NULL ELSE jsonb_build_object('actor', $4::text) END
+         FROM deleted d
+       RETURNING entity_id
+     )
+     SELECT COUNT(*)::int AS n FROM logged`,
+    [userId, UNFINISHED_CARD_STATUSES, actorId, label],
+  );
+  return drafts.rows[0].n;
+};
+
+/**
+ * SQL: the review is shown to nobody but the panel — deleted (by its author or
+ * a moderator) or hidden (by a moderator, or by a block of its author). The
+ * public reads show `is_visible = true AND is_deleted = false` only
+ * (reviewModel); this is everything else, NULLs included.
+ */
+const INVISIBLE_REVIEW_SQL = '(is_visible IS NOT TRUE OR is_deleted IS NOT FALSE)';
+
+/**
+ * Everything under the account that names the person or reached them — the
+ * part of the deletion that holds for an account deleted already and can be
+ * applied again: each step finds nothing the second time. The deletion runs it
+ * once; the operator's sweep runs it on accounts deleted earlier, for what
+ * they kept before 10.11.2026 (critic 2Г: the texts of invisible reviews, the
+ * rows a request racing the deletion wrote after it).
+ *
+ * What goes:
+ *   - favourites, then the counter of every card they were on — the counter
+ *     is denormalised (favoriteModel.updateEstablishmentFavoriteCount);
+ *   - what reached the person: notices, their settings, push devices, codes
+ *     and reset links; the sessions;
+ *   - the phone and the comment of every booking (date, time and guests stay
+ *     — decision 2; the name goes with the account row);
+ *   - the legal records left under the person's id (below);
+ *   - the text of every review nobody but the panel reads — deleted by the
+ *     person or a moderator, hidden by a moderator or by a block
+ *     (Coordinator, 09.11.2026: «стирать»). Visible reviews keep their text
+ *     under «Гость» (decision 1). The rating stays as it was: the UPDATE fires
+ *     the schema trigger, which counts hidden reviews in, and the service's
+ *     recount follows it (reviewModel.updateEstablishmentAggregates);
+ *   - the person's name and addresses in the journal's earlier entries.
+ *
+ * @param {Object} client - pg client inside a transaction
+ * @param {string} userId
+ * @returns {Promise<Object>} rows changed, per step
+ */
+export const eraseLeftovers = async (client, userId) => {
+  const changed = {};
+
+  const favorites = await client.query(
+    'DELETE FROM favorites WHERE user_id = $1 RETURNING establishment_id',
+    [userId],
+  );
+  changed.favorites = favorites.rowCount;
+  // The cards this code recounts, it takes lowest id first (the reviews'
+  // recount below too): two deletions, or a deletion and a moderator, that
+  // meet on the same cards are less likely to deadlock (Phase 3.5 review). A
+  // deadlock rolls the deletion back whole; the person asks again.
+  const favoriteCards = [...new Set(favorites.rows.map((row) => row.establishment_id))].sort();
+  if (favoriteCards.length > 0) {
+    await client.query(
+      `UPDATE establishments e
+          SET favorite_count = (SELECT COUNT(*) FROM favorites f WHERE f.establishment_id = e.id)
+        WHERE e.id = ANY($1::uuid[])`,
+      [favoriteCards],
+    );
+  }
+
+  // What reached the person. The table names are fixed strings of this code.
+  for (const table of ['notifications', 'notification_preferences', 'device_tokens',
+    'email_verification_codes', 'password_reset_tokens']) {
+    changed[table] = (await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId])).rowCount;
+  }
+
+  // Sessions. The successor link is a self-reference within the account's
+  // own rows; cleared before they go.
+  await client.query('UPDATE refresh_tokens SET replaced_by = NULL WHERE user_id = $1', [userId]);
+  changed.refresh_tokens = (await client.query(
+    'DELETE FROM refresh_tokens WHERE user_id = $1',
+    [userId],
+  )).rowCount;
+
+  // Every booking keeps its date, time and guests; the phone and the
+  // comment go (the name goes with the account row).
+  changed.booking_contacts = (await client.query(
+    `UPDATE bookings SET contact_phone = '', comment = NULL, updated_at = NOW()
+     WHERE user_id = $1 AND (contact_phone <> '' OR comment IS NOT NULL)`,
+    [userId],
+  )).rowCount;
+
+  // A legal record under this person's id: of a card a claim before
+  // 10.11.2026 passed to another holder (a claim now removes the previous
+  // holder's record — adminService.claimEstablishment — so what a new holder
+  // writes is never under this id), or of no card. The
+  // person gave it, and of a sole trader it is the person: the contact, the
+  // organisation's name, the УНП and the link to the scan go — the record as
+  // a whole (critic 2Г, П3-02). Not emptied in place: the cabinet's save
+  // updates every record of the card (partnerDocumentsModel
+  // .updateByEstablishmentId) and would write the new holder's details under
+  // this id; without a record it makes the holder's own (Phase 3.5 lens review).
+  changed.partner_documents = (await client.query(
+    'DELETE FROM partner_documents WHERE partner_id = $1',
+    [userId],
+  )).rowCount;
+
+  const erased = (await client.query(
+    `WITH erased AS (
+       UPDATE reviews SET content = NULL, text = NULL
+        WHERE user_id = $1 AND ${INVISIBLE_REVIEW_SQL}
+          AND (content IS NOT NULL OR text IS NOT NULL)
+       RETURNING establishment_id
+     )
+     SELECT establishment_id, COUNT(*)::int AS n FROM erased
+     GROUP BY establishment_id ORDER BY establishment_id`,
+    [userId],
+  )).rows;
+  changed.review_texts = erased.reduce((sum, row) => sum + row.n, 0);
+  for (const { establishment_id: establishmentId } of erased) {
+    await ReviewModel.updateEstablishmentAggregates(establishmentId, client);
+  }
+
+  // The link of the photo a moderator approved (migration 041,
+  // models/avatarModerationModel.js): the photo goes with the account row
+  // (avatar_url), its approval too. The column is not there before the
+  // migration — applied by hand after the deploy — so it is asked first; the
+  // catalogue read never fails the deletion (Phase 3.5 review of #209, LOW-1).
+  changed.avatar_approvals = (await avatarModerationReady(client))
+    ? (await client.query(
+      'UPDATE users SET avatar_approved_url = NULL WHERE id = $1 AND avatar_approved_url IS NOT NULL',
+      [userId],
+    )).rowCount
+    : 0;
+
+  // The journal keeps what was done to the account, not who held it: the
+  // name a reset replaced (adminUserService.resetUserName, user_name), the
+  // addresses an e-mail change wrote (scripts/lib/accountEmail.js,
+  // user_email) and the photo link a moderator approved or took down
+  // (adminUserService, user_avatar_approve / user_avatar_remove: avatar_url —
+  // a Google or Yandex photo is not ours to delete and outlives the account)
+  // leave its earlier entries. A moderator's reason stays as it was written:
+  // it is the moderation record, free text the code cannot take apart (Phase
+  // 3.5 review). The review it was about is not copied into it: the audit
+  // screen reads the text from the review (above).
+  changed.journal_entries = (await client.query(
+    `UPDATE audit_log
+        SET old_data = old_data - 'user_name' - 'user_email' - 'avatar_url',
+            new_data = new_data - 'user_name' - 'user_email' - 'avatar_url'
+      WHERE entity_type = 'user' AND entity_id = $1
+        AND (old_data ?| ARRAY['user_name', 'user_email', 'avatar_url']
+             OR new_data ?| ARRAY['user_name', 'user_email', 'avatar_url'])`,
+    [userId],
+  )).rowCount;
+
+  return changed;
+};
+
+/**
+ * A review of a deleted account that a moderator hides or deletes now — after
+ * the deletion, which erased the text of the account's invisible reviews of
+ * its day — loses its text the same way: nobody but the panel reads it any
+ * more, and it is the person's (Coordinator, 09.11.2026, «стирать»; Phase 3.5
+ * lens review). The moderator's reason stays in the journal. Called by the
+ * panel's hide, batch hide and delete, after their write, in their
+ * transaction where they have one; the rating is recounted as eraseLeftovers
+ * recounts it.
+ *
+ * @param {Object} db - pool or a client inside a transaction
+ * @param {string[]} reviewIds
+ * @returns {Promise<number>} texts erased
+ */
+export const eraseTextsOfDeletedAuthors = async (db, reviewIds) => {
+  if (reviewIds.length === 0) return 0;
+  const erased = (await db.query(
+    `WITH erased AS (
+       UPDATE reviews r SET content = NULL, text = NULL
+        WHERE r.id = ANY($1::uuid[]) AND ${INVISIBLE_REVIEW_SQL}
+          AND (r.content IS NOT NULL OR r.text IS NOT NULL)
+          AND EXISTS (SELECT 1 FROM users u WHERE u.id = r.user_id AND u.is_active = FALSE)
+          AND EXISTS (SELECT 1 FROM audit_log a
+                      WHERE a.entity_type = 'user' AND a.entity_id = r.user_id AND a.action = $2)
+       RETURNING r.establishment_id
+     )
+     SELECT establishment_id, COUNT(*)::int AS n FROM erased
+     GROUP BY establishment_id ORDER BY establishment_id`,
+    [reviewIds, ACCOUNT_DELETED_ACTION],
+  )).rows;
+  for (const { establishment_id: establishmentId } of erased) {
+    await ReviewModel.updateEstablishmentAggregates(establishmentId, db);
+  }
+  return erased.reduce((sum, row) => sum + row.n, 0);
+};
+
+/**
  * The deletion itself — see the module comment for what goes and what stays —
  * inside the caller's transaction, on the row the caller locked (lockAccount)
  * and judged deletable. Throws ACCOUNT_OWNS_ESTABLISHMENTS when a card holds
@@ -332,31 +557,8 @@ export const anonymiseAccount = async (
   }
   const userId = account.id;
 
-  // Unfinished cards go first — the rule of the partner's own delete, in the
-  // DELETE itself, plus «nobody else has used it» (module comment, 3); each
-  // card with that delete's journal entry (the audit screen has nothing to
-  // join a deleted card to: name and city are kept in old_data). A draft
-  // being sent to moderation at this moment holds its row: the DELETE waits
-  // for it and, finding it pending, leaves it.
-  const drafts = await client.query(
-    `WITH deleted AS (
-       DELETE FROM establishments e
-       WHERE e.partner_id = $1
-         AND e.status = ANY($2::text[])
-         AND e.published_at IS NULL
-         AND NOT ${usedByOthersSql('e')}
-       RETURNING e.id, e.name, e.city, e.status
-     ), logged AS (
-       INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data)
-       SELECT $3::uuid, 'partner_delete_establishment', 'establishment', d.id,
-              jsonb_build_object('name', d.name, 'city', d.city, 'status', d.status),
-              CASE WHEN $4::text IS NULL THEN NULL ELSE jsonb_build_object('actor', $4::text) END
-         FROM deleted d
-       RETURNING entity_id
-     )
-     SELECT COUNT(*)::int AS n FROM logged`,
-    [userId, UNFINISHED_CARD_STATUSES, actorId, label],
-  );
+  // Unfinished cards go first (deleteUnfinishedCards).
+  const draftsDeleted = await deleteUnfinishedCards(client, userId, { actorId, label });
 
   // What is left is a card that is, was or is about to be in the catalogue —
   // decision 3: the account stays until the card has another holder. The
@@ -389,60 +591,15 @@ export const anonymiseAccount = async (
     [userId, BOOKING_TIME_ZONE],
   )).rows;
 
-  // Every booking keeps its date, time and guests; the phone and the
-  // comment go (the name goes with the account row below).
-  await client.query(
-    `UPDATE bookings SET contact_phone = '', comment = NULL, updated_at = NOW()
-     WHERE user_id = $1`,
-    [userId],
-  );
-
-  // Favourites, then the counter of every card they were on — the counter
-  // is denormalised (favoriteModel.updateEstablishmentFavoriteCount).
-  const favorites = await client.query(
-    'DELETE FROM favorites WHERE user_id = $1 RETURNING establishment_id',
-    [userId],
-  );
-  const favoriteCards = [...new Set(favorites.rows.map((row) => row.establishment_id))];
-  if (favoriteCards.length > 0) {
-    await client.query(
-      `UPDATE establishments e
-          SET favorite_count = (SELECT COUNT(*) FROM favorites f WHERE f.establishment_id = e.id)
-        WHERE e.id = ANY($1::uuid[])`,
-      [favoriteCards],
-    );
-  }
-
-  // What reached the person: notices, their settings, push devices, codes
-  // and reset links.
-  await client.query('DELETE FROM notifications WHERE user_id = $1', [userId]);
-  await client.query('DELETE FROM notification_preferences WHERE user_id = $1', [userId]);
-  await client.query('DELETE FROM device_tokens WHERE user_id = $1', [userId]);
-  await client.query('DELETE FROM email_verification_codes WHERE user_id = $1', [userId]);
-  await client.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [userId]);
-
-  // Sessions. The successor link is a self-reference within the account's
-  // own rows; cleared before they go.
-  await client.query('UPDATE refresh_tokens SET replaced_by = NULL WHERE user_id = $1', [userId]);
-  await client.query('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
-  // After the refresh tokens are gone, not before (markSessionsRevoked).
-  const revokedAt = await markSessionsRevoked(client, userId);
-
-  // A card an earlier claim passed to another holder keeps its legal record
-  // under this person's id: the contact person and address in it are theirs.
-  // A claim now takes the record to the new holder and clears the previous
-  // holder's contacts (adminService.claimEstablishment), so what a new holder
-  // writes is never under this id.
-  await client.query(
-    `UPDATE partner_documents SET contact_person = NULL, contact_email = NULL
-     WHERE partner_id = $1 AND (contact_person IS NOT NULL OR contact_email IS NOT NULL)`,
-    [userId],
-  );
-
   const reviews = await client.query(
     'SELECT COUNT(*)::int AS n FROM reviews WHERE user_id = $1 AND is_deleted = FALSE',
     [userId],
   );
+
+  const erased = await eraseLeftovers(client, userId);
+
+  // After the refresh tokens are gone, not before (markSessionsRevoked).
+  const revokedAt = await markSessionsRevoked(client, userId);
 
   // The row itself: nothing in it names the person or lets anyone in.
   await client.query(
@@ -461,27 +618,12 @@ export const anonymiseAccount = async (
     await enqueueAvatarDeletion(client, userId);
   }
 
-  // The journal keeps what was done to the account, not who held it: the
-  // name a reset replaced (adminUserService.resetUserName, user_name) and
-  // the addresses an e-mail change wrote (scripts/lib/accountEmail.js,
-  // user_email) leave its earlier entries. A moderator's reason stays as it
-  // was written: it is the moderation record, free text the code cannot
-  // take apart (Phase 3.5 review).
-  await client.query(
-    `UPDATE audit_log
-        SET old_data = old_data - 'user_name' - 'user_email',
-            new_data = new_data - 'user_name' - 'user_email'
-      WHERE entity_type = 'user' AND entity_id = $1
-        AND (old_data ?| ARRAY['user_name', 'user_email']
-             OR new_data ?| ARRAY['user_name', 'user_email'])`,
-    [userId],
-  );
-
   const counts = {
     reviews_kept: reviews.rows[0].n,
+    review_texts_erased: erased.review_texts,
     bookings_cancelled: cancelled.length,
-    favorites_removed: favorites.rowCount,
-    drafts_deleted: drafts.rows[0].n,
+    favorites_removed: erased.favorites,
+    drafts_deleted: draftsDeleted,
     access_tokens_revoked: revokedAt !== null,
   };
 
@@ -553,6 +695,14 @@ export const deleteAccount = async (userId, rawConfirmation) => {
   }
 
   await notifyCancelledBookings(outcome.cancelled);
+
+  // The site's cached pages still name the author of these reviews: they are
+  // rebuilt on the next visit, not within the hour (siteRefresh.js). After
+  // COMMIT and before the answer; a site that does not answer is a line in
+  // the journal, never a failed deletion.
+  if (outcome.counts.reviews_kept > 0) {
+    await refreshEstablishmentPages();
+  }
 
   logger.info('Account deleted by its holder', { userId, ...outcome.counts });
   return { deleted: true, changed: true };

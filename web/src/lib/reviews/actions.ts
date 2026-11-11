@@ -2,6 +2,9 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { mayDropCachedPage } from '@/lib/cached-page-drops';
+import { isDetailPath } from '@/lib/detail-path';
+
 import { getReviews } from '@/lib/api/endpoints/establishments';
 import { currentVisitor } from '@/lib/api/visitor';
 import {
@@ -79,7 +82,7 @@ export async function createReviewAction(input: {
   // (`/[city]/[category]/[slug]`) would need type:'page' and would revalidate
   // ALL establishments (Discovery Q7). The /reviews route is force-dynamic and
   // needs no invalidation.
-  revalidatePath(input.detailPath);
+  await dropDetailPage(input.detailPath);
   return { ok: true };
 }
 
@@ -103,7 +106,7 @@ export async function updateReviewAction(input: {
   } catch (err) {
     return mapReviewError(err, messageForUpdateCode);
   }
-  revalidatePath(input.detailPath);
+  await dropDetailPage(input.detailPath);
   return { ok: true };
 }
 
@@ -122,7 +125,7 @@ export async function deleteReviewAction(input: {
   } catch (err) {
     return mapReviewError(err, messageForDeleteCode);
   }
-  revalidatePath(input.detailPath);
+  await dropDetailPage(input.detailPath);
   return { ok: true };
 }
 
@@ -157,7 +160,7 @@ export async function reloadReviewsAction(input: {
   } catch {
     return { ok: false };
   }
-  if (isDetailPathOf(input.detailPath, input.slug)) {
+  if (isDetailPathOf(input.detailPath, input.slug) && await mayDropCachedPage()) {
     revalidatePath(input.detailPath);
   }
   return {
@@ -165,6 +168,19 @@ export async function reloadReviewsAction(input: {
     reviews: result.reviews,
     total: result.pagination.total,
   };
+}
+
+/**
+ * Drop the cached card page the browser named after a review was written,
+ * edited or deleted — only when it is a card address (never the sitemap or
+ * the home page, whatever the browser sends) and within the hour's allowance
+ * of drops (lib/cached-page-drops.ts; thread «2Г: общие пределы», 10.11.2026).
+ * Past the allowance the page renews by itself within the hour.
+ */
+async function dropDetailPage(path: string): Promise<void> {
+  if (isDetailPath(path) && await mayDropCachedPage()) {
+    revalidatePath(path);
+  }
 }
 
 const PATH_SEGMENT = /^[a-z0-9-]+$/i;

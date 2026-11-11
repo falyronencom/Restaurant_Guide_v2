@@ -318,6 +318,7 @@ describe('DELETE /auth/account — что исчезает', () => {
     // оператора называет себя в new_data.actor (delete-account-script.test.js).
     expect(entries[0].new_data).toEqual({
       reviews_kept: 0,
+      review_texts_erased: 0,
       bookings_cancelled: 0,
       favorites_removed: 0,
       drafts_deleted: 0,
@@ -713,7 +714,9 @@ describe('DELETE /auth/account — фото профиля', () => {
 // ============================================================================
 
 describe('DELETE /auth/account — юр. данные карточки, которая перешла к другому', () => {
-  test('контактное лицо и его почта стёрты, название и УНП на месте', async () => {
+  // Реквизиты, которые дал человек, уходят вместе с контактом: у ИП название
+  // и УНП — это он сам (облачный критик 2Г, П3-02). Запись — целиком.
+  test('запись о юрлице под удалённой учёткой удалена: ни контакта, ни названия, ни УНП', async () => {
     const p = await person();
     const { partner, establishment } = await createPartnerWithEstablishment('active');
     // Карточка была у человека, документы записаны на него; потом её передали.
@@ -731,9 +734,7 @@ describe('DELETE /auth/account — юр. данные карточки, кото
       'SELECT company_name, tax_id, contact_person, contact_email FROM partner_documents WHERE establishment_id = $1',
       [establishment.id],
     );
-    expect(docs.rows).toEqual([
-      { company_name: 'ООО «Вкус»', tax_id: '191234567', contact_person: null, contact_email: null },
-    ]);
+    expect(docs.rows).toEqual([]);
   });
 
   test('передача, затем новый владелец вписал свои контакты, затем прежний удалил учётку — контакты нового на месте', async () => {
@@ -765,8 +766,10 @@ describe('DELETE /auth/account — юр. данные карточки, кото
       'SELECT partner_id, company_name, tax_id, contact_person, contact_email FROM partner_documents WHERE establishment_id = $1',
       [establishment.id],
     );
+    // Реквизиты прежнего с карточкой не переходят (вариант А, 10.11.2026):
+    // у нового — только то, что он вписал сам.
     expect(docs.rows).toEqual([{
-      partner_id: next.user.id, company_name: 'ООО «Вкус»', tax_id: '191234567',
+      partner_id: next.user.id, company_name: null, tax_id: null,
       contact_person: 'Пётр Новиков', contact_email: 'petr@test.com',
     }]);
     expect((await userRow(previous.user.id)).name).toBe('Гость');

@@ -248,11 +248,11 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
     expect(entry.new_data.partner_id).toBe(targetUser.user.id);
   });
 
-  test('the legal record goes with the card: the legal entity stays, the previous holder\'s contacts leave', async () => {
-    // Deleting the previous holder's account wipes the contacts in the
-    // records under their id (accountDeletionService). What the new holder
-    // writes after the claim must be under the new holder's (Phase 3.5 lens
-    // review, account deletion, 18.10.2026).
+  test('the previous holder\'s legal record does not go with the card: neither contacts nor the entity\'s name and УНП', async () => {
+    // The record is the data of whoever gave it — of a sole trader the name
+    // and the УНП are the person (Coordinator 10.11.2026, critic 2Г П3-02,
+    // variant А). The new holder enters their own; what they write is under
+    // their id (Phase 3.5 lens review, account deletion, 18.10.2026).
     const { partner: previous, establishment } = await createPartnerWithEstablishment('active');
     await query(
       `INSERT INTO partner_documents (partner_id, establishment_id, document_type, document_url,
@@ -273,10 +273,7 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
        FROM partner_documents WHERE establishment_id = $1`,
       [establishment.id],
     );
-    expect(docs.rows).toEqual([{
-      partner_id: targetUser.user.id, company_name: 'ООО «Вкус»', tax_id: '191234567',
-      contact_person: null, contact_email: null,
-    }]);
+    expect(docs.rows).toEqual([]);
   });
 
   test('should rollback partner_id if transaction fails', async () => {

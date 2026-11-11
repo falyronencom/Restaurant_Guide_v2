@@ -465,6 +465,9 @@ export async function logoutAction(): Promise<void> {
 
   if (accessToken && refreshToken) {
     try {
+      // The visitor, as every signed-in call names it (session.ts
+      // fetchWithBearer): with a token the API refuses, the sign-out would
+      // otherwise spend the site's own budget.
       await serverFetch('/api/v1/auth/logout', {
         method: 'POST',
         headers: {
@@ -472,7 +475,7 @@ export async function logoutAction(): Promise<void> {
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({ refreshToken }),
-      });
+      }, { visitor: await currentVisitor() });
     } catch {
       // Non-fatal: the local cookie clear below logs the user out of the web session.
     }

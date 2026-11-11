@@ -17,6 +17,7 @@ import { UPLOADS_ROOT } from './middleware/upload.js';
 import * as ocrJobPoller from './services/ocr/ocrJobPoller.js';
 import * as refreshTokenPruner from './services/refreshTokenPruner.js';
 import * as avatarDeletionLoop from './services/avatarDeletionLoop.js';
+import * as mediaOrphanSweepLoop from './services/mediaOrphanSweepLoop.js';
 import { JOB_DURATION_BOUND_MS as OCR_JOB_DURATION_BOUND_MS } from './services/ocr/ocrService.js';
 import { resolveShutdownBudget } from './config/shutdown.js';
 import { resolveRefreshReuseGraceSeconds } from './config/auth.js';
@@ -239,6 +240,13 @@ const gracefulShutdown = createGracefulShutdown({
       stop: () => avatarDeletionLoop.stop(),
       failureMessage: 'Avatar deletion loop stop failed during shutdown',
     },
+    // Waits for the step in progress — a file (one probe of the database and
+    // one call to the cloud, under its deadline), or the listing or the read
+    // of the database under way. A run cut short is planned again the next day.
+    {
+      stop: () => mediaOrphanSweepLoop.stop(),
+      failureMessage: 'Media orphan sweep stop failed during shutdown',
+    },
   ],
   closePool,
   disconnectRedis,
@@ -385,6 +393,18 @@ const startServer = async () => {
     });
     for (const warning of avatarDeletionPolicy.warnings) {
       logger.warn(`Avatar deletion loop: policy ${warning}`);
+    }
+
+    // The clean-up of abandoned wizard files: off unless
+    // MEDIA_ORPHAN_SWEEP_ENABLED=true on production — the Coordinator sees the
+    // list first (config/mediaOrphanSweep.js).
+    const mediaOrphanSweepPolicy = mediaOrphanSweepLoop.start();
+    logger.info('Media orphan sweep: policy resolved', {
+      enabled: mediaOrphanSweepPolicy.enabled,
+      intervalMs: mediaOrphanSweepPolicy.intervalMs,
+    });
+    for (const warning of mediaOrphanSweepPolicy.warnings) {
+      logger.warn(`Media orphan sweep: policy ${warning}`);
     }
 
     // Start HTTP server

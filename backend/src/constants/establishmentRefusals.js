@@ -15,7 +15,7 @@
  * below says whether its wording is approved or still awaits the word.
  */
 
-import { SUPPORT_EMAIL } from './authRefusals.js';
+import { ACCOUNT_INACTIVE_TEXT, SUPPORT_EMAIL } from './authRefusals.js';
 
 /** Required fields named in the submit refusal, in the accusative («заполните: …»). */
 const MISSING_FIELD_NAMES = {
@@ -129,6 +129,11 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   unknownCuisine: 'Такой кухни нет в списке. Выберите кухню заново.',
   photoLimit: (bucket, limit) =>
     `Можно добавить не больше ${limit} ${PHOTO_BUCKET_NAMES[bucket] ?? 'фото'}.`,
+  // A card that holds more venue photos than the limit since the facade and
+  // the dishes became photos of the venue (migration 042, PR 2 of the thread
+  // «Фото людей»): nothing is deleted; a new photo waits until there are fewer.
+  photoOverLimit: (count, limit) =>
+    `У заведения уже ${count} фото — больше, чем можно (${limit}). Новое фото добавится, когда их станет меньше ${limit}: удалите лишние.`,
   // A save that adds a third menu PDF (review of PR #56, finding 1: the limit
   // of the card's upload now holds on the save too). The app and the site do
   // not let a partner pick a third one. Approved by the Coordinator on
@@ -149,6 +154,11 @@ export const ESTABLISHMENT_REFUSALS = Object.freeze({
   // so that the rule above holds without exceptions. Approved by the
   // Coordinator, 15.10.2026.
   createFailed: 'Не удалось создать заведение. Попробуйте ещё раз позже.',
+
+  // 403 USER_INACTIVE: the card was sent while the account was being switched
+  // off or deleted (critic 2Г, 2.01) — the words of the sign-in check, one
+  // text for the whole server (constants/authRefusals.js).
+  accountInactive: ACCOUNT_INACTIVE_TEXT,
   updateFailed: 'Не удалось сохранить изменения. Попробуйте ещё раз позже.',
   submitFailed: 'Не удалось отправить на модерацию. Попробуйте ещё раз позже.',
   fetchFailed: 'Не удалось загрузить заведение. Попробуйте ещё раз позже.',

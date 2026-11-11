@@ -6,7 +6,8 @@
  */
 
 import * as NotificationPreferencesModel from '../models/notificationPreferencesModel.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
+import { AppError, asyncHandler } from '../middleware/errorHandler.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/authRefusals.js';
 
 /**
  * GET /api/v1/notifications/preferences
@@ -66,6 +67,11 @@ export const updatePreferences = asyncHandler(async (req, res) => {
   }
 
   const result = await NotificationPreferencesModel.upsert(userId, fields);
+  // Nothing is written for an account switched off or deleted since the
+  // request signed in (critic 2Г, 2.03).
+  if (!result) {
+    throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+  }
 
   res.json({
     success: true,

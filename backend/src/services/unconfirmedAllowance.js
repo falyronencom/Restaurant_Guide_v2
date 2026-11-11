@@ -31,9 +31,11 @@
 
 import pool from '../config/database.js';
 import { decrement, incrementWithExpiry } from '../config/redis.js';
+import { PANEL_ROLES } from '../config/panelRoles.js';
 import { serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { minskDate, secondsUntilMinskMidnight } from '../utils/minskDay.js';
 import logger from '../utils/logger.js';
+import { reserveNewcomerUpload } from './newcomerUploadCeiling.js';
 
 const MEGABYTE = 1024 * 1024;
 
@@ -267,15 +269,70 @@ export const unconfirmedPagePots = (userId, now) => [
 const NOTHING_TO_GIVE_BACK = async () => {};
 
 /**
- * The shared part of an upload: from the ceiling when the account is
- * unconfirmed, nothing otherwise (granted, nothing to give back).
+ * Which shared ceiling of the day an account's uploads spend, beside its own
+ * allowance (thread «2Г: общие пределы», point 1.05, 10.11.2026):
+ * - 'unconfirmed' — neither the e-mail nor the phone confirmed, and not the
+ *   seed house: the pool of the unconfirmed accounts (above);
+ * - 'newcomer' — confirmed, but neither the seed house, nor a panel account,
+ *   nor the owner of a card in the catalogue: the ceiling of the new accounts
+ *   (services/newcomerUploadCeiling.js);
+ * - 'known' — the seed house, a panel account (it reaches only the avatar),
+ *   or a partner with a card in the catalogue (status 'active' — a moderator
+ *   approved it): no shared ceiling, its own allowance only.
+ * A failed lookup, or no such account: 'unconfirmed' — the strictest, as
+ * isUnconfirmedAccount answers.
+ *
+ * @param {string} userId
+ * @returns {Promise<'unconfirmed'|'newcomer'|'known'>}
+ */
+export const uploadStanding = async (userId) => {
+  const service = serviceAccountFlagSql('users');
+  try {
+    const result = await pool.query(
+      `SELECT (email_verified OR phone_verified OR ${service}) AS confirmed,
+              (${service}
+               OR role = ANY($2::text[])
+               OR EXISTS (SELECT 1 FROM establishments e
+                          WHERE e.partner_id = users.id AND e.status = 'active')) AS known
+       FROM users WHERE id = $1`,
+      [userId, [...PANEL_ROLES]],
+    );
+    const row = result.rows[0];
+    if (row?.confirmed !== true) return 'unconfirmed';
+    return row.known === true ? 'known' : 'newcomer';
+  } catch (error) {
+    // isUnconfirmedAccount's own line: the same answer, the same search in the log.
+    logger.error('Unconfirmed accounts allowance: account lookup failed, the shared ceiling applies', {
+      error: error.message,
+      userId,
+    });
+    return 'unconfirmed';
+  }
+};
+
+/**
+ * The shared part of an upload: from the unconfirmed accounts' pool, or from
+ * the new accounts' ceiling, or nothing (granted, nothing to give back) — by
+ * uploadStanding. A refusal of the new accounts' ceiling says so (`ceiling`).
+ * `pool` — which pool of the new accounts' ceiling: the card's material or the
+ * avatars (services/newcomerUploadCeiling.js); the unconfirmed accounts have
+ * one pool for both.
  *
  * @param {string} userId
  * @param {number} bytes
- * @returns {ReturnType<typeof reserveUnconfirmedUpload>}
+ * @param {'card'|'avatar'} [pool]
+ * @returns {Promise<{ granted: true, giveBack: () => Promise<void> }
+ *   | { granted: false, ceiling?: true, limits: { files: number, bytes: number },
+ *       retryAfter: number, resetAt: string }>}
  */
-export const reserveSharedUpload = async (userId, bytes) => (
-  await isUnconfirmedAccount(userId)
-    ? reserveUnconfirmedUpload(userId, bytes)
-    : { granted: true, giveBack: NOTHING_TO_GIVE_BACK }
-);
+export const reserveSharedUpload = async (userId, bytes, pool = 'card') => {
+  const standing = await uploadStanding(userId);
+  if (standing === 'unconfirmed') {
+    return reserveUnconfirmedUpload(userId, bytes);
+  }
+  if (standing === 'newcomer') {
+    const reserved = await reserveNewcomerUpload(userId, bytes, pool);
+    return reserved.granted ? reserved : { ...reserved, ceiling: true };
+  }
+  return { granted: true, giveBack: NOTHING_TO_GIVE_BACK };
+};

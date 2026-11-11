@@ -18,6 +18,7 @@ import * as FavoriteModel from '../models/favoriteModel.js';
 import * as PartnerAnalyticsModel from '../models/partnerAnalyticsModel.js';
 import { categoryCyrillicToSlug, cityCyrillicToSlug } from '../constants/urlSlugs.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { ACCOUNT_INACTIVE_TEXT } from '../constants/authRefusals.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -58,8 +59,12 @@ export const addToFavorites = async (userId, establishmentId) => {
     );
   }
 
-  // Add favorite (idempotent operation)
+  // Add favorite (idempotent operation). Nothing is written for an account
+  // switched off or deleted since the request signed in (critic 2Г, 2.03).
   const favorite = await FavoriteModel.addFavorite(userId, establishmentId);
+  if (!favorite) {
+    throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+  }
 
   // Sync cached favorite_count in establishments table
   await FavoriteModel.updateEstablishmentFavoriteCount(establishmentId);

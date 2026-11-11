@@ -116,24 +116,27 @@ export const findByEstablishmentId = async (establishmentId) => {
 };
 
 /**
- * Pass a card's legal record to its new holder — in the claim's transaction
- * (adminService.claimEstablishment). The legal entity's name and tax number
- * stay: they describe the establishment. The contact person and the e-mail
- * were the previous holder's and leave with them; the new holder writes their
- * own. From then on the record is under the new holder's id, so deleting the
- * previous holder's account (accountDeletionService) wipes nothing the new
- * holder wrote (Phase 3.5 lens review, account deletion, 18.10.2026).
+ * A card goes to its new holder without the previous holder's legal record —
+ * in the claim's transaction (adminService.claimEstablishment). The record is
+ * the data of whoever gave it: the contact person and the e-mail, and of a
+ * sole trader the organisation's name and the УНП too — the person
+ * (Coordinator, 10.11.2026, critic 2Г П3-02, variant А: «действуем по
+ * рекомендациям»). The new holder enters their own: the cabinet's save makes a
+ * record under their id when the card has none (establishmentService). Until
+ * then the moderator reads the card without legal details.
+ *
+ * Until 10.11.2026 the record moved to the new holder with the contacts
+ * cleared, and the previous holder's name and УНП stayed with the card after
+ * the previous holder deleted the account (Phase 3.5 lens review, 2Г).
  *
  * @param {Object} client - pg client inside the claim's transaction
  * @param {string} establishmentId
  * @param {string} newPartnerId
- * @returns {Promise<number>} records passed
+ * @returns {Promise<number>} records removed
  */
-export const passToHolder = async (client, establishmentId, newPartnerId) => {
+export const dropPreviousHolderRecords = async (client, establishmentId, newPartnerId) => {
   const result = await client.query(
-    `UPDATE partner_documents
-        SET partner_id = $2, contact_person = NULL, contact_email = NULL
-      WHERE establishment_id = $1 AND partner_id <> $2`,
+    'DELETE FROM partner_documents WHERE establishment_id = $1 AND partner_id <> $2',
     [establishmentId, newPartnerId],
   );
   return result.rowCount;

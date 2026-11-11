@@ -56,6 +56,15 @@ export const RETRY_PAUSES_MS = Object.freeze([
   24 * HOUR,
 ]);
 
+/**
+ * Single files (migration 041: a photo taken down, cleared or replaced) a tick
+ * removes after its folder task. Each costs one destroy through the Upload API
+ * and no listing, so the Admin API sum above does not move; ten a minute empty
+ * any queue the panel and the people can make, and a tick stays a few seconds
+ * long, well inside the shutdown budget.
+ */
+export const FILE_TASKS_PER_TICK = 10;
+
 /** How often the loop says it is alive and how many tasks are open. */
 export const HEARTBEAT_INTERVAL_MS = HOUR;
 

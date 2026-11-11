@@ -409,6 +409,16 @@ function isSessionRefusal(err: unknown): boolean {
   );
 }
 
+/*
+ * Every signed-in call names the visitor of the request it serves (thread
+ * «2Г: общие пределы», 10.11.2026). Without it the API counted the call as
+ * the site itself whenever it could not use the token — a cookie the API
+ * refuses spent the site's own budget, the one its pages are rendered from —
+ * and a limit kept per address whatever the account (the day's resends of
+ * the code) was one counter for the whole site. headers() is legal here:
+ * authedFetch runs only inside a visitor's request, and it reads cookies()
+ * already.
+ */
 async function fetchWithBearer<T>(
   path: string,
   init: RequestInit | undefined,
@@ -420,7 +430,7 @@ async function fetchWithBearer<T>(
       ...(init?.headers ?? {}),
       Authorization: `Bearer ${accessToken}`,
     },
-  });
+  }, { visitor: await currentVisitor() });
 }
 
 /**

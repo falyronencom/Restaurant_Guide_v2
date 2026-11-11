@@ -8,7 +8,8 @@
  *
  * The deletion is the app's own — accountDeletionService.anonymiseAccount —
  * in this script's transaction, on this script's connection; what goes and
- * what stays is written there: reviews stay under «Гость», bookings keep date,
+ * what stays is written there: reviews stay under «Гость» (the text of the
+ * hidden and the deleted ones is erased), bookings keep date,
  * time and guests, bookings still ahead are cancelled, unfinished drafts go,
  * every session ends; the holder of cards is refused until the cards have
  * another holder. The journal entry user_delete_account has no actor
@@ -44,6 +45,10 @@
  *   - The server's cached account status cannot be dropped from here: a
  *     server process may let an access token already issued through for up to
  *     ACCOUNT_STATUS_TTL_MS; after that the switched-off account refuses it.
+ *   - The site's cached establishment pages are told to rebuild
+ *     (services/siteRefresh.js) only if SITE_URL and SITE_REQUEST_SECRET are
+ *     set where the script runs — .env.production has neither: the pages then
+ *     show the old name of the reviews' author for up to an hour, as before.
  *   - sessions_revoked_at is stamped by this machine's clock
  *     (accountStatus.markSessionsRevoked) — for a deleted account a backstop
  *     only: no credentials are left, and the account is off.
@@ -97,6 +102,7 @@ import {
 } from '../src/services/accountDeletionService.js';
 import { ACCOUNT_STATUS_TTL_MS } from '../src/services/accountStatus.js';
 import { bookingCancelledNotice } from '../src/services/notificationService.js';
+import { refreshEstablishmentPages } from '../src/services/siteRefresh.js';
 
 const { Client } = pg;
 
@@ -295,7 +301,8 @@ const main = async () => {
     }
 
     console.log('Will delete the account as «Удалить учётку» in the app does: its contacts, sign-in, sessions,');
-    console.log('   favourites, notices and unfinished drafts go; reviews stay under «Гость»; bookings keep date,');
+    console.log('   favourites, notices and unfinished drafts go; reviews stay under «Гость» (the text of hidden');
+    console.log('   and deleted ones is erased); bookings keep date,');
     console.log('   time and guests, and those still ahead are cancelled — the establishment gets a notice.');
     console.log('   This cannot be undone.');
 
@@ -316,6 +323,7 @@ const main = async () => {
 
     const { counts } = result.outcome;
     console.log(`✅ Account ${target.id} deleted: ${counts.reviews_kept} review(s) kept under «Гость», `
+      + `${counts.review_texts_erased} hidden or deleted review text(s) erased, `
       + `${counts.bookings_cancelled} booking(s) ahead cancelled (${result.notices} establishment notice(s), no push), `
       + `${counts.favorites_removed} favourite(s) removed, ${counts.drafts_deleted} unfinished card(s) deleted; every session ended.`);
     if (result.avatarQueued) {
@@ -324,6 +332,13 @@ const main = async () => {
       console.log(pictureAdvice(result.account.avatar_url, target.id));
     }
     console.log(`   A server process may let an old access token through for up to ${ACCOUNT_STATUS_TTL_MS / 1000} seconds.`);
+    if (counts.reviews_kept > 0) {
+      const site = await refreshEstablishmentPages();
+      console.log(site === 'refreshed'
+        ? '   The site was told to rebuild its establishment pages: the reviews read «Гость» on the next visit.'
+        : '   The site was not told (SITE_URL and SITE_REQUEST_SECRET are not set here, or it did not answer): '
+          + 'its establishment pages show the old name for up to an hour, a quiet card until its second visit after that.');
+    }
     return 0;
   } catch (error) {
     console.error('❌ Failed:', error.message);

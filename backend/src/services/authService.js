@@ -57,6 +57,9 @@ import {
   markAsUsed as markResetTokenUsed,
 } from '../models/passwordResetModel.js';
 import { sendVerificationCodeEmail, sendPasswordResetEmail } from './emailService.js';
+import { AVATAR_FILE_REASONS } from '../models/avatarFileDeletionModel.js';
+import { avatarModerationReady } from '../models/avatarModerationModel.js';
+import { destroyLaterWithoutQueue, forgetApproval, retireAvatarFile } from './avatarFiles.js';
 
 /**
  * Argon2id Parameters
@@ -974,12 +977,23 @@ export async function findUserById(userId) {
 /**
  * Updates user profile fields (name, avatar_url)
  *
+ * A new avatar link — an upload, a link into the person's own folder, or none —
+ * is written together with the end of the old photo: when the old one is a file
+ * of the person's folder in our cloud, its removal is queued in the same
+ * transaction (avatar_file_deletions, migration 041; services/avatarFiles.js).
+ * Before that a cleared photo stayed in the cloud for good, and a replaced one
+ * was destroyed once after the answer, with nothing to retry it. The new link
+ * is not shown to other people until a moderator approves it — by the rule
+ * itself, nothing is written for it here (models/avatarModerationModel.js).
+ *
  * @param {string} userId - The ID of the user to update
  * @param {Object} profileData - Fields to update
  * @param {string} [profileData.name] - New display name (the name rule, utils/userName.js)
  * @param {string} [profileData.avatarUrl] - New avatar URL (max 500 chars)
  * @returns {Promise<Object>} Updated user object
- * @throws {Error} If user not found or validation fails
+ * @throws {Error} USER_NOT_FOUND when no switched-on account matched (nothing
+ *   was written), AVATAR_URL_TOO_LONG before any query, a name refusal, or the
+ *   query's own error
  */
 export async function updateUserProfile(userId, profileData) {
   const { name, avatarUrl } = profileData;
@@ -1016,7 +1030,8 @@ export async function updateUserProfile(userId, profileData) {
     values.push(verdict.name);
   }
 
-  if (avatarUrl !== undefined) {
+  const avatarChanges = avatarUrl !== undefined;
+  if (avatarChanges) {
     if (avatarUrl && avatarUrl.length > 500) {
       throw new Error('AVATAR_URL_TOO_LONG');
     }
@@ -1039,15 +1054,61 @@ export async function updateUserProfile(userId, profileData) {
               email_verified, phone_verified, created_at
   `;
 
-  const result = await pool.query(query, values);
-
-  if (result.rows.length === 0) {
-    throw new Error('USER_NOT_FOUND');
+  if (!avatarChanges) {
+    const result = await pool.query(query, values);
+    if (result.rows.length === 0) {
+      throw new Error('USER_NOT_FOUND');
+    }
+    logger.info('User profile updated', { userId, fields: Object.keys(profileData) });
+    return result.rows[0];
   }
 
+  // Asked before BEGIN: inside the transaction a missing table or column would
+  // fail the whole change (the window before migration 041).
+  const queueReady = await avatarModerationReady();
+  const client = await getClient();
+  let user;
+  let fileWithoutQueue = null;
+  try {
+    await client.query('BEGIN');
+    // The old link under the row's lock: two uploads at once each retire the
+    // photo they replace, never the one the other has just written.
+    const before = await client.query(
+      'SELECT avatar_url FROM users WHERE id = $1 AND is_active = true FOR UPDATE',
+      [userId],
+    );
+    if (before.rows.length === 0) {
+      throw new Error('USER_NOT_FOUND');
+    }
+    const result = await client.query(query, values);
+    user = result.rows[0];
+    // Under the row's lock the UPDATE finds the row; should it not, nothing
+    // was written — the same answer as before the transaction.
+    if (!user) {
+      throw new Error('USER_NOT_FOUND');
+    }
+    const newUrl = avatarUrl || null;
+    const oldUrl = before.rows[0].avatar_url;
+    await forgetApproval(client, { userId, oldUrl, newUrl, moderationReady: queueReady });
+    fileWithoutQueue = await retireAvatarFile(client, {
+      userId,
+      oldUrl,
+      newUrl,
+      reason: newUrl ? AVATAR_FILE_REASONS.REPLACED : AVATAR_FILE_REASONS.CLEARED,
+      queueReady,
+    });
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  destroyLaterWithoutQueue(fileWithoutQueue, userId);
   logger.info('User profile updated', { userId, fields: Object.keys(profileData) });
 
-  return result.rows[0];
+  return user;
 }
 
 /**
@@ -1100,14 +1161,24 @@ export { TAKEOVER_SUSPEND_REASON };
  */
 async function takeOverUnverifiedAccount(existingUser, { provider, providerId, name, avatarUrl }) {
   const now = new Date();
+  // Asked before BEGIN (the window before migration 041): the registrant's own
+  // photo, if it lies in our cloud, goes with everything else they set up.
+  const avatarQueueReady = await avatarModerationReady();
   const client = await getClient();
   let user;
   let deletedTokens = 0;
   let sessionsRevokedAt = null;
   let deactivatedDevices = 0;
   let parkedCards = [];
+  let registrantFileWithoutQueue = null;
   try {
     await client.query('BEGIN');
+
+    // The registrant's photo link under the row's lock, before it is replaced.
+    const registrant = await client.query(
+      'SELECT avatar_url FROM users WHERE id = $1 FOR UPDATE',
+      [existingUser.id],
+    );
 
     // Taken over only while the record is still on: a deletion committed since
     // the lookup has anonymised it, and the provider's name and picture
@@ -1128,6 +1199,21 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
     if (!user) {
       throw new Error('ACCOUNT_DEACTIVATED');
     }
+
+    // The provider's picture is a new link: it waits for a moderator like any
+    // other (models/avatarModerationModel.js). The registrant's file leaves the
+    // cloud (services/avatarFiles.js).
+    const registrantUrl = registrant.rows[0]?.avatar_url ?? null;
+    await forgetApproval(client, {
+      userId: existingUser.id, oldUrl: registrantUrl, newUrl: user.avatar_url, moderationReady: avatarQueueReady,
+    });
+    registrantFileWithoutQueue = await retireAvatarFile(client, {
+      userId: existingUser.id,
+      oldUrl: registrantUrl,
+      newUrl: user.avatar_url,
+      reason: AVATAR_FILE_REASONS.TAKEN_OVER,
+      queueReady: avatarQueueReady,
+    });
 
     // The successor link is a self-reference; clear it before the rows go.
     await client.query(
@@ -1188,6 +1274,7 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
   // The registrant's cached status must not outlive the commit: their next
   // request reads the stamp.
   invalidateAccountStatus(existingUser.id);
+  destroyLaterWithoutQueue(registrantFileWithoutQueue, existingUser.id);
 
   // Outside the transaction, as the moderator's own suspension does: the
   // journal and the notice must not undo a takeover that is already committed.
@@ -1517,13 +1604,21 @@ export async function upgradeUserToPartner(userId) {
       return checkResult.rows[0];
     }
 
-    // Upgrade role to partner
+    // Upgrade role to partner — of an account still active: the read above
+    // takes no lock, and a deletion that committed since must not get its
+    // empty shell made a partner (critic 2Г, 2.01). The UPDATE waits for the
+    // deletion's row lock and then reads the row the deletion left.
     const updateQuery = `
       UPDATE users
       SET role = 'partner', updated_at = $1
-      WHERE id = $2
+      WHERE id = $2 AND is_active = true
       RETURNING id, email, phone, name, role, auth_method, created_at
     `;
+    // No row: switched off or deleted since the read — as the read would say.
+    const upgraded = (update) => {
+      if (update.rows.length === 0) throw new Error('USER_NOT_FOUND');
+      return update;
+    };
 
     let result;
     if (isPanelRole(currentRole)) {
@@ -1535,7 +1630,7 @@ export async function upgradeUserToPartner(userId) {
       const client = await getClient();
       try {
         await client.query('BEGIN');
-        result = await client.query(updateQuery, [new Date(), userId]);
+        result = upgraded(await client.query(updateQuery, [new Date(), userId]));
         await revokeAllSessions(client, userId);
         await deactivateDevices(client, userId);
         await client.query(
@@ -1550,7 +1645,7 @@ export async function upgradeUserToPartner(userId) {
         client.release();
       }
     } else {
-      result = await pool.query(updateQuery, [new Date(), userId]);
+      result = upgraded(await pool.query(updateQuery, [new Date(), userId]));
     }
 
     // authenticate reads the role from the database (cached briefly): the
@@ -1682,7 +1777,14 @@ function mailReachedUser(result) {
 export async function sendEmailVerificationCode(userId) {
   const { user, code, expiresAt } = await prepareEmailVerificationCode(userId);
 
-  const { reserved, recentCount } = await reserveCodeWithinLimit(userId, code, expiresAt, VERIFICATION_CODE_LIMIT);
+  const { reserved, recentCount, inactive } = await reserveCodeWithinLimit(
+    userId, code, expiresAt, VERIFICATION_CODE_LIMIT,
+  );
+  // Switched off or deleted since prepareEmailVerificationCode read it: as
+  // that read would have answered.
+  if (inactive) {
+    throw new Error('USER_NOT_FOUND');
+  }
   if (!reserved) {
     logger.warn('Email verification send rate-limited', { userId, recentCount });
     throw new Error('RATE_LIMITED');
@@ -1936,7 +2038,14 @@ async function issuePasswordReset(user) {
   const expiryMinutes = parseInt(process.env.PASSWORD_RESET_EXPIRY_MINUTES, 10) || 30;
   const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000);
 
-  const { token, recentCount } = await createResetTokenWithinLimit(user.id, tokenHash, expiresAt, PASSWORD_RESET_LIMIT);
+  const { token, recentCount, inactive } = await createResetTokenWithinLimit(
+    user.id, tokenHash, expiresAt, PASSWORD_RESET_LIMIT,
+  );
+  if (inactive) {
+    // Switched off or deleted since the account was read: no link, no letter.
+    logger.info('Password reset not issued: the account is no longer active', { userId: user.id });
+    return;
+  }
   if (!token) {
     logger.warn('Password reset issue throttled (per-user)', {
       userId: user.id,

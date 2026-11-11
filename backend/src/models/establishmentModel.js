@@ -20,6 +20,7 @@ import pool from '../config/database.js';
 import logger from '../utils/logger.js';
 import { likeContains } from '../utils/likePattern.js';
 import { shareTotalOf } from './shareCountSql.js';
+import { activeAccountRow } from './activeAccountSql.js';
 
 /**
  * Calculate completeness score (base_score) for an establishment.
@@ -93,8 +94,18 @@ export function calculateCompletenessScore(establishment) {
  * @param {Object} establishmentData.working_hours - JSONB object with daily hours
  * @param {Object} establishmentData.special_hours - Optional JSONB for special hours
  * @param {Object} establishmentData.attributes - Optional JSONB for establishment attributes
- * @returns {Promise<Object>} The created establishment with all database fields
+ * @returns {Promise<Object|null>} The created establishment with all database
+ *   fields; null when the partner's account is not active
  * @throws {Error} If database operation fails
+ *
+ * The card goes in only for an active account, read under a share lock in the
+ * same statement (activeAccountSql.js). The deletion of an account holds its
+ * row from its first statement to its COMMIT: a card sent at that moment
+ * waited for it and then went in under the deleted account — a draft with the
+ * phone, the address and the legal details of a person who had just deleted
+ * the account, which neither the operator's script nor the panel could find
+ * (critic 2Г, item 2.01). Now it finds the account switched off and writes
+ * nothing; a card sent before the deletion is the deletion's to remove.
  */
 export const createEstablishment = async (establishmentData) => {
   const {
@@ -147,7 +158,9 @@ export const createEstablishment = async (establishmentData) => {
       review_count,
       average_rating
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', 'free', 0, 0, 0, 0, 0, 0.0)
+    SELECT account.id, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+           'draft', 'free', 0, 0, 0, 0, 0, 0.0
+    FROM ${activeAccountRow('$1')} account
     RETURNING
       id,
       partner_id,
@@ -206,7 +219,10 @@ export const createEstablishment = async (establishmentData) => {
 
   try {
     const result = await pool.query(query, values);
-    
+    if (result.rows.length === 0) {
+      return null;
+    }
+
     logger.info('Establishment created', {
       establishmentId: result.rows[0].id,
       partnerId: partner_id,

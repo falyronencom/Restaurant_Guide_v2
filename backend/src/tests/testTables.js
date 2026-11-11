@@ -27,6 +27,7 @@ export const TEST_STATE_TABLES = [
   'promotions',
   'menu_items',
   'ocr_jobs',
+  'establishment_media_kinds_042',
   'establishment_media',
   'notifications',
   'reviews',
@@ -41,6 +42,7 @@ export const TEST_STATE_TABLES = [
   'establishments',
   'refresh_tokens',
   'avatar_deletions',
+  'avatar_file_deletions',
   'users',
 ];
 
@@ -66,6 +68,7 @@ export const TABLE_TREES = {
     'promotions',
     'menu_items',
     'ocr_jobs',
+    'establishment_media_kinds_042',
     'establishment_media',
     'notifications',
     'reviews',

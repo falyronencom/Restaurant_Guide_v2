@@ -12,6 +12,18 @@
 
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+import { publicAvatarSql } from './avatarModerationModel.js';
+
+/**
+ * The author's photo in a review answer: only a photo a moderator approved
+ * (models/avatarModerationModel.js), and only on a card in the catalogue. The
+ * reads by id (GET /establishments/:id/reviews, GET /reviews/:id) also reach
+ * the reviews of a draft, a suspended or a rejected card — the partner's
+ * cabinet reads its own reviews by the same unauthenticated call, so the
+ * reviews stay and the photos go (DISCOVERY 09.11.2026, finding 1). `u` and `e`
+ * are the aliases of users and of the review's establishment.
+ */
+const AUTHOR_AVATAR_SQL = `CASE WHEN e.status = 'active' THEN ${publicAvatarSql('u')} END`;
 
 /**
  * Create a new review in the database
@@ -87,10 +99,11 @@ export const findReviewById = async (reviewId, _includeDeleted = false) => {
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
-      u.avatar_url as author_avatar,
+      ${AUTHOR_AVATAR_SQL} as author_avatar,
       u.is_active as author_is_active
     FROM reviews r
     JOIN users u ON r.user_id = u.id
+    LEFT JOIN establishments e ON e.id = r.establishment_id
     WHERE r.id = $1
   `;
 
@@ -179,10 +192,11 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
       r.updated_at,
       u.name as author_name,
       u.email as author_email,
-      u.avatar_url as author_avatar,
+      ${AUTHOR_AVATAR_SQL} as author_avatar,
       u.is_active as author_is_active
     FROM reviews r
     JOIN users u ON r.user_id = u.id
+    LEFT JOIN establishments e ON e.id = r.establishment_id
     WHERE ${conditions.join(' AND ')}
     ORDER BY ${orderClause}
     LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -378,11 +392,13 @@ export const findExistingReview = async (userId, establishmentId) => {
  * @param {Object} updates - Fields to update
  * @param {number} [updates.rating] - New rating (optional)
  * @param {string} [updates.content] - New content (optional)
+ * @param {Object} [client=pool] - a client inside the caller's transaction
+ *   (reviewService.updateReview holds the author's account there)
  * @returns {Promise<Object|null>} The updated review object, or null if the
  *   review is not found or already deleted (as softDeleteReview answers false)
  * @throws {Error} If the database operation fails
  */
-export const updateReview = async (reviewId, updates) => {
+export const updateReview = async (reviewId, updates, client = pool) => {
   const fields = [];
   const values = [];
   let paramCount = 1;
@@ -430,7 +446,7 @@ export const updateReview = async (reviewId, updates) => {
   `;
 
   try {
-    const result = await pool.query(query, values);
+    const result = await client.query(query, values);
 
     if (result.rows.length === 0) {
       return null; // Review not found or already deleted
@@ -457,7 +473,7 @@ export const updateReview = async (reviewId, updates) => {
  * @param {string} reviewId - UUID of the review to delete
  * @returns {Promise<boolean>} True if deletion successful, false if review not found
  */
-export const softDeleteReview = async (reviewId) => {
+export const softDeleteReview = async (reviewId, client = pool) => {
   const query = `
     UPDATE reviews
     SET 
@@ -469,7 +485,9 @@ export const softDeleteReview = async (reviewId) => {
   `;
 
   try {
-    const result = await pool.query(query, [reviewId]);
+    // `client`: the author's own delete runs inside a transaction that holds
+    // the author's account (reviewService.deleteReview); the pool is the default.
+    const result = await client.query(query, [reviewId]);
     
     if (result.rows.length === 0) {
       return false; // Review not found or already deleted
@@ -788,7 +806,15 @@ export const executeInTransaction = async (callback) => {
     return result;
   } catch (error) {
     await client.query('ROLLBACK');
-    logger.error('Transaction rolled back', { error: error.message });
+    // A refusal the service meant (AppError below 500: the author's account
+    // switched off, a review gone) rolls back too, but it is not a failure of
+    // the server: a line of the journal, not an error (critic 2Г, review of
+    // 10.11.2026).
+    if (error?.isOperational === true && error.statusCode < 500) {
+      logger.info('Transaction rolled back: refused', { code: error.code });
+    } else {
+      logger.error('Transaction rolled back', { error: error.message });
+    }
     throw error;
   } finally {
     client.release();
