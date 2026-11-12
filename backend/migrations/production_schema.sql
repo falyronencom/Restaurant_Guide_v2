@@ -1,23 +1,24 @@
 -- =====================================================
 -- RESTAURANT GUIDE BELARUS — PRODUCTION SCHEMA
 -- =====================================================
--- Covers migrations 001-029 + 031-035. Regenerated 2026-09-02 (artefact
+-- Covers migrations 001-029 + 031-042. Regenerated 2026-09-02 (artefact
 -- audit, slice B) against PostgreSQL 16.4 / PostGIS; 033-035 spliced in
--- 2026-10-12 (see the note after the migration list).
+-- 2026-10-12, 037-042 spliced in 2026-11-12 (see the notes after the
+-- migration list). 036 changes data only, so nothing of it lives here.
 --
 -- *** 030 IS DELIBERATELY ABSENT. DO NOT "COMPLETE" THIS FILE BY ADDING IT. ***
 -- The canon CHECK on establishments.categories / .cuisines (030, CAT-C-2.9) is
 -- dormant in production: it is applied only AFTER the placeholder-seed wipe at
 -- real-500 import-prep, because placeholder rows carry English tokens that the
 -- constraint rejects (23514). This snapshot's job is to mirror what production
--- actually runs — not the migration catalogue. Production = 001-029 + 031-035.
+-- actually runs — not the migration catalogue. Production = 001-029 + 031-042.
 --
 -- Baking 030 in also breaks the CI gate, and that is not hypothetical: it was
 -- tried on 2026-09-02 and run 33666684491 went red. `.github/workflows/ci.yml`
--- builds the test database FROM THIS FILE, then applies 031-035 on top;
--- `src/tests/integration/admin-quality-health.test.js` must INSERT off-canon
--- rows to prove the quality checker detects them, and the constraint makes that
--- impossible — the whole suite dies at fixture setup with
+-- builds the test database FROM THIS FILE, then applies 031-035 and 037-042 on
+-- top; `src/tests/integration/admin-quality-health.test.js` must INSERT
+-- off-canon rows to prove the quality checker detects them, and the constraint
+-- makes that impossible — the whole suite dies at fixture setup with
 -- "violates check constraint establishments_categories_canon_check".
 -- The canon-check test that DOES need 030 stands up its own scratch database.
 --
@@ -26,7 +27,7 @@
 -- seed_import_registry (031) and password_reset_tokens (032). That gap is now
 -- closed; 030's absence is a decision, not a gap.
 --
--- HOW THIS REGENERATION WAS VERIFIED (not just produced):
+-- HOW THE 2026-09-02 REGENERATION WAS VERIFIED (not just produced):
 --   * The exact CI sequence was replayed locally: restore this file, then apply
 --     031 and 032 on top — both are idempotent, no 42P07.
 --   * Off-canon probe: INSERT with categories ARRAY['restaurant'] SUCCEEDS here
@@ -68,6 +69,20 @@
 --                                        034 viewer role (users_role_check)
 --                                        035 users.sessions_revoked_at
 --                                            (tokens issued before it refused)
+--                                        036 refresh tokens stored as hashes —
+--                                            data only, nothing in this file
+--                                        037 users.is_service_account
+--                                        038 menu_item_hidden_names (a hidden
+--                                            dish outlives its menu file)
+--                                        039 share_count on
+--                                            establishment_analytics
+--                                        040 avatar_deletions (cloud clean-up
+--                                            after an account is deleted)
+--                                        041 users.avatar_approved_url +
+--                                            avatar_file_deletions
+--                                        042 establishment_media_kinds_042
+--                                            (former type of the rows moved
+--                                            from exterior/dishes to interior)
 --
 -- Note on 033-035 (2026-10-12): applied to production by hand (033/034 on
 -- 2026-09-08, 035 on 2026-10-12, each after its code deployed) and spliced
@@ -82,6 +97,27 @@
 -- so off-canon rows still insert. The divergences from production recorded on
 -- 2026-10-02 (indexes of 006/013/014/017, extra extensions, PostGIS
 -- version) are untouched by this splice.
+--
+-- Note on 036-042 (2026-11-12): production = 001-029 + 031-042, without 030
+-- (scripts/check-production-migrations.js, 2026-11-12). 036 only rewrites
+-- refresh_tokens.token values — nothing of it is here. 037-042 are spliced in
+-- as 033-035 were: exactly the objects they add, in the text pg_dump 16.4
+-- prints for a database where they ran on the previous file (as production
+-- ran them): users.is_service_account, users.avatar_approved_url and
+-- establishment_analytics.share_count (last in their tables, in migration
+-- order), and menu_item_hidden_names, avatar_deletions, avatar_file_deletions
+-- and establishment_media_kinds_042 with their keys, CHECKs, indexes and
+-- foreign keys. Left out on purpose: the column comments of 037 and 041 (this
+-- file keeps no comments) and all data. The 2026-10-02 divergences stay as
+-- they were. Verified in a throwaway postgis/postgis:16-3.4 container: the CI
+-- sequence (this file, then 031-035 and 037-042) replays clean under
+-- ON_ERROR_STOP=1; schema-only dumps of the previous file + CI's list, of this
+-- file + CI's list and of this file alone match except for the two column
+-- comments and the alternate CHECK text noted above (users_role_check and the
+-- three new avatar CHECKs — the same values accepted and an unknown one
+-- refused in all three). establishments_city_check keeps both Могилёв
+-- spellings; an off-canon INSERT (categories ARRAY['restaurant']) succeeds
+-- here and fails with 030 on top.
 --
 -- Note on migration 027: applied as three artifacts on the source DB
 -- (027a_add_slug_column.sql → scripts/backfill-slugs.js → 027b_add_slug_constraints.sql)
@@ -200,6 +236,42 @@ CREATE TABLE public.audit_log (
 
 
 --
+-- Name: avatar_deletions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.avatar_deletions (
+    user_id uuid NOT NULL,
+    status character varying(10) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_error text,
+    files_deleted integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT avatar_deletions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
+-- Name: avatar_file_deletions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.avatar_file_deletions (
+    public_id character varying(500) NOT NULL,
+    user_id uuid NOT NULL,
+    reason character varying(20) NOT NULL,
+    status character varying(10) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT avatar_file_deletions_reason_check CHECK (((reason)::text = ANY ((ARRAY['moderator_removed'::character varying, 'cleared'::character varying, 'replaced'::character varying, 'taken_over'::character varying])::text[]))),
+    CONSTRAINT avatar_file_deletions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'done'::character varying, 'failed'::character varying])::text[])))
+);
+
+
+--
 -- Name: booking_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -292,7 +364,8 @@ CREATE TABLE public.establishment_analytics (
     promotion_view_count integer DEFAULT 0,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     booking_request_count integer DEFAULT 0,
-    booking_confirmed_count integer DEFAULT 0
+    booking_confirmed_count integer DEFAULT 0,
+    share_count integer DEFAULT 0
 );
 
 
@@ -314,6 +387,17 @@ CREATE TABLE public.establishment_media (
     file_type character varying(10) DEFAULT 'image'::character varying NOT NULL,
     CONSTRAINT establishment_media_file_type_check CHECK (((file_type)::text = ANY (ARRAY[('image'::character varying)::text, ('pdf'::character varying)::text]))),
     CONSTRAINT establishment_media_type_check CHECK (((type)::text = ANY (ARRAY[('interior'::character varying)::text, ('exterior'::character varying)::text, ('menu'::character varying)::text, ('dishes'::character varying)::text])))
+);
+
+
+--
+-- Name: establishment_media_kinds_042; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.establishment_media_kinds_042 (
+    media_id uuid NOT NULL,
+    type character varying(20) NOT NULL,
+    moved_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -380,6 +464,20 @@ CREATE TABLE public.favorites (
     user_id uuid NOT NULL,
     establishment_id uuid NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: menu_item_hidden_names; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.menu_item_hidden_names (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    establishment_id uuid NOT NULL,
+    item_name character varying(255) NOT NULL,
+    category_raw character varying(100),
+    hidden_reason text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
 
@@ -617,6 +715,8 @@ CREATE TABLE public.users (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     sessions_revoked_at timestamp with time zone,
+    is_service_account boolean DEFAULT false NOT NULL,
+    avatar_approved_url character varying(500),
     CONSTRAINT users_auth_method_check CHECK (((auth_method)::text = ANY (ARRAY[('email'::character varying)::text, ('phone'::character varying)::text, ('google'::character varying)::text, ('yandex'::character varying)::text]))),
     CONSTRAINT users_role_check CHECK (((role)::text = ANY ((ARRAY['user'::character varying, 'partner'::character varying, 'admin'::character varying, 'viewer'::character varying])::text[])))
 );
@@ -628,6 +728,22 @@ CREATE TABLE public.users (
 
 ALTER TABLE ONLY public.audit_log
     ADD CONSTRAINT audit_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: avatar_deletions avatar_deletions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avatar_deletions
+    ADD CONSTRAINT avatar_deletions_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: avatar_file_deletions avatar_file_deletions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avatar_file_deletions
+    ADD CONSTRAINT avatar_file_deletions_pkey PRIMARY KEY (public_id);
 
 
 --
@@ -695,6 +811,14 @@ ALTER TABLE ONLY public.establishment_analytics
 
 
 --
+-- Name: establishment_media_kinds_042 establishment_media_kinds_042_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.establishment_media_kinds_042
+    ADD CONSTRAINT establishment_media_kinds_042_pkey PRIMARY KEY (media_id);
+
+
+--
 -- Name: establishment_media establishment_media_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -732,6 +856,14 @@ ALTER TABLE ONLY public.favorites
 
 ALTER TABLE ONLY public.favorites
     ADD CONSTRAINT favorites_user_id_establishment_id_key UNIQUE (user_id, establishment_id);
+
+
+--
+-- Name: menu_item_hidden_names menu_item_hidden_names_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.menu_item_hidden_names
+    ADD CONSTRAINT menu_item_hidden_names_pkey PRIMARY KEY (id);
 
 
 --
@@ -906,6 +1038,20 @@ CREATE INDEX idx_audit_user ON public.audit_log USING btree (user_id);
 
 
 --
+-- Name: idx_avatar_deletions_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_avatar_deletions_due ON public.avatar_deletions USING btree (next_attempt_at) WHERE ((status)::text = 'pending'::text);
+
+
+--
+-- Name: idx_avatar_file_deletions_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_avatar_file_deletions_due ON public.avatar_file_deletions USING btree (next_attempt_at) WHERE ((status)::text = 'pending'::text);
+
+
+--
 -- Name: idx_booking_settings_establishment; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1064,6 +1210,13 @@ CREATE INDEX idx_media_type ON public.establishment_media USING btree (type);
 --
 
 CREATE INDEX idx_media_type_file_type ON public.establishment_media USING btree (establishment_id, type, file_type);
+
+
+--
+-- Name: idx_menu_item_hidden_names_establishment; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_menu_item_hidden_names_establishment ON public.menu_item_hidden_names USING btree (establishment_id);
 
 
 --
@@ -1320,6 +1473,22 @@ ALTER TABLE ONLY public.audit_log
 
 
 --
+-- Name: avatar_deletions avatar_deletions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avatar_deletions
+    ADD CONSTRAINT avatar_deletions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: avatar_file_deletions avatar_file_deletions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.avatar_file_deletions
+    ADD CONSTRAINT avatar_file_deletions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: booking_settings booking_settings_establishment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1376,6 +1545,14 @@ ALTER TABLE ONLY public.establishment_media
 
 
 --
+-- Name: establishment_media_kinds_042 establishment_media_kinds_042_media_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.establishment_media_kinds_042
+    ADD CONSTRAINT establishment_media_kinds_042_media_id_fkey FOREIGN KEY (media_id) REFERENCES public.establishment_media(id) ON DELETE CASCADE;
+
+
+--
 -- Name: establishments establishments_claimed_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1413,6 +1590,14 @@ ALTER TABLE ONLY public.favorites
 
 ALTER TABLE ONLY public.favorites
     ADD CONSTRAINT favorites_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: menu_item_hidden_names menu_item_hidden_names_establishment_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.menu_item_hidden_names
+    ADD CONSTRAINT menu_item_hidden_names_establishment_id_fkey FOREIGN KEY (establishment_id) REFERENCES public.establishments(id) ON DELETE CASCADE;
 
 
 --
