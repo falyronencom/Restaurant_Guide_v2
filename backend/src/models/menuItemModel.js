@@ -338,24 +338,6 @@ const ownSectionDecision = (item, { bySection }) => (item.item_name
   : null);
 
 /**
- * Whether migration 038 (the hidden dishes of an establishment, remembered
- * apart from the menu files) is applied. Migrations reach production by hand,
- * after the code: until then the code works without the table — the dish is
- * followed only into files whose hidden rows are still there — and never
- * answers 500 for it. Asked before a transaction: a failed statement inside
- * one would abort the whole of it.
- *
- * @param {Object} [db=pool] - pool or a connected client
- * @returns {Promise<boolean>}
- */
-export const hiddenNamesTableExists = async (db = pool) => {
-  const result = await db.query(
-    "SELECT to_regclass('public.menu_item_hidden_names') IS NOT NULL AS present",
-  );
-  return result.rows[0]?.present === true;
-};
-
-/**
  * Serialize the writers of one establishment's menu decisions: a recognised
  * file being written (replaceForMedia) and the moderator's «Скрыть» and
  * «Показать снова». Without it a file read while «Скрыть» was clicked on
@@ -382,10 +364,9 @@ const lockEstablishmentMenu = (client, establishmentId) => client.query(
  * @param {Object} client - Connected client inside BEGIN
  * @param {string} establishmentId - UUID
  * @param {string} mediaId - UUID of the file being written
- * @param {boolean} withMemory - Migration 038 applied
  * @returns {Promise<Object[]>}
  */
-const readHiddenElsewhere = async (client, establishmentId, mediaId, withMemory) => {
+const readHiddenElsewhere = async (client, establishmentId, mediaId) => {
   const hiddenRows = await client.query(
     `SELECT item_name, category_raw, hidden_reason, TRUE AS is_hidden_by_admin
      FROM menu_items
@@ -393,7 +374,6 @@ const readHiddenElsewhere = async (client, establishmentId, mediaId, withMemory)
      ORDER BY created_at ASC, position ASC, id ASC`,
     [establishmentId, mediaId],
   );
-  if (!withMemory) return hiddenRows.rows;
 
   const remembered = await client.query(
     `SELECT item_name, category_raw, hidden_reason, TRUE AS is_hidden_by_admin
@@ -441,14 +421,6 @@ const readHiddenElsewhere = async (client, establishmentId, mediaId, withMemory)
  *          the establishment's memory): the dish arrived with a new file
  */
 export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) => {
-  const withMemory = await hiddenNamesTableExists();
-  if (!withMemory) {
-    logger.warn('menu_item_hidden_names is absent (migration 038) — hidden dishes followed only through the rows of other files', {
-      establishmentId,
-      mediaId,
-    });
-  }
-
   const client = await pool.connect();
 
   try {
@@ -460,7 +432,7 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
       [mediaId],
     );
     const previousItems = prevResult.rows;
-    const hiddenElsewhere = await readHiddenElsewhere(client, establishmentId, mediaId, withMemory);
+    const hiddenElsewhere = await readHiddenElsewhere(client, establishmentId, mediaId);
 
     await client.query('DELETE FROM menu_items WHERE media_id = $1', [mediaId]);
 
@@ -511,7 +483,6 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
       newCount: insertedItems.length,
       carriedHidden,
       hiddenFromElsewhere: hiddenFromElsewhere.length,
-      withMemory,
     });
 
     return {
@@ -622,7 +593,7 @@ const inTransaction = async (fn) => {
  * section decides first, as on a re-read: «Чай» under «Завтраки» next to the
  * hidden «Чай» under «Напитки» stays shown.
  *
- * The dish is remembered (migration 038, when applied), so that a file
+ * The dish is remembered (migration 038), so that a file
  * uploaded later — or this one deleted and uploaded again — comes back with
  * it hidden (replaceForMedia). One transaction under the establishment's lock.
  *
@@ -634,8 +605,6 @@ const inTransaction = async (fn) => {
  *          others — the other rows hidden, as they were before
  */
 export const hideDish = async ({ menuItemId, reason }) => {
-  const withMemory = await hiddenNamesTableExists();
-
   return inTransaction(async (client) => {
     const menu = await openEstablishmentMenu(client, menuItemId);
     if (!menu || !menu.row) return { status: 'gone' };
@@ -670,7 +639,7 @@ export const hideDish = async ({ menuItemId, reason }) => {
     if (!updatedRow) return { status: 'gone' };
     const updatedIds = new Set(updated.rows.map(r => r.id));
     const changed = [...others.values()].filter(r => updatedIds.has(r.id));
-    if (withMemory) await rememberHidden(client, establishmentId, [row, ...changed], reason);
+    await rememberHidden(client, establishmentId, [row, ...changed], reason);
 
     return { status: 'done', row: updatedRow, others: changed };
   });
@@ -691,8 +660,6 @@ export const hideDish = async ({ menuItemId, reason }) => {
  *                   {status: 'done', row: Object, others: Object[], forgotten: number}>}
  */
 export const unhideDish = async ({ menuItemId }) => {
-  const withMemory = await hiddenNamesTableExists();
-
   return inTransaction(async (client) => {
     const menu = await openEstablishmentMenu(client, menuItemId);
     if (!menu || !menu.row) return { status: 'gone' };
@@ -717,19 +684,17 @@ export const unhideDish = async ({ menuItemId }) => {
     const updatedIds = new Set(updated.rows.map(r => r.id));
 
     let forgotten = 0;
-    if (withMemory) {
-      const remembered = await client.query(
-        'SELECT id, item_name, hidden_reason FROM menu_item_hidden_names WHERE establishment_id = $1',
-        [establishmentId],
+    const remembered = await client.query(
+      'SELECT id, item_name, hidden_reason FROM menu_item_hidden_names WHERE establishment_id = $1',
+      [establishmentId],
+    );
+    const ids = remembered.rows.filter(sameDecision).map(r => r.id);
+    if (ids.length > 0) {
+      const deleted = await client.query(
+        'DELETE FROM menu_item_hidden_names WHERE id = ANY($1::uuid[])',
+        [ids],
       );
-      const ids = remembered.rows.filter(sameDecision).map(r => r.id);
-      if (ids.length > 0) {
-        const deleted = await client.query(
-          'DELETE FROM menu_item_hidden_names WHERE id = ANY($1::uuid[])',
-          [ids],
-        );
-        forgotten = deleted.rowCount;
-      }
+      forgotten = deleted.rowCount;
     }
 
     return {

@@ -18,14 +18,11 @@
  *
  * The queue (avatar_file_deletions, migration 041) is written in the caller's
  * transaction, so the task cannot be lost apart from the change; the loop
- * (avatarDeletionLoop) repeats until the cloud has let the file go. In the
- * window before 041 the caller has asked avatarFileDeletionTableExists() before
- * BEGIN, and the file goes the old way after COMMIT: one destroy, no retry.
+ * (avatarDeletionLoop) repeats until the cloud has let the file go.
  */
 
-import { deleteAvatarFile, isOwnedAsset, ownCloudPublicId, ownedFolders } from '../config/cloudinary.js';
+import { isOwnedAsset, ownCloudPublicId, ownedFolders } from '../config/cloudinary.js';
 import { enqueueAvatarFileDeletion } from '../models/avatarFileDeletionModel.js';
-import logger from '../utils/logger.js';
 
 /**
  * The file behind a stored avatar link, when it is one of this person's files in
@@ -44,9 +41,7 @@ export const ownAvatarFile = (url, userId) => {
 
 /**
  * The old photo's file stops being shown: queue its removal in the caller's
- * transaction. Without the queue (the window before 041) nothing is written, and
- * the public_id comes back for the caller to pass to destroyLaterWithoutQueue
- * after COMMIT.
+ * transaction.
  *
  * @param {Object} client - pg client inside the caller's transaction
  * @param {Object} change
@@ -54,19 +49,16 @@ export const ownAvatarFile = (url, userId) => {
  * @param {string|null} change.oldUrl - the link being dropped
  * @param {string|null} change.newUrl - the link replacing it (null when cleared)
  * @param {string} change.reason - AVATAR_FILE_REASONS
- * @param {boolean} change.queueReady - avatarFileDeletionTableExists(), asked before BEGIN
- * @returns {Promise<string|null>} the file for after COMMIT, when there is no queue
+ * @returns {Promise<void>}
  */
-export const retireAvatarFile = async (client, { userId, oldUrl, newUrl, reason, queueReady }) => {
-  if (!oldUrl || oldUrl === newUrl) return null;
+export const retireAvatarFile = async (client, { userId, oldUrl, newUrl, reason }) => {
+  if (!oldUrl || oldUrl === newUrl) return;
   const publicId = ownAvatarFile(oldUrl, userId);
-  if (!publicId) return null;
+  if (!publicId) return;
   // The new link may name the same file in another spelling (a plain resize of
   // it): the file stays.
-  if (newUrl && ownCloudPublicId(newUrl) === publicId) return null;
-  if (!queueReady) return publicId;
+  if (newUrl && ownCloudPublicId(newUrl) === publicId) return;
   await enqueueAvatarFileDeletion(client, { publicId, userId, reason });
-  return null;
 };
 
 /**
@@ -75,32 +67,16 @@ export const retireAvatarFile = async (client, { userId, oldUrl, newUrl, reason,
  * see the new link anyway (the links differ); what this prevents is the old
  * approval coming back unreviewed — a person clears an approved Google
  * picture, and a later sign-in writes the very same link (Phase 3.5 review of
- * PR 1a, LOW-2). Without migration 041 there is nothing to drop.
+ * PR 1a, LOW-2).
  *
  * @param {Object} client - pg client inside the caller's transaction
  * @param {Object} change
  * @param {string} change.userId
  * @param {string|null} change.oldUrl
  * @param {string|null} change.newUrl
- * @param {boolean} change.moderationReady - avatarModerationReady(), asked before BEGIN
  * @returns {Promise<void>}
  */
-export const forgetApproval = async (client, { userId, oldUrl, newUrl, moderationReady }) => {
-  if (!moderationReady || oldUrl === newUrl) return;
+export const forgetApproval = async (client, { userId, oldUrl, newUrl }) => {
+  if (oldUrl === newUrl) return;
   await client.query('UPDATE users SET avatar_approved_url = NULL WHERE id = $1', [userId]);
-};
-
-/**
- * The window before migration 041 only: the old way — one destroy after COMMIT,
- * with the CDN's copies; the answer does not wait for the cloud, a failure goes
- * to the journal and the file stays until the account's folder is emptied.
- *
- * @param {string|null} publicId - what retireAvatarFile returned
- * @param {string} userId
- */
-export const destroyLaterWithoutQueue = (publicId, userId) => {
-  if (!publicId) return;
-  deleteAvatarFile(publicId, userId).catch((error) => {
-    logger.warn('Failed to delete old avatar from Cloudinary', { publicId, error: error.message });
-  });
 };

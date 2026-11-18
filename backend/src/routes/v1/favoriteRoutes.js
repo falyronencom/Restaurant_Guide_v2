@@ -40,7 +40,7 @@ const router = express.Router();
  * 
  * Middleware chain:
  * 1. Authentication: Verify JWT token and attach user data to req.user
- * 2. Validation: Check establishment_id is present and valid UUID format
+ * 2. Validation: Check establishmentId is present and valid UUID format
  * 3. Error formatting: Convert validation errors to structured API responses
  * 4. Controller: Execute business logic to create favorite
  * 
@@ -48,18 +48,21 @@ const router = express.Router();
  * produces the same result without errors. This provides better UX for scenarios
  * like double-clicks or network retries.
  * 
- * Request body:
+ * Request body (the field is camelCase — validators/favoriteValidation.js):
  * {
- *   "establishment_id": "uuid-of-establishment"
+ *   "establishmentId": "uuid-of-establishment"
  * }
  * 
  * Success response (201 Created):
  * {
  *   "success": true,
  *   "data": {
- *     "id": "favorite-uuid",
- *     "establishment_id": "establishment-uuid",
- *     "created_at": "2025-10-20T10:30:00Z",
+ *     "favorite": {
+ *       "id": "favorite-uuid",
+ *       "user_id": "user-uuid",
+ *       "establishment_id": "establishment-uuid",
+ *       "created_at": "2025-10-20T10:30:00Z"
+ *     },
  *     "message": "Establishment added to favorites"
  *   }
  * }
@@ -67,7 +70,7 @@ const router = express.Router();
  * Error responses:
  * - 401 Unauthorized: Missing or invalid JWT token
  * - 404 Not Found: Establishment doesn't exist or is inactive
- * - 422 Unprocessable Entity: Invalid establishment_id format
+ * - 422 Unprocessable Entity: Invalid establishmentId format
  */
 router.post(
   '/',
@@ -105,7 +108,7 @@ router.post(
  * 
  * Error responses:
  * - 401 Unauthorized: Missing or invalid JWT token
- * - 422 Unprocessable Entity: Invalid establishment_id format
+ * - 422 Unprocessable Entity: Invalid establishmentId format
  */
 router.delete(
   '/:establishmentId',
@@ -134,28 +137,35 @@ router.delete(
  * - page: Page number (default: 1, must be positive integer)
  * - limit: Results per page (default: 10, max: 50)
  * 
- * Success response (200 OK):
+ * Success response (200 OK) — the establishment's fields are flat, with the
+ * establishment_ prefix, not a nested object (services/favoriteService.js,
+ * getUserFavorites):
  * {
  *   "success": true,
  *   "data": {
  *     "favorites": [
  *       {
  *         "id": "favorite-uuid",
+ *         "user_id": "user-uuid",
  *         "establishment_id": "establishment-uuid",
  *         "created_at": "2025-10-20T10:30:00Z",
- *         "establishment": {
- *           "name": "Restaurant Name",
- *           "description": "Description...",
- *           "city": "Минск",
- *           "address": "Address...",
- *           "location": { "latitude": 53.9, "longitude": 27.5 },
- *           "categories": ["restaurant"],
- *           "cuisines": ["belarusian"],
- *           "price_range": "$$",
- *           "rating": { "average": 4.5, "count": 120 },
- *           "is_active": true,
- *           "primary_image": "https://..."
- *         }
+ *         "establishment_slug": "restaurant-name",
+ *         "establishment_city_slug": "minsk",
+ *         "establishment_category_slug": "restoran",
+ *         "establishment_name": "Restaurant Name",
+ *         "establishment_description": "Description...",
+ *         "establishment_city": "Минск",
+ *         "establishment_address": "Address...",
+ *         "establishment_latitude": 53.9,
+ *         "establishment_longitude": 27.5,
+ *         "establishment_categories": ["Ресторан"],
+ *         "establishment_cuisines": ["Европейская"],
+ *         "establishment_price_range": "$$",
+ *         "establishment_average_rating": 4.5,
+ *         "establishment_review_count": 120,
+ *         "establishment_status": "active",
+ *         "establishment_working_hours": { },
+ *         "establishment_primary_image": "https://..."
  *       }
  *     ],
  *     "pagination": {
@@ -171,7 +181,8 @@ router.delete(
  * 
  * Error responses:
  * - 401 Unauthorized: Missing or invalid JWT token
- * - 400 Bad Request: Invalid pagination parameters
+ * - 422 Unprocessable Entity: Invalid pagination parameters (page from 1,
+ *   limit 1–50)
  */
 router.get(
   '/',
@@ -188,10 +199,6 @@ router.get(
  * 
  * This is a protected endpoint requiring authentication because favorite status
  * is user-specific. Different users will have different favorite collections.
- * 
- * IMPORTANT: This route must be defined BEFORE the DELETE /:establishmentId route
- * to prevent 'check' from being interpreted as an establishment ID. Route order
- * matters in Express - routes are matched top-to-bottom, and the first match wins.
  * 
  * Middleware chain:
  * 1. Authentication: Verify JWT token and attach user data to req.user
@@ -213,7 +220,7 @@ router.get(
  * 
  * Error responses:
  * - 401 Unauthorized: Missing or invalid JWT token
- * - 422 Unprocessable Entity: Invalid establishment_id format
+ * - 422 Unprocessable Entity: Invalid establishmentId format
  */
 router.get(
   '/check/:establishmentId',
@@ -265,8 +272,8 @@ router.get(
  * 
  * Error responses:
  * - 401 Unauthorized: Missing or invalid JWT token
- * - 400 Bad Request: Invalid array format or size
- * - 422 Unprocessable Entity: Invalid UUID format in array
+ * - 422 Unprocessable Entity: Not an array of 1–50 items, or an invalid UUID
+ *   in it
  */
 router.post(
   '/check-batch',
@@ -315,27 +322,16 @@ router.get(
 );
 
 /**
- * Route ordering considerations
+ * Route ordering
  * 
- * The order of route definitions matters in Express. Routes are matched from
- * top to bottom, and the first matching route handles the request. This is
- * particularly important for routes with similar patterns.
+ * The order of the definitions above does not matter today: no two routes of
+ * one HTTP method can match the same path. The only route with a bare
+ * parameter is DELETE /:establishmentId, and it is the only DELETE; GET has
+ * `/`, `/check/:establishmentId` and `/stats`, POST has `/` and `/check-batch`.
  * 
- * Correct order (what we have):
- * 1. POST / - Specific static route
- * 2. GET /check/:establishmentId - Specific prefix with parameter
- * 3. POST /check-batch - Specific static route
- * 4. GET /stats - Specific static route
- * 5. GET / - Specific static route
- * 6. DELETE /:establishmentId - Generic parameter route
- * 
- * If we put DELETE /:establishmentId before GET /check/:establishmentId,
- * then GET /check/uuid would match the DELETE route with 'check' as the
- * establishment ID, which would be wrong.
- * 
- * Best practice: Define more specific routes (with prefixes like 'check' or
- * 'stats') before generic parameter routes (like '/:id'). This ensures the
- * right handler processes each request.
+ * It will matter once a route like GET /:id is added: Express matches from top
+ * to bottom, so the routes with a fixed first segment (`check`, `stats`) must
+ * be defined before it, or `check` would be read as an id.
  */
 
 /**

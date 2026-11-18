@@ -976,7 +976,7 @@ describe('Бронь, отправленная во время удаления,
         .send({ establishmentId: establishment.id, date: tomorrow, time: '12:00', guestCount: 2, contactPhone: '+375291112277' })
         .then((r) => r);
       await waitForLockWaiters(1);
-      await anonymiseAccount(holder, account, { userId: p.id, queueAvatarDeletion: false });
+      await anonymiseAccount(holder, account, { userId: p.id });
       await holder.query('COMMIT');
       response = await booking;
     } catch (error) {
