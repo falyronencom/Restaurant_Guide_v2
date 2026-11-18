@@ -30,7 +30,10 @@ export const INSUFFICIENT_ROLE_MESSAGE = AUTH_REFUSALS.insufficientRole;
  * next request, not when its access token expires (up to 4 h). A switched-off
  * or missing account gets 401 ACCOUNT_INACTIVE, the code the refresh endpoint
  * already answers it with, so every client signs it out. A token issued before
- * a revocation gets 401 TOKEN_REVOKED: every client refreshes once on any 401,
+ * a revocation gets 401 TOKEN_REVOKED: every client refreshes once on a 401 of
+ * this check — the site and the app tell it by its code
+ * (web/src/lib/auth/session.ts, mobile/lib/services/api_client.dart), not by
+ * the status: a wrong e-mail code is a 401 too, and a refresh would repeat it —
  * the refresh token is refused the same way, and the client signs out. If the
  * check itself cannot be made (database down), the answer is 503, never 401:
  * a database blip must not sign everyone out.

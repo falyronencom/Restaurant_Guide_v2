@@ -291,6 +291,21 @@ describe('Favorites System - List Favorites', () => {
 
     expect(response.body.data.favorites).toEqual([]);
   });
+
+  // The one scenario the old manual script (backend/test_favorites_api.ps1,
+  // removed 11.2026) had and this file did not.
+  test.each([
+    ['page=0', '?page=0&limit=10'],
+    ['limit above 50', '?page=1&limit=100'],
+    ['both', '?page=0&limit=100'],
+  ])('should reject invalid pagination: %s', async (_name, queryString) => {
+    const response = await request(app)
+      .get(`/api/v1/favorites${queryString}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(422);
+
+    expect(response.body.success).toBe(false);
+  });
 });
 
 describe('Favorites System - User Isolation', () => {
