@@ -21,6 +21,7 @@ import request from 'supertest';
 import app from '../../server.js';
 import { pool } from '../../config/database.js';
 import * as EstablishmentService from '../../services/establishmentService.js';
+import * as AdminService from '../../services/adminService.js';
 import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { testUsers } from '../fixtures/users.js';
 import {
@@ -1001,5 +1002,80 @@ describe('GET /api/v1/admin/establishments/:id — partner and page_count', () =
       .expect(200);
     const pages = Object.fromEntries(res.body.data.menu_media.map(m => [m.id, m.page_count]));
     expect(pages).toEqual({ [read]: 7, [cut]: 31, [noMeta]: null, [never]: null });
+  });
+});
+
+// ============================================================================
+// A decision on a card and its journal entry — one write (register item К7)
+// ============================================================================
+
+describe('a decision whose journal entry cannot be written is refused', () => {
+  // The entry used to be written after the decision, «softly»: a failed entry
+  // left the card approved, rejected or suspended and nothing in the journal
+  // of actions to show who did it and when. The entry is made to fail here the
+  // way any INSERT can — a value its column does not take (ip_address is
+  // inet). On the service: over HTTP the address is the socket's, always valid.
+  const actor = (ipAddress) => ({ adminUserId, ipAddress, userAgent: 'journal-test' });
+  const UNWRITABLE = 'not-an-address';
+  const journalOf = async (establishmentId) => (await query(
+    'SELECT action FROM audit_log WHERE entity_id = $1 ORDER BY created_at, id',
+    [establishmentId],
+  )).rows.map(row => row.action);
+  const noticesOf = async (establishmentId) => (await query(
+    'SELECT type FROM notifications WHERE establishment_id = $1',
+    [establishmentId],
+  )).rows.map(row => row.type);
+
+  test.each([
+    ['approve', 'pending', (id, ip) => AdminService.moderateEstablishment(
+      id, { ...actor(ip), action: 'approve', moderation_notes: {} },
+    )],
+    ['reject', 'pending', (id, ip) => AdminService.moderateEstablishment(
+      id, { ...actor(ip), action: 'reject', moderation_notes: { name: 'не то название' } },
+    )],
+    ['suspend', 'active', (id, ip) => AdminService.suspendEstablishment(
+      id, { ...actor(ip), reason: 'Нарушение правил' },
+    )],
+  ])('%s: the card stays as it was, the journal is empty, the partner is not told', async (_name, status, act) => {
+    const { establishment } = await createPartnerWithEstablishment(status);
+
+    await expect(act(establishment.id, UNWRITABLE)).rejects.toMatchObject({ statusCode: 500 });
+
+    const card = await getEstablishmentFromDb(establishment.id);
+    expect(card.status).toBe(status);
+    expect(card.moderated_by).toBeNull();
+    expect(card.published_at).toBeNull();
+    expect(card.moderation_notes).toEqual(establishment.moderation_notes);
+    expect(await journalOf(establishment.id)).toEqual([]);
+    expect(await noticesOf(establishment.id)).toEqual([]);
+
+    // The scene: the same decision with an entry that can be written is made
+    // — the refusal above was the entry's, not the card's.
+    await act(establishment.id, '203.0.113.7');
+    expect((await getEstablishmentFromDb(establishment.id)).status).not.toBe(status);
+    expect(await journalOf(establishment.id)).toHaveLength(1);
+  });
+
+  test('unsuspend: the card stays suspended, with its reason; the journal keeps only the suspension', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    await AdminService.suspendEstablishment(
+      establishment.id, { ...actor('203.0.113.7'), reason: 'Нарушение правил' },
+    );
+    const suspended = await getEstablishmentFromDb(establishment.id);
+    const noticesBefore = await noticesOf(establishment.id);
+
+    await expect(
+      AdminService.unsuspendEstablishment(establishment.id, actor(UNWRITABLE)),
+    ).rejects.toMatchObject({ statusCode: 500, code: 'UNSUSPEND_FAILED' });
+
+    const card = await getEstablishmentFromDb(establishment.id);
+    expect(card.status).toBe('suspended');
+    expect(card.moderation_notes).toEqual(suspended.moderation_notes);
+    expect(await journalOf(establishment.id)).toEqual(['suspend']);
+    expect(await noticesOf(establishment.id)).toEqual(noticesBefore);
+
+    await AdminService.unsuspendEstablishment(establishment.id, actor('203.0.113.7'));
+    expect((await getEstablishmentFromDb(establishment.id)).status).toBe('active');
+    expect(await journalOf(establishment.id)).toEqual(['suspend', 'unsuspend']);
   });
 });

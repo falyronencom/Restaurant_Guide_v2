@@ -69,6 +69,7 @@ jest.unstable_mockModule('../../models/partnerDocumentsModel.js', () => ({
 
 jest.unstable_mockModule('../../models/auditLogModel.js', () => ({
   createAuditLog: jest.fn(),
+  writeAuditLogInTransaction: jest.fn(),
   getRejectionHistory: jest.fn(),
   countRejections: jest.fn(),
   getLatestEntityAction: jest.fn(),
@@ -197,6 +198,15 @@ const buildClaimClient = (users) => ({
   release: jest.fn(),
 });
 
+/**
+ * The transaction client of a moderator's decision on a card — approve,
+ * reject, suspend, unsuspend: the decision and its journal entry are one
+ * write (adminService.decideWithJournalEntry). A fresh one before each test;
+ * the claim tests put their own client in its place.
+ */
+let journalClient;
+const journalStatements = () => journalClient.query.mock.calls.map(([sql]) => sql);
+
 const buildReq = () => ({
   ip: '127.0.0.1',
   get: jest.fn((header) => (header === 'User-Agent' ? 'TestAgent/1.0' : null)),
@@ -221,6 +231,9 @@ const baseEstablishment = (overrides = {}) => ({
 beforeEach(() => {
   // jest.config has resetMocks:true — re-set Promise-returning mocks per test.
   AuditLogModel.createAuditLog.mockResolvedValue(undefined);
+  AuditLogModel.writeAuditLogInTransaction.mockResolvedValue({ id: uuidv4(), created_at: new Date() });
+  journalClient = { query: jest.fn(async () => ({ rows: [] })), release: jest.fn() };
+  DB.getClient.mockResolvedValue(journalClient);
   NotificationService.notifyEstablishmentStatusChange.mockResolvedValue(undefined);
   NotificationService.notifyEstablishmentClaimed.mockResolvedValue(undefined);
   MediaModel.getOcrEligibleMedia.mockResolvedValue([]);
@@ -293,6 +306,7 @@ describe('moderateEstablishment', () => {
         moderated_by: ADMIN_ID,
         setPublishedAt: true,
       }),
+      journalClient,
     );
   });
 
@@ -317,6 +331,7 @@ describe('moderateEstablishment', () => {
         moderation_notes: notes,
         setPublishedAt: false,
       }),
+      journalClient,
     );
   });
 
@@ -329,7 +344,8 @@ describe('moderateEstablishment', () => {
     await moderateEstablishment(EST_ID, { ...baseParams, action: 'approve' });
     await flushPromises();
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+    expect(AuditLogModel.writeAuditLogInTransaction).toHaveBeenCalledWith(
+      journalClient,
       expect.objectContaining({
         user_id: ADMIN_ID,
         action: 'moderate_approve',
@@ -356,7 +372,8 @@ describe('moderateEstablishment', () => {
       moderation_notes: notes,
     });
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+    expect(AuditLogModel.writeAuditLogInTransaction).toHaveBeenCalledWith(
+      journalClient,
       expect.objectContaining({
         action: 'moderate_reject',
         new_data: { status: 'rejected', moderation_notes: notes },
@@ -408,6 +425,10 @@ describe('moderateEstablishment', () => {
       code: 'MODERATION_CONFLICT',
       statusCode: 409,
     });
+    // Nothing of the decision is kept, and no entry says it was made.
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
+    expect(journalStatements()).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(journalClient.release).toHaveBeenCalledTimes(1);
   });
 
   test('approve enqueues OCR jobs for eligible media (PDFs + menu photos) without completed job', async () => {
@@ -539,7 +560,7 @@ describe('suspendEstablishment', () => {
         },
         // The notes the decision was made on guard the write.
         expectedModerationNotes: null,
-      });
+      }, journalClient);
     },
   );
 
@@ -578,6 +599,7 @@ describe('suspendEstablishment', () => {
           suspended_at: expect.any(String),
         }),
       }),
+      journalClient,
     );
   });
 
@@ -600,6 +622,7 @@ describe('suspendEstablishment', () => {
           suspend_reason: baseParams.reason,
         }),
       }),
+      journalClient,
     );
   });
 
@@ -622,6 +645,7 @@ describe('suspendEstablishment', () => {
           suspend_reason: baseParams.reason,
         }),
       }),
+      journalClient,
     );
   });
 
@@ -635,6 +659,8 @@ describe('suspendEstablishment', () => {
       code: 'SUSPEND_CONFLICT',
       statusCode: 409,
     });
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
+    expect(journalStatements()).toEqual(['BEGIN', 'ROLLBACK']);
   });
 
   test('writes audit_log entry with action=suspend and reason in new_data', async () => {
@@ -647,7 +673,8 @@ describe('suspendEstablishment', () => {
 
     await suspendEstablishment(EST_ID, baseParams);
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+    expect(AuditLogModel.writeAuditLogInTransaction).toHaveBeenCalledWith(
+      journalClient,
       expect.objectContaining({
         user_id: ADMIN_ID,
         action: 'suspend',
@@ -721,7 +748,8 @@ describe('unsuspendEstablishment', () => {
       statusCode: 400,
     });
     expect(EstablishmentModel.changeEstablishmentStatus).not.toHaveBeenCalled();
-    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
+    expect(DB.getClient).not.toHaveBeenCalled();
   });
 
   test('a suspension from before 2026-10-07 (no suspended_from) returns to active, marks removed', async () => {
@@ -742,6 +770,7 @@ describe('unsuspendEstablishment', () => {
         moderationNotes: {},
         expectedModerationNotes: card.moderation_notes,
       },
+      journalClient,
     );
   });
 
@@ -764,6 +793,7 @@ describe('unsuspendEstablishment', () => {
           moderationNotes: { name: 'field comment' },
           expectedModerationNotes: card.moderation_notes,
         },
+        journalClient,
       );
       // Back among the rejected = out of the «hanging flags» scope.
       if (from === 'rejected') {
@@ -784,7 +814,8 @@ describe('unsuspendEstablishment', () => {
 
     await unsuspendEstablishment(EST_ID, baseParams);
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+    expect(AuditLogModel.writeAuditLogInTransaction).toHaveBeenCalledWith(
+      journalClient,
       expect.objectContaining({
         user_id: ADMIN_ID,
         action: 'unsuspend',
@@ -1109,6 +1140,100 @@ describe('partner notification is written before the action returns', () => {
 });
 
 // ============================================================================
+// A decision on a card and its journal entry — one write (register item К7)
+// ============================================================================
+//
+// The entry used to be written «softly» after the decision (createAuditLog
+// swallows its errors): an entry that failed left a card approved, rejected or
+// suspended with nothing in the journal to show who did it and when. Now the
+// two share a transaction, and an entry that cannot be written refuses the
+// decision.
+
+describe('a moderator decision on a card and its journal entry are one write', () => {
+  const actor = { adminUserId: ADMIN_ID, ipAddress: '127.0.0.1', userAgent: 'TestAgent/1.0' };
+  const moderatorSuspension = { suspend_reason: 'Нарушение правил', suspended_from: 'active' };
+
+  const cases = [
+    {
+      name: 'approve',
+      write: 'moderateEstablishment',
+      failure: 'MODERATION_FAILED',
+      arrange: () => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+        EstablishmentModel.moderateEstablishment.mockResolvedValue(baseEstablishment({ status: 'active' }));
+      },
+      act: () => moderateEstablishment(EST_ID, { ...actor, action: 'approve', moderation_notes: {} }),
+    },
+    {
+      name: 'reject',
+      write: 'moderateEstablishment',
+      failure: 'MODERATION_FAILED',
+      arrange: () => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+        EstablishmentModel.moderateEstablishment.mockResolvedValue(baseEstablishment({ status: 'rejected' }));
+      },
+      act: () => moderateEstablishment(EST_ID, { ...actor, action: 'reject', moderation_notes: { name: 'не то' } }),
+    },
+    {
+      name: 'suspend',
+      write: 'changeEstablishmentStatus',
+      failure: 'SUSPEND_FAILED',
+      arrange: () => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment({ status: 'active' }));
+        EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(baseEstablishment({ status: 'suspended' }));
+      },
+      act: () => suspendEstablishment(EST_ID, { ...actor, reason: 'Нарушение правил' }),
+    },
+    {
+      name: 'unsuspend',
+      write: 'changeEstablishmentStatus',
+      failure: 'UNSUSPEND_FAILED',
+      arrange: () => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(
+          baseEstablishment({ status: 'suspended', moderation_notes: moderatorSuspension }),
+        );
+        EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(baseEstablishment({ status: 'active' }));
+      },
+      act: () => unsuspendEstablishment(EST_ID, actor),
+    },
+  ];
+
+  test.each(cases)('$name: the card and the entry are written on one client, between BEGIN and COMMIT', async ({ write, arrange, act }) => {
+    arrange();
+    // What the client had been asked by the time each write was made.
+    const seen = {};
+    EstablishmentModel[write].mockImplementation(async (_id, _data, db) => {
+      seen.card = { db, statements: journalStatements() };
+      return baseEstablishment();
+    });
+    AuditLogModel.writeAuditLogInTransaction.mockImplementation(async (db) => {
+      seen.entry = { db, statements: journalStatements() };
+      return { id: uuidv4(), created_at: new Date() };
+    });
+
+    await act();
+
+    expect(seen.card).toEqual({ db: journalClient, statements: ['BEGIN'] });
+    expect(seen.entry).toEqual({ db: journalClient, statements: ['BEGIN'] });
+    expect(journalStatements()).toEqual(['BEGIN', 'COMMIT']);
+    expect(journalClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(cases)('$name: an entry that cannot be written refuses the decision — rolled back, the partner not told', async ({ failure, arrange, act }) => {
+    arrange();
+    AuditLogModel.writeAuditLogInTransaction.mockRejectedValue(new Error('audit_log is unavailable'));
+
+    await expect(act()).rejects.toMatchObject({ code: failure, statusCode: 500 });
+
+    expect(journalStatements()).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(journalClient.release).toHaveBeenCalledTimes(1);
+    expect(NotificationService.notifyEstablishmentStatusChange).not.toHaveBeenCalled();
+    // The «soft» writer is not a way round: nothing is written beside the transaction.
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
 // adminUpgradeUserToPartner — Tier 1
 // ============================================================================
 
@@ -1133,7 +1258,7 @@ describe('adminUpgradeUserToPartner', () => {
     expect(AuthService.upgradeUserToPartner).not.toHaveBeenCalled();
   });
 
-  test('upgrades user role and writes audit_log with old_role=user', async () => {
+  test('upgrades the role and hands the moderator over as the author of the journal entry', async () => {
     DB.query.mockResolvedValue({
       rows: [{ id: TARGET_USER_ID, role: 'user', is_active: true }],
     });
@@ -1141,24 +1266,25 @@ describe('adminUpgradeUserToPartner', () => {
       id: TARGET_USER_ID,
       role: 'partner',
     });
+    const req = buildReq();
 
-    const result = await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq());
+    const result = await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, req);
 
     expect(result.role).toBe('partner');
-    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(TARGET_USER_ID);
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: ADMIN_ID,
-        action: 'upgrade_user_to_partner',
-        entity_type: 'user',
-        entity_id: TARGET_USER_ID,
-        old_data: { role: 'user' },
-        new_data: { role: 'partner' },
-      }),
-    );
+    expect(req.get).toHaveBeenCalledWith('User-Agent');
+    // The entry is written with the change, in its transaction
+    // (authService.upgradeUserToPartner; integration/role-upgrade-journal).
+    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledTimes(1);
+    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(TARGET_USER_ID, {
+      actorId: ADMIN_ID,
+      ipAddress: '127.0.0.1',
+      userAgent: 'TestAgent/1.0',
+    });
+    // Not a second, «soft» entry beside it.
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 
-  test('still calls upgradeUserToPartner for already-partner user (idempotent)', async () => {
+  test('still calls upgradeUserToPartner for already-partner user (idempotent), and writes no entry itself', async () => {
     DB.query.mockResolvedValue({
       rows: [{ id: TARGET_USER_ID, role: 'partner', is_active: true }],
     });
@@ -1169,34 +1295,23 @@ describe('adminUpgradeUserToPartner', () => {
 
     await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq());
 
-    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(TARGET_USER_ID);
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        old_data: { role: 'partner' },
-        new_data: { role: 'partner' },
-      }),
+    expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(
+      TARGET_USER_ID,
+      expect.objectContaining({ actorId: ADMIN_ID }),
     );
+    // An account left as it was gets no «upgraded» entry: nothing changed.
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 
-  test('passes req.ip and User-Agent into audit log', async () => {
+  test('a role that cannot be changed is not reported as changed', async () => {
     DB.query.mockResolvedValue({
       rows: [{ id: TARGET_USER_ID, role: 'user', is_active: true }],
     });
-    AuthService.upgradeUserToPartner.mockResolvedValue({
-      id: TARGET_USER_ID,
-      role: 'partner',
-    });
-    const req = buildReq();
+    AuthService.upgradeUserToPartner.mockRejectedValue(new Error('audit_log is unavailable'));
 
-    await adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, req);
-
-    expect(req.get).toHaveBeenCalledWith('User-Agent');
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ip_address: '127.0.0.1',
-        user_agent: 'TestAgent/1.0',
-      }),
-    );
+    await expect(
+      adminUpgradeUserToPartner(TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toThrow('audit_log is unavailable');
   });
 });
 
