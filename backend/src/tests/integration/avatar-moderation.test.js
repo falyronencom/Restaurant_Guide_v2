@@ -14,7 +14,7 @@
  *  - очередь модератора, одобрение и снятие, журнал в той же транзакции;
  *  - снятое, убранное и заменённое фото уходит из облака через очередь файлов —
  *    только этот файл, только из папки человека;
- *  - окно до миграции 041: ничего не падает, другим — буква.
+ *  - без очереди файлов (миграция 041) смена фото отказана целиком.
  *
  * На старом коде красный каждый тест: публичный ответ отдавал любое фото,
  * маршрутов /avatar/approve и /avatar/remove не было, очереди файлов не было.
@@ -641,74 +641,51 @@ describe('одобрение живёт только со своей ссылк�
 });
 
 // ============================================================================
-// Окно между выкаткой и миграцией 041
+// Без очереди файлов смена фото не идёт «по-старому»
 // ============================================================================
 
-describe('схема без миграции 041: ничего не падает, другим — буква', () => {
-  // Колонку и таблицу снимает сам тест и возвращает в `finally`. Убитый между
-  // ними прогон оставит их снятыми: вернуть — применив
+describe('схема без очереди файлов: смена фото отказана целиком, а не идёт прежним путём', () => {
+  // До 11.2026 сервер перед сменой фото спрашивал, применена ли миграция 041
+  // (окно между выкаткой и миграцией), и без неё удалял старый файл одной
+  // попыткой после ответа, а действия модератора отказывал текстом «Проверка
+  // фото включится после обновления базы данных». База, восстановленная из
+  // снимка без 041, молча возвращала этот путь: сбой облака — и файл остаётся.
+  // Миграция на проде, снимок схемы её несёт: проверки и прежний путь сняты.
+  // Задача на удаление файла — часть смены фото: её некуда записать — нет и смены.
+  //
+  // Таблицу снимает сам тест и возвращает в `finally`. Убитый между ними прогон
+  // оставит её снятой: вернуть — применив
   // backend/migrations/041_avatar_moderation.sql. Изолированный раннер
   // (scripts/test-isolated) собирает свою базу заново.
-  const withoutMigration = async (work) => {
+  test('очистка фото и снятие модератором: ответ 500, ссылка и файл как были, облако не тронуто', async () => {
+    const clearing = await person({ avatar: ownFile('face0002') });
+    const moderated = await person({ avatar: ownFile('face0003') });
+    const clearingUrl = cloudUrl(`avatars/${clearing.id}/face0002`);
+    const moderatedUrl = cloudUrl(`avatars/${moderated.id}/face0003`);
+    const clear = () => request(app)
+      .put('/api/v1/auth/profile')
+      .set('Authorization', `Bearer ${clearing.accessToken}`)
+      .send({ avatar_url: '' });
+
     await query('DROP TABLE avatar_file_deletions');
-    await query('ALTER TABLE users DROP COLUMN avatar_approved_url');
     try {
-      await work();
+      await clear().expect(500);
+      await remove(moderated.id, moderatedUrl, 'не лицо').expect(500);
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+
+      expect(await storedAvatar(clearing.id)).toBe(clearingUrl);
+      expect(await storedAvatar(moderated.id)).toBe(moderatedUrl);
+      expect(destroy).not.toHaveBeenCalled();
     } finally {
       await query(readFileSync(MIGRATION, 'utf8'));
     }
-  };
 
-  test('публичные ответы, свой профиль, панель, бейджи; действия модератора — понятный отказ', async () => {
-    const p = await person({ avatar: ownFile('face0001') });
-    const url = cloudUrl(`avatars/${p.id}/face0001`);
-    const review = await createTestReview(p.id, card.id);
-
-    await withoutMigration(async () => {
-      expect(await publicAvatars(review.id)).toEqual(NOBODY_SEES);
-      expect(await ownProfile(p)).toBe(url);
-      expect(await queueIds()).toEqual([p.id]);
-      expect((await asAdmin('get', `/reviews?user_id=${p.id}`).expect(200)).body.data[0].author_avatar_state).toBe('pending');
-      expect((await asAdmin('get', '/badges').expect(200)).body.data.avatars_pending).toBe(1);
-      for (const action of [approve(p.id, url), remove(p.id, url)]) {
-        const refused = await action.expect(409);
-        expect(refused.body.message)
-          .toBe('Проверка фото включится после обновления базы данных. Сообщите оператору платформы');
-      }
-      expect(await storedAvatar(p.id)).toBe(url);
-    });
-  });
-
-  test('замена и очистка фото работают; старый файл удаляется прежним путём, петля молчит', async () => {
-    const replacing = await person({ avatar: ownFile('face0001') });
-    const clearing = await person({ avatar: ownFile('face0002') });
-    const info = jest.spyOn((await import('../../utils/logger.js')).default, 'info');
-
-    await withoutMigration(async () => {
-      await request(app)
-        .post('/api/v1/auth/avatar')
-        .set('Authorization', `Bearer ${replacing.accessToken}`)
-        .attach('avatar', Buffer.from('fake-jpeg'), JPEG)
-        .expect(200);
-      await request(app)
-        .put('/api/v1/auth/profile')
-        .set('Authorization', `Bearer ${clearing.accessToken}`)
-        .send({ avatar_url: '' })
-        .expect(200);
-      await new Promise((resolve) => { setTimeout(resolve, 50); });
-
-      expect(destroy.mock.calls.sort()).toEqual([
-        [`avatars/${clearing.id}/face0002`, { invalidate: true }],
-        [`avatars/${replacing.id}/face0001`, { invalidate: true }],
-      ].sort());
-      expect(await storedAvatar(replacing.id)).toBe(cloudUrl(`avatars/${replacing.id}/fresh0001`));
-      expect(await storedAvatar(clearing.id)).toBeNull();
-
-      const fresh = await import('../../services/avatarDeletionLoop.js?window=041');
-      await fresh.tick();
-      await fresh.tick();
-      expect(info.mock.calls.filter(([line]) => line.startsWith('Avatar file deletion')))
-        .toEqual([['Avatar file deletion: no table yet (migration 041), nothing to do']]);
-    });
+    // Сцена: с таблицей те же действия проходят и оставляют по задаче.
+    await clear().expect(200);
+    await remove(moderated.id, moderatedUrl, 'не лицо').expect(200);
+    expect(await storedAvatar(clearing.id)).toBeNull();
+    expect(await storedAvatar(moderated.id)).toBeNull();
+    expect((await fileTasks(clearing.id)).length).toBe(1);
+    expect((await fileTasks(moderated.id)).length).toBe(1);
   });
 });

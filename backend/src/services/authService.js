@@ -58,8 +58,7 @@ import {
 } from '../models/passwordResetModel.js';
 import { sendVerificationCodeEmail, sendPasswordResetEmail } from './emailService.js';
 import { AVATAR_FILE_REASONS } from '../models/avatarFileDeletionModel.js';
-import { avatarModerationReady } from '../models/avatarModerationModel.js';
-import { destroyLaterWithoutQueue, forgetApproval, retireAvatarFile } from './avatarFiles.js';
+import { forgetApproval, retireAvatarFile } from './avatarFiles.js';
 
 /**
  * Argon2id Parameters
@@ -1063,12 +1062,8 @@ export async function updateUserProfile(userId, profileData) {
     return result.rows[0];
   }
 
-  // Asked before BEGIN: inside the transaction a missing table or column would
-  // fail the whole change (the window before migration 041).
-  const queueReady = await avatarModerationReady();
   const client = await getClient();
   let user;
-  let fileWithoutQueue = null;
   try {
     await client.query('BEGIN');
     // The old link under the row's lock: two uploads at once each retire the
@@ -1089,13 +1084,12 @@ export async function updateUserProfile(userId, profileData) {
     }
     const newUrl = avatarUrl || null;
     const oldUrl = before.rows[0].avatar_url;
-    await forgetApproval(client, { userId, oldUrl, newUrl, moderationReady: queueReady });
-    fileWithoutQueue = await retireAvatarFile(client, {
+    await forgetApproval(client, { userId, oldUrl, newUrl });
+    await retireAvatarFile(client, {
       userId,
       oldUrl,
       newUrl,
       reason: newUrl ? AVATAR_FILE_REASONS.REPLACED : AVATAR_FILE_REASONS.CLEARED,
-      queueReady,
     });
     await client.query('COMMIT');
   } catch (error) {
@@ -1105,22 +1099,11 @@ export async function updateUserProfile(userId, profileData) {
     client.release();
   }
 
-  destroyLaterWithoutQueue(fileWithoutQueue, userId);
   logger.info('User profile updated', { userId, fields: Object.keys(profileData) });
 
   return user;
 }
 
-/**
- * Upgrades a user's role from 'user' to 'partner'
- *
- * This function is called when a regular user creates their first establishment.
- * The upgrade happens automatically as part of the partner registration flow.
- *
- * @param {string} userId - The ID of the user to upgrade
- * @returns {Promise<Object>} Updated user object with new role
- * @throws {Error} If user not found or already a partner/admin
- */
 /**
  * What the moderator reads on a card parked by an account takeover, and what
  * the account's new holder is told — kept beside the other suspension marks
@@ -1161,16 +1144,12 @@ export { TAKEOVER_SUSPEND_REASON };
  */
 async function takeOverUnverifiedAccount(existingUser, { provider, providerId, name, avatarUrl }) {
   const now = new Date();
-  // Asked before BEGIN (the window before migration 041): the registrant's own
-  // photo, if it lies in our cloud, goes with everything else they set up.
-  const avatarQueueReady = await avatarModerationReady();
   const client = await getClient();
   let user;
   let deletedTokens = 0;
   let sessionsRevokedAt = null;
   let deactivatedDevices = 0;
   let parkedCards = [];
-  let registrantFileWithoutQueue = null;
   try {
     await client.query('BEGIN');
 
@@ -1201,18 +1180,18 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
     }
 
     // The provider's picture is a new link: it waits for a moderator like any
-    // other (models/avatarModerationModel.js). The registrant's file leaves the
-    // cloud (services/avatarFiles.js).
+    // other (models/avatarModerationModel.js). The registrant's own photo, if
+    // it lies in our cloud, goes with everything else they set up
+    // (services/avatarFiles.js).
     const registrantUrl = registrant.rows[0]?.avatar_url ?? null;
     await forgetApproval(client, {
-      userId: existingUser.id, oldUrl: registrantUrl, newUrl: user.avatar_url, moderationReady: avatarQueueReady,
+      userId: existingUser.id, oldUrl: registrantUrl, newUrl: user.avatar_url,
     });
-    registrantFileWithoutQueue = await retireAvatarFile(client, {
+    await retireAvatarFile(client, {
       userId: existingUser.id,
       oldUrl: registrantUrl,
       newUrl: user.avatar_url,
       reason: AVATAR_FILE_REASONS.TAKEN_OVER,
-      queueReady: avatarQueueReady,
     });
 
     // The successor link is a self-reference; clear it before the rows go.
@@ -1274,7 +1253,6 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
   // The registrant's cached status must not outlive the commit: their next
   // request reads the stamp.
   invalidateAccountStatus(existingUser.id);
-  destroyLaterWithoutQueue(registrantFileWithoutQueue, existingUser.id);
 
   // Outside the transaction: the journal and the notice must not undo a
   // takeover that is already committed.

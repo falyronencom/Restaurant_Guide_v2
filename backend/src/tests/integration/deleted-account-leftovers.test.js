@@ -114,7 +114,7 @@ const racingDeletion = async (userId, action) => {
   try {
     await holder.query('BEGIN');
     const account = await lockAccount(holder, userId);
-    await anonymiseAccount(holder, account, { userId, queueAvatarDeletion: false });
+    await anonymiseAccount(holder, account, { userId });
     const pending = Promise.resolve()
       .then(action)
       .then((value) => ({ value }), (error) => ({ error }));
@@ -255,16 +255,25 @@ describe('Удаление учётки: одобренное фото и его
     expect(JSON.stringify(entry)).not.toContain('googleusercontent');
   });
 
-  test('на базе без миграции 041 (окно после выкатки) удаление проходит как раньше', async () => {
+  test('на базе без колонки одобренной ссылки (миграция 041) удаление отказано целиком, а не идёт без неё', async () => {
+    // До 11.2026 удаление спрашивало, применена ли миграция 041 (окно после
+    // выкатки), и без колонки проходило, не трогая одобрение фото. Миграция на
+    // проде, снимок схемы её несёт: вопрос снят, одобрение уходит вместе с
+    // учётной записью — или не уходит ничего.
     const p = await person();
     await query('ALTER TABLE users DROP COLUMN avatar_approved_url');
     try {
-      await deleteAccount(p.accessToken).expect(200);
+      await deleteAccount(p.accessToken).expect(500);
       expect((await query('SELECT is_active, name FROM users WHERE id = $1', [p.id])).rows[0])
-        .toEqual({ is_active: false, name: 'Гость' });
+        .toEqual({ is_active: true, name: 'Иван Тестов' });
     } finally {
       await query('ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_approved_url VARCHAR(500)');
     }
+
+    // Сцена: с колонкой то же удаление проходит.
+    await deleteAccount(p.accessToken).expect(200);
+    expect((await query('SELECT is_active, name FROM users WHERE id = $1', [p.id])).rows[0])
+      .toEqual({ is_active: false, name: 'Гость' });
   });
 });
 

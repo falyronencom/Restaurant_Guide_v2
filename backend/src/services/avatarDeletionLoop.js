@@ -21,18 +21,13 @@
  *     call to the cloud at most, bounded by its deadline (deleteAvatarFolder, 20 s),
  *     plus one write to the database — inside the shutdown budget, which is 195 s
  *     on production and 30 s without the drain variable (config/shutdown.js). A
- *     task cut short this way needs no marking: it comes due when its claim ends;
- *   - without the table (the window before migration 040) a tick does nothing and
- *     says one line at info level per process: the deploy's journal shows it, and
- *     nothing else would.
+ *     task cut short this way needs no marking: it comes due when its claim ends.
  *
  * Single files (migration 041, models/avatarFileDeletionModel.js): the photo a
  * moderator took down, the one a person cleared or replaced, the registrant's
  * photo of an account taken over. After its folder task a tick removes up to
  * FILE_TASKS_PER_TICK of them — one destroy each, with the CDN's copies, and
- * the same pauses, claims and giving up as a folder. Without that table (the
- * window before 041) the files part says one line at info level per process and
- * does nothing; the folders go on.
+ * the same pauses, claims and giving up as a folder.
  *
  * Whether it runs at all: config/avatarDeletion.js. It must not start under
  * NODE_ENV=test: tests call tick() directly, with the cloud stubbed.
@@ -47,14 +42,12 @@ import {
   resolveAvatarDeletionPolicy,
 } from '../config/avatarDeletion.js';
 import {
-  avatarDeletionTableExists,
   claimNextDue,
   countOpen,
   markDone,
   recordFailure,
 } from '../models/avatarDeletionModel.js';
 import {
-  avatarFileDeletionTableExists,
   AVATAR_FILE_REASONS,
   claimNextDueFile,
   countOpenFiles,
@@ -71,8 +64,6 @@ let tickPromise = null;
 let stopRequested = false;
 let lastHeartbeatAt = null;
 let lastFileHeartbeatAt = null;
-let saidTableAbsent = false;
-let saidFileTableAbsent = false;
 
 /**
  * What goes into the table and the journal from a failure.
@@ -251,28 +242,18 @@ const runFolderTask = async () => {
 
 /**
  * One tick: at most one folder, then up to FILE_TASKS_PER_TICK files. Never
- * rejects. Each part is on whenever its table is there.
+ * rejects.
  *
  * @returns {Promise<void>}
  */
 const runTick = async () => {
   stopRequested = false;
   try {
-    if (await avatarDeletionTableExists()) {
-      await runFolderTask();
-    } else if (!saidTableAbsent) {
-      saidTableAbsent = true;
-      logger.info('Avatar deletion: no table yet (migration 040), nothing to do');
-    }
+    await runFolderTask();
 
     if (stopRequested) return;
-    if (await avatarFileDeletionTableExists()) {
-      await fileHeartbeat();
-      await runFileTasks();
-    } else if (!saidFileTableAbsent) {
-      saidFileTableAbsent = true;
-      logger.info('Avatar file deletion: no table yet (migration 041), nothing to do');
-    }
+    await fileHeartbeat();
+    await runFileTasks();
   } catch (error) {
     // The database, not the cloud. A claimed task comes back by itself.
     logger.error('Avatar deletion: tick failed', { error: failureText(error) });

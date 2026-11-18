@@ -48,7 +48,8 @@ export const RESET_REQUESTS_PER_ADDRESS_DAY = 10;
  * 
  * Middleware chain:
  * 1. Rate limiter: 20 requests per minute per IP (moderate limit for registrations)
- * 2. Rate limiter: REGISTRATION_REQUESTS_DAY_LIMIT per IP and day (UTC)
+ * 2. Rate limiter: REGISTRATION_REQUESTS_DAY_LIMIT per IP and day (the Minsk
+ *    calendar day — middleware/rateLimiter.js)
  * 3. Validation: Check email/phone format, password complexity, etc.
  * 4. Controller: Create user (within NEW_ACCOUNTS_DAY_LIMIT) and generate tokens
  * 

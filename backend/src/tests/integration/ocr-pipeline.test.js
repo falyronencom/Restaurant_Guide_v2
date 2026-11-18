@@ -1179,39 +1179,46 @@ describe('OCR pipeline integration', () => {
         expect(await shownNames()).toEqual(['Кальян на чаше']);
       });
 
-      test('without migration 038 (before the operator step): no 500; the dish follows into a file that is still there', async () => {
+      test('without the memory of hidden dishes «Скрыть» refuses as a whole — the dish is not hidden «for this file only»', async () => {
+        // Until 11.2026 the model asked whether migration 038 was applied (the
+        // window between the deploy and the operator step) and, without the
+        // table, hid the dish in the files that were there and remembered
+        // nothing: a file deleted and uploaded again brought the dish back to
+        // the guests, silently. The migration is on production and in the
+        // schema snapshot: the check is gone, and the memory is part of «Скрыть».
+        //
         // The table is dropped in the test database and put back in `finally`.
         // A run killed between the two leaves it dropped, and the next run
         // fails at the global TRUNCATE (testTables.js lists it): put it back by
         // applying backend/migrations/038_menu_item_hidden_names.sql. The
         // isolated runner (scripts/test-isolated) rebuilds its database anyway.
+        const { mediaId: photo } = await insertTestMedia(establishment.id, 'image');
+        await menuItemModel.createMany({
+          establishmentId: establishment.id,
+          mediaId: photo,
+          items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
+        });
+
         await pool.query('DROP TABLE menu_item_hidden_names');
         try {
-          const { mediaId: photo } = await insertTestMedia(establishment.id, 'image');
-          await menuItemModel.createMany({
-            establishmentId: establishment.id,
-            mediaId: photo,
-            items: [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.9, position: 0 }],
-          });
-          await hideByName('Кальян на чаше');
-
-          const { mediaId: pdf } = await insertTestMedia(establishment.id, 'pdf');
-          await reRead(pdf, [{ item_name: 'Кальян на чаше', price_byn: 50, category_raw: null, confidence: 0.95 }]);
-          expect(await shownNames()).toEqual([]);
-
-          // Without the memory a deleted file takes the decision with it — the
-          // operator step (038) closes this.
-          await pool.query('DELETE FROM establishment_media WHERE id = ANY($1::uuid[])', [[photo, pdf]]);
-          const { mediaId: again } = await insertTestMedia(establishment.id, 'pdf');
-          await reRead(again, [{ item_name: 'Кальян на чаше', price_byn: 45, category_raw: null, confidence: 0.95 }]);
+          await expect(hideByName('Кальян на чаше')).rejects.toThrow();
           expect(await shownNames()).toEqual(['Кальян на чаше']);
 
-          const row = (await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true }))[0];
-          await adminService.hideMenuItem(row.id, { reason: HIDE_REASON, adminUserId });
-          await adminService.unhideMenuItem(row.id, { adminUserId });
+          // A file's rows are not written without it either: they stay as read before.
+          await expect(menuItemModel.replaceForMedia({
+            establishmentId: establishment.id,
+            mediaId: photo,
+            newItems: [{ item_name: 'Кальян на чаше', price_byn: 50, category_raw: null, confidence: 0.95, position: 0 }],
+          })).rejects.toThrow();
+          const [row] = await menuItemModel.getByEstablishmentId(establishment.id, { includeHidden: true });
+          expect(Number(row.price_byn)).toBe(45);
         } finally {
           await pool.query(readFileSync(MIGRATION_038, 'utf8'));
         }
+
+        // The scene: with the table the same «Скрыть» goes through.
+        await hideByName('Кальян на чаше');
+        expect(await shownNames()).toEqual([]);
       });
 
       test('a file written while «Скрыть» on another file holds the establishment waits and comes in hidden', async () => {

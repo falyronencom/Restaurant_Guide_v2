@@ -20,21 +20,6 @@ export const AVATAR_FILE_REASONS = Object.freeze({
 });
 
 /**
- * Whether the table is there — asked BEFORE the caller's transaction: inside it,
- * a missing table would poison the transaction, and the person's own change of
- * photo would answer 500 (the window between the deploy and the migration).
- *
- * @param {Object} [db=pool] - pool or a connected client
- * @returns {Promise<boolean>}
- */
-export const avatarFileDeletionTableExists = async (db = pool) => {
-  const result = await db.query(
-    "SELECT to_regclass('public.avatar_file_deletions') IS NOT NULL AS present",
-  );
-  return result.rows[0]?.present === true;
-};
-
-/**
  * Add the task, inside the caller's transaction: the link goes and its file's
  * task comes in one write. Due at once — nothing is still to land in the file,
  * unlike a folder after a deletion. A file asked for again while its task is open

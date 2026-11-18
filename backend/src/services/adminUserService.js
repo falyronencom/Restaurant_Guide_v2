@@ -68,7 +68,7 @@
  */
 
 import { getClient } from '../config/database.js';
-import { avatarModerationReady, approvedAvatarSql, avatarStateSql } from '../models/avatarModerationModel.js';
+import { approvedAvatarSql, avatarStateSql } from '../models/avatarModerationModel.js';
 import { AVATAR_FILE_REASONS, enqueueAvatarFileDeletion } from '../models/avatarFileDeletionModel.js';
 import { ownAvatarFile } from './avatarFiles.js';
 
@@ -130,7 +130,6 @@ export const USER_ACTION_REFUSALS = Object.freeze({
   AVATAR_SEEN_REQUIRED: 'Не понятно, какое фото вы видели. Обновите список и попробуйте снова',
   AVATAR_CHANGED: 'Фото уже сменилось или убрано. Обновите список и посмотрите, что стоит сейчас',
   AVATAR_SELF: 'Своё фото одобряет или снимает другой модератор',
-  AVATAR_NOT_READY: 'Проверка фото включится после обновления базы данных. Сообщите оператору платформы',
   AVATAR_NOT_APPROVABLE: 'Это фото не из нашего облака и не из входа через Google или Яндекс — одобрить его нельзя, только снять',
 });
 
@@ -632,7 +631,6 @@ const lockAvatarTarget = async (client, userId, actorId, seenUrl) => {
 export const approveAvatar = async (userId, rawSeenUrl, actorId, { ipAddress, userAgent } = {}) => {
   assertUserId(userId);
   const seenUrl = seenAvatarUrl(rawSeenUrl);
-  if (!(await avatarModerationReady())) throw refuse('AVATAR_NOT_READY', 409);
 
   const result = await inTransaction(userId, async (client) => {
     const target = await lockAvatarTarget(client, userId, actorId, seenUrl);
@@ -679,7 +677,6 @@ export const removeAvatar = async (userId, rawSeenUrl, rawReason, actorId, { ipA
   assertUserId(userId);
   const seenUrl = seenAvatarUrl(rawSeenUrl);
   const reason = optionalReason(rawReason);
-  if (!(await avatarModerationReady())) throw refuse('AVATAR_NOT_READY', 409);
 
   const result = await inTransaction(userId, async (client) => {
     const target = await lockAvatarTarget(client, userId, actorId, seenUrl);

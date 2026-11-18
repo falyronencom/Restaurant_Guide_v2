@@ -10,21 +10,6 @@ import { FIRST_ATTEMPT_DELAY_MS } from '../config/avatarDeletion.js';
 import { pool } from '../config/database.js';
 
 /**
- * Whether the table is there — asked BEFORE a deletion's transaction: inside it,
- * a missing table would poison the transaction and the deletion would answer
- * 500 (the window between the deploy and the migration).
- *
- * @param {Object} [db=pool] - pool or a connected client
- * @returns {Promise<boolean>}
- */
-export const avatarDeletionTableExists = async (db = pool) => {
-  const result = await db.query(
-    "SELECT to_regclass('public.avatar_deletions') IS NOT NULL AS present",
-  );
-  return result.rows[0]?.present === true;
-};
-
-/**
  * Add the task, inside the caller's transaction: the deletion and its task are
  * one write. First due after FIRST_ATTEMPT_DELAY_MS, so that an upload under way
  * has landed by then.

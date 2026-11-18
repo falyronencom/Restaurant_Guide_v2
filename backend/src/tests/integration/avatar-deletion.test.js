@@ -190,28 +190,13 @@ describe('задача на удаление папки пишется в тра
     expect(rows[0]).toEqual({ is_active: true, email: p.email });
   });
 
-  test('забытый вызывающим флаг таблицы — отказ, а не молчаливое удаление без задачи', async () => {
-    const p = await person();
-    const client = await getClient();
-    try {
-      await client.query('BEGIN');
-      const account = await lockAccount(client, p.id);
-      await expect(anonymiseAccount(client, account, { userId: p.id })).rejects.toThrow('queueAvatarDeletion');
-      await client.query('ROLLBACK');
-    } finally {
-      client.release();
-    }
-    const { rows } = await query('SELECT is_active FROM users WHERE id = $1', [p.id]);
-    expect(rows[0].is_active).toBe(true);
-  });
-
   test('транзакция откатилась у вызывающего: задачи нет', async () => {
     const p = await person();
     const client = await getClient();
     try {
       await client.query('BEGIN');
       const account = await lockAccount(client, p.id);
-      await anonymiseAccount(client, account, { userId: p.id, queueAvatarDeletion: true });
+      await anonymiseAccount(client, account, { userId: p.id });
       expect((await client.query('SELECT count(*)::int AS n FROM avatar_deletions WHERE user_id = $1', [p.id])).rows[0].n).toBe(1);
       await client.query('ROLLBACK');
     } finally {
@@ -236,7 +221,7 @@ describe('задача на удаление папки пишется в тра
     try {
       await client.query('BEGIN');
       const account = await lockAccount(client, p.id);
-      await anonymiseAccount(client, account, { userId: p.id, queueAvatarDeletion: true });
+      await anonymiseAccount(client, account, { userId: p.id });
       await client.query('COMMIT');
     } finally {
       client.release();
@@ -598,73 +583,54 @@ describe('петля доводит задачу до конца', () => {
 });
 
 // ============================================================================
-// Окно «код раньше миграции»
+// Без таблицы задач удаление не идёт «по-старому»
 // ============================================================================
 
-describe('схема без таблицы: окно между выкаткой и миграцией 040', () => {
+describe('схема без таблицы задач: удаление отказано целиком, а не идёт прежним путём', () => {
+  // До 11.2026 сервер перед удалением спрашивал, есть ли таблица (окно между
+  // выкаткой и миграцией 040), и без неё удалял учётную запись, а текущее фото —
+  // одной попыткой в фоне. База, восстановленная из снимка без 040, молча
+  // возвращала это поведение, и фото могло остаться в облаке. Миграция на проде с
+  // 08.11.2026, снимок схемы её несёт: проверка и прежний путь сняты. Задача —
+  // часть удаления: её некуда записать — нет и удаления.
+  //
   // Таблицу снимает сам тест и возвращает в `finally`. Убитый между ними прогон
   // оставит её снятой, и следующий упадёт на общем TRUNCATE (testTables.js): вернуть
   // можно, применив backend/migrations/040_avatar_deletions.sql. Изолированный раннер
   // (scripts/test-isolated) собирает свою базу заново.
-  test('удаление проходит, ответ тот же; текущий файл удаляется прежним путём; петля молчит', async () => {
+  test('ответ 500; учётная запись, фото и брони как были; облако не тронуто — ни сразу, ни петлёй', async () => {
     const p = await person();
-    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [
-      p.id, `https://res.cloudinary.com/test/image/upload/v1/avatars/${p.id}/face0001.jpg`,
-    ]);
+    const link = `https://res.cloudinary.com/test/image/upload/v1/avatars/${p.id}/face0001.jpg`;
+    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [p.id, link]);
     const { partner, establishment } = await createPartnerWithEstablishment('active');
     await addBooking(establishment.id, p.id);
     const { destroy, resources } = fakeCloud([`avatars/${p.id}/face0001`]);
     const errors = errorLines();
-    const warnings = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
 
     await query('DROP TABLE avatar_deletions');
     try {
-      const response = await deleteAccount(p.accessToken).expect(200);
+      await deleteAccount(p.accessToken).expect(500);
 
-      expect(response.body).toEqual({ success: true, data: { deleted: true } });
       const { rows } = await query('SELECT is_active, avatar_url, email FROM users WHERE id = $1', [p.id]);
-      expect(rows[0]).toEqual({ is_active: false, avatar_url: null, email: null });
-      expect(destroy.mock.calls).toEqual([[`avatars/${p.id}/face0001`, { invalidate: true }]]);
-      expect(await noticesTo(partner.user.id)).toEqual(['Бронь на «Test Establishment» (15 марта 19:00) отменена гостем']);
+      expect(rows[0]).toEqual({ is_active: true, avatar_url: link, email: p.email });
+      expect(await noticesTo(partner.user.id)).toEqual([]);
+      expect(destroy).not.toHaveBeenCalled();
 
-      // Журнал запроса тут ни при чём (в тестах лимитер пишет про Redis): молчит петля.
+      // Петля без таблицы не молчит: каждый проход — строка уровня error.
       errors.mockClear();
-      warnings.mockClear();
-      const info = jest.spyOn(logger, 'info').mockImplementation(() => logger);
       const fresh = await import('../../services/avatarDeletionLoop.js?restart=5');
-      await fresh.tick();
       await fresh.tick();
 
       expect(resources).not.toHaveBeenCalled();
-      expect(errors).not.toHaveBeenCalled();
-      expect(warnings).not.toHaveBeenCalled();
-      // Одна строка на процесс: журнал выкатки показывает, что миграции ещё нет.
-      expect(info.mock.calls.filter(([line]) => line.startsWith('Avatar deletion')))
-        .toEqual([['Avatar deletion: no table yet (migration 040), nothing to do']]);
-    } finally {
-      await query(readFileSync(MIGRATION, 'utf8'));
-    }
-  });
-
-  test.each([
-    ['фото из Google: не наше, облако не зовётся', () => 'https://lh3.googleusercontent.com/a/face'],
-    ['ссылка в чужую папку: чужое, облако не зовётся', (id) => `https://res.cloudinary.com/test/image/upload/v1/avatars/${id}/face0001.jpg`],
-  ])('%s', async (_name, link) => {
-    const p = await person();
-    const stranger = randomUUID();
-    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [p.id, link(stranger)]);
-    const { destroy } = fakeCloud([]);
-
-    await query('DROP TABLE avatar_deletions');
-    try {
-      await deleteAccount(p.accessToken).expect(200);
-
       expect(destroy).not.toHaveBeenCalled();
-      const { rows } = await query('SELECT avatar_url FROM users WHERE id = $1', [p.id]);
-      expect(rows[0].avatar_url).toBeNull();
+      expect(errors.mock.calls.map(([line]) => line)).toContain('Avatar deletion: tick failed');
     } finally {
       await query(readFileSync(MIGRATION, 'utf8'));
     }
+
+    // Сцена: с таблицей то же удаление проходит и оставляет задачу.
+    await deleteAccount(p.accessToken).expect(200);
+    expect(await taskOf(p.id)).toMatchObject({ status: 'pending' });
   });
 });
 
