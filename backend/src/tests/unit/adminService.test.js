@@ -1273,7 +1273,7 @@ describe('adminUpgradeUserToPartner', () => {
     expect(result.role).toBe('partner');
     expect(req.get).toHaveBeenCalledWith('User-Agent');
     // The entry is written with the change, in its transaction
-    // (authService.upgradeUserToPartner; integration/role-upgrade-journal).
+    // (authService.upgradeUserToPartner; integration/account-status).
     expect(AuthService.upgradeUserToPartner).toHaveBeenCalledTimes(1);
     expect(AuthService.upgradeUserToPartner).toHaveBeenCalledWith(TARGET_USER_ID, {
       actorId: ADMIN_ID,

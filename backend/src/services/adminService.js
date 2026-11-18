@@ -49,6 +49,7 @@ import { findCopies } from '../projections/menuItemProjections.js';
  */
 const decideWithJournalEntry = async (write, entry) => {
   const client = await getClient();
+  let broken = null;
   try {
     await client.query('BEGIN');
     const changed = await write(client);
@@ -60,11 +61,12 @@ const decideWithJournalEntry = async (write, entry) => {
     await client.query('COMMIT');
     return changed;
   } catch (error) {
-    // The rollback's own failure must not stand in for the error that caused it.
-    await client.query('ROLLBACK').catch(() => {});
+    // A failed ROLLBACK must not stand in for the error that caused it, and a
+    // client in that state is not given back to the pool as healthy.
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
     throw error;
   } finally {
-    client.release();
+    client.release(broken ?? undefined);
   }
 };
 

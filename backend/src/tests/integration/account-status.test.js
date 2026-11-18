@@ -187,18 +187,34 @@ describe('upgrade to partner — only from the role just read, and with an entry
   test('an entry that cannot be written: the role is not changed', async () => {
     const account = await newAccount('user');
 
-    // ip_address is inet: the entry fails the way any INSERT can.
+    // user_id is a uuid: the entry fails the way any INSERT can, and nothing
+    // else of the change reads the author.
     await expect(
-      upgradeUserToPartner(account.user.id, { ipAddress: 'not-an-address' }),
+      upgradeUserToPartner(account.user.id, { actorId: 'not-an-id' }),
     ).rejects.toThrow();
 
     expect(await roleOf(account.user.id)).toBe('user');
     expect(await journalOf(account.user.id)).toEqual([]);
   });
 
+  test('a request address that is not an address does not refuse the change: the entry goes in without it', async () => {
+    // Behind the edge req.ip comes from the chain the proxies wrote
+    // (config/trustProxy.js); ip_address is inet.
+    const admin = await newAccount('admin');
+    const account = await newAccount('user');
+
+    await upgradeUserToPartner(account.user.id, {
+      actorId: admin.user.id, ipAddress: 'unknown', userAgent: 'panel',
+    });
+
+    expect(await roleOf(account.user.id)).toBe('partner');
+    expect(await journalOf(account.user.id)).toMatchObject([{ user_id: admin.user.id, ip: null }]);
+  });
+
   test('a role changed by someone else between the read and the write is not overwritten', async () => {
     const account = await newAccount('user');
     const other = await getClient();
+    let upgrade;
     let result;
     try {
       // Someone makes the account an admin and has not committed yet: the
@@ -206,7 +222,7 @@ describe('upgrade to partner — only from the role just read, and with an entry
       await other.query('BEGIN');
       await other.query("UPDATE users SET role = 'admin' WHERE id = $1", [account.user.id]);
 
-      const upgrade = upgradeUserToPartner(account.user.id);
+      upgrade = upgradeUserToPartner(account.user.id);
       upgrade.catch(() => {});
 
       // The scene, checked on its own: the upgrade's UPDATE is waiting for the row.
@@ -228,6 +244,9 @@ describe('upgrade to partner — only from the role just read, and with an entry
       throw error;
     } finally {
       other.release();
+      // On a failure above the upgrade is still on its way: it is let finish
+      // here, not under the next test.
+      await upgrade?.catch(() => {});
     }
 
     // Without the condition on the role read, the UPDATE went through once the

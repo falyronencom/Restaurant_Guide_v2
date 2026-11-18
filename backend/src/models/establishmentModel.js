@@ -932,11 +932,15 @@ export const moderateEstablishment = async (establishmentId, moderationData, db 
       return null;
     }
 
-    logger.info('Establishment moderated', {
-      establishmentId,
-      newStatus: status,
-      moderatedBy: moderated_by,
-    });
+    // Inside the caller's transaction nothing is done until its COMMIT: the
+    // caller says so then (adminService).
+    if (db === pool) {
+      logger.info('Establishment moderated', {
+        establishmentId,
+        newStatus: status,
+        moderatedBy: moderated_by,
+      });
+    }
 
     return result.rows[0];
   } catch (error) {
@@ -1312,11 +1316,15 @@ export const changeEstablishmentStatus = async (
       return null;
     }
 
-    logger.info('Establishment status changed', {
-      establishmentId,
-      from: fromStatus,
-      to: toStatus,
-    });
+    // Inside the caller's transaction nothing is done until its COMMIT: the
+    // caller says so then (adminService).
+    if (db === pool) {
+      logger.info('Establishment status changed', {
+        establishmentId,
+        from: fromStatus,
+        to: toStatus,
+      });
+    }
 
     return result.rows[0];
   } catch (error) {

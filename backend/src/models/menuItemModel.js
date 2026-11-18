@@ -239,11 +239,19 @@ const UPDATABLE_FIELDS = [
  * middle left the guest's one line with the new price in some files and the
  * old one in the others.
  *
+ * `lockMenuOf` — the establishment whose rows these are: the statement then
+ * runs under the establishment's lock (lockEstablishmentMenu), in line with
+ * the moderator's «Скрыть» and «Показать снова» and the write of a recognised
+ * file. Two statements that each take several rows of one dish could
+ * otherwise wait for each other's rows — a deadlock, and a 500 for one side.
+ *
  * @param {string[]} ids - UUIDs
  * @param {Object} updates - Fields to update (UPDATABLE_FIELDS)
+ * @param {Object} [options]
+ * @param {string} [options.lockMenuOf] - establishment UUID
  * @returns {Promise<Object[]>} The rows changed; a row that is gone is not among them
  */
-export const updateByIds = async (ids, updates) => {
+export const updateByIds = async (ids, updates, { lockMenuOf = null } = {}) => {
   const setClauses = [];
   const values = [];
   let paramIndex = 1;
@@ -269,8 +277,27 @@ export const updateByIds = async (ids, updates) => {
        WHERE id = ANY($${paramIndex}::uuid[])
        RETURNING ${WRITTEN_ROW_COLUMNS}`;
 
-  const result = await pool.query(query, [...values, ids]);
-  return result.rows;
+  if (!lockMenuOf) {
+    const result = await pool.query(query, [...values, ids]);
+    return result.rows;
+  }
+
+  const client = await pool.connect();
+  let broken = null;
+  try {
+    await client.query('BEGIN');
+    await lockEstablishmentMenu(client, lockMenuOf);
+    const result = await client.query(query, [...values, ids]);
+    await client.query('COMMIT');
+    return result.rows;
+  } catch (error) {
+    // As inTransaction below: the ROLLBACK's own failure does not stand in for
+    // the error, and such a client is not given back as healthy.
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+    throw error;
+  } finally {
+    client.release(broken ?? undefined);
+  }
 };
 
 /**
