@@ -207,30 +207,48 @@ export const findById = async (id) => {
 };
 
 /**
- * Update specific fields of a menu item.
- * Used for inline editing (Segment B partner UI) and moderator hide/unhide (Segment B admin UI).
- *
- * @param {string} id - UUID
- * @param {Object} updates - Fields to update
- * @returns {Promise<Object|null>} Updated row or null if not found
+ * A row as a write gives it back — the columns of `RETURNING *`, with the two
+ * times as instants. They are timestamp WITHOUT time zone, and node-pg reads
+ * such a value on the clock of its own process: the same as stored where the
+ * process runs in UTC, three hours off on a Minsk machine. AT TIME ZONE 'UTC'
+ * hands the instant over whatever the process's zone — the form the
+ * moderator's queue already has (getFlaggedItems).
  */
-export const updateById = async (id, updates) => {
-  const allowedFields = [
-    'item_name',
-    'price_byn',
-    'category_raw',
-    'confidence',
-    'sanity_flag',
-    'is_hidden_by_admin',
-    'hidden_reason',
-    'position',
-  ];
+const WRITTEN_ROW_COLUMNS = `
+  id, establishment_id, media_id, item_name, price_byn, category_raw, confidence,
+  sanity_flag, is_hidden_by_admin, "position", hidden_reason,
+  created_at AT TIME ZONE 'UTC' AS created_at,
+  updated_at AT TIME ZONE 'UTC' AS updated_at`;
 
+/** Fields updateById / updateByIds may write. */
+const UPDATABLE_FIELDS = [
+  'item_name',
+  'price_byn',
+  'category_raw',
+  'confidence',
+  'sanity_flag',
+  'is_hidden_by_admin',
+  'hidden_reason',
+  'position',
+];
+
+/**
+ * The same change of several rows, as one statement: every row named gets it
+ * or none does. A partner's edit of a dish the menu's files share goes this
+ * way (partnerMenuItemService.updateMenuItem) — row by row, a failure in the
+ * middle left the guest's one line with the new price in some files and the
+ * old one in the others.
+ *
+ * @param {string[]} ids - UUIDs
+ * @param {Object} updates - Fields to update (UPDATABLE_FIELDS)
+ * @returns {Promise<Object[]>} The rows changed; a row that is gone is not among them
+ */
+export const updateByIds = async (ids, updates) => {
   const setClauses = [];
   const values = [];
   let paramIndex = 1;
 
-  for (const field of allowedFields) {
+  for (const field of UPDATABLE_FIELDS) {
     if (updates[field] !== undefined) {
       if (field === 'sanity_flag') {
         setClauses.push(`${field} = $${paramIndex}::jsonb`);
@@ -243,22 +261,29 @@ export const updateById = async (id, updates) => {
     }
   }
 
-  if (setClauses.length === 0) {
-    return findById(id);
-  }
+  // Nothing to write: the rows as they are, in the same form a write returns.
+  const query = setClauses.length === 0
+    ? `SELECT ${WRITTEN_ROW_COLUMNS} FROM menu_items WHERE id = ANY($${paramIndex}::uuid[])`
+    : `UPDATE menu_items
+       SET ${[...setClauses, 'updated_at = NOW()'].join(', ')}
+       WHERE id = ANY($${paramIndex}::uuid[])
+       RETURNING ${WRITTEN_ROW_COLUMNS}`;
 
-  setClauses.push('updated_at = NOW()');
-  values.push(id);
+  const result = await pool.query(query, [...values, ids]);
+  return result.rows;
+};
 
-  const query = `
-    UPDATE menu_items
-    SET ${setClauses.join(', ')}
-    WHERE id = $${paramIndex}
-    RETURNING *
-  `;
-
-  const result = await pool.query(query, values);
-  return result.rows[0] || null;
+/**
+ * Update specific fields of a menu item.
+ * Used by the moderator's «Снять флаг» (adminService) — the row and each copy.
+ *
+ * @param {string} id - UUID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<Object|null>} Updated row or null if not found
+ */
+export const updateById = async (id, updates) => {
+  const rows = await updateByIds([id], updates);
+  return rows[0] || null;
 };
 
 /**
@@ -660,7 +685,7 @@ export const hideDish = async ({ menuItemId, reason }) => {
       `UPDATE menu_items
        SET is_hidden_by_admin = TRUE, hidden_reason = $2, updated_at = NOW()
        WHERE id = ANY($1::uuid[])
-       RETURNING *`,
+       RETURNING ${WRITTEN_ROW_COLUMNS}`,
       [ids, reason],
     );
     // Deleting a menu file cascades its rows without the lock: one may have
@@ -708,7 +733,7 @@ export const unhideDish = async ({ menuItemId }) => {
       `UPDATE menu_items
        SET is_hidden_by_admin = FALSE, hidden_reason = NULL, updated_at = NOW()
        WHERE id = ANY($1::uuid[])
-       RETURNING *`,
+       RETURNING ${WRITTEN_ROW_COLUMNS}`,
       [[row.id, ...others.map(r => r.id)]],
     );
     // A row gone with its file meanwhile (see hideDish).

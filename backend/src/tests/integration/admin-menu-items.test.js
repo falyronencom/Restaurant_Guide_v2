@@ -1169,6 +1169,36 @@ describe('GET /api/v1/admin/menu-items/flagged', () => {
     });
 });
 
+describe('«Скрыть», «Показать снова», «Снять флаг» — времена в ответе отдаются как моменты', () => {
+  // created_at и updated_at — timestamp WITHOUT time zone, пишутся NOW() в UTC.
+  // Без каста node-pg читает такую метку как местное время своего процесса: в
+  // проде (TZ=UTC) совпадает, а на гейте (TZ=Europe/Minsk) и на машине
+  // разработчика уезжает на три часа — «изменено три часа назад» про то, что
+  // сделано только что. Допуск — минута: часы БД и теста расходятся на секунды,
+  // дефект — на 10 800 с (реестр, «Наивная метка времени в menuItemModel.updateById»).
+  const SLACK_MS = 60 * 1000;
+  const offNow = (value) => Math.abs(Date.now() - new Date(value).getTime());
+  const post = (path, body) => request(app)
+    .post(`/api/v1/admin/menu-items/${path}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .send(body);
+
+  test.each([
+    ['hide', {}, (id) => post(`${id}/hide`, { reason: 'не блюдо' })],
+    ['unhide', { isHiddenByAdmin: true, hiddenReason: 'не блюдо' }, (id) => post(`${id}/unhide`)],
+    ['dismiss-flag', { sanityFlag: { reason: 'low_confidence', details: {} } }, (id) => post(`${id}/dismiss-flag`)],
+  ])('%s: updated_at и created_at — сейчас, а не три часа назад', async (_name, seed, act) => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const { menuItemId } = await seedMenuItem(establishment.id, seed);
+
+    const res = await act(menuItemId).expect(200);
+
+    expect(res.body.data.id).toBe(menuItemId);
+    expect(offNow(res.body.data.updated_at)).toBeLessThan(SLACK_MS);
+    expect(offNow(res.body.data.created_at)).toBeLessThan(SLACK_MS);
+  });
+});
+
 describe('Auth + authorization', () => {
   test('rejects unauthenticated requests', async () => {
     const res = await request(app)

@@ -12,7 +12,9 @@ import { jest } from '@jest/globals';
 
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   findById: jest.fn(),
-  updateById: jest.fn(),
+  // The edit writes the row and its copies as one statement and gets the rows
+  // changed back as a list (MenuItemModel.updateByIds).
+  updateByIds: jest.fn(),
   getByEstablishmentId: jest.fn(),
   hasHiddenByEstablishment: jest.fn(),
 }));
@@ -69,7 +71,7 @@ test('the read of the mark fails after the edit stood → the edit is answered a
   MenuItemModel.getByEstablishmentId
     .mockResolvedValueOnce([row('Вино')])
     .mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
-  MenuItemModel.updateById.mockResolvedValue(row('Закуски'));
+  MenuItemModel.updateByIds.mockResolvedValue([row('Закуски')]);
 
   await expect(updateMenuItem(PARTNER, 'item-1', { category_raw: 'Закуски' })).resolves.toEqual(row('Закуски'));
 
@@ -84,7 +86,7 @@ test('an edit that brings a line back into the guest\'s view is in the log, with
   MenuItemModel.getByEstablishmentId
     .mockResolvedValueOnce([row('Вино')])
     .mockResolvedValueOnce([row('Закуски')]);
-  MenuItemModel.updateById.mockResolvedValue(row('Закуски'));
+  MenuItemModel.updateByIds.mockResolvedValue([row('Закуски')]);
 
   const answer = await updateMenuItem(PARTNER, 'item-1', { category_raw: 'Закуски' });
 
@@ -107,7 +109,7 @@ test('an edit that leaves the line where it was is not in that log', async () =>
   MenuItemModel.getByEstablishmentId
     .mockResolvedValueOnce([row('Вино')])
     .mockResolvedValueOnce([{ ...row('Вино'), price_byn: '13.00' }]);
-  MenuItemModel.updateById.mockResolvedValue({ ...row('Вино'), price_byn: '13.00' });
+  MenuItemModel.updateByIds.mockResolvedValue([{ ...row('Вино'), price_byn: '13.00' }]);
 
   const answer = await updateMenuItem(PARTNER, 'item-1', { price_byn: 13 });
 

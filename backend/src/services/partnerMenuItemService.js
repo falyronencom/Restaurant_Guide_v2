@@ -259,10 +259,13 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   const reasonBefore = withGuestHiddenReason(visibleRows)
     .find(row => row.id === menuItemId)?.guest_hidden_reason ?? null;
 
-  const updated = await MenuItemModel.updateById(menuItemId, filteredUpdates);
-  for (const copy of copies) {
-    await MenuItemModel.updateById(copy.id, filteredUpdates);
-  }
+  // The row and its copies change together or not at all (updateByIds): one
+  // by one, a failure in the middle left the guest's line with two prices.
+  const written = await MenuItemModel.updateByIds(
+    [menuItemId, ...copies.map(copy => copy.id)],
+    filteredUpdates,
+  );
+  const updated = written.find(row => row.id === menuItemId) ?? null;
 
   // Снятый флаг уменьшает hanging_flags — ту самую величину, что стоит бейджем
   // в рейле админки, строкой на дашборде и карточкой «Флаги без реакции». Правит
