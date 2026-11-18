@@ -19,10 +19,11 @@
  * new file of the server starts naming the avatar column outside the list of
  * places that may.
  *
- * The window between the deploy and migration 041: the approved link is read
- * through to_jsonb(users), where a missing column reads NULL, so nobody's photo
- * reaches other people and no query fails (the reading of 035 and 037). The
- * panel's actions ask avatarModerationReady() first and refuse with a text.
+ * The approved link is read through to_jsonb(users), where a missing column
+ * reads NULL (the reading of 035 and 037) — kept from the window between the
+ * deploy and migration 041, when it kept every photo from other people and no
+ * query failed. The migration is on production since 11.2026: the writers
+ * name the column directly.
  *
  * Every fragment takes a table alias from the code, never input.
  */
@@ -88,25 +89,6 @@ export const avatarQueueConditionSql = (alias) => {
            AND ${u}.is_active = TRUE
            AND ${u}.role IN ('user', 'partner')
            AND NOT ${serviceAccountFlagSql(u)})`;
-};
-
-/**
- * Whether migration 041 is applied: the approved-link column and the file
- * deletion table. Asked before the panel's actions, which write both.
- *
- * @param {Object} [db=pool] - pool or a connected client
- * @returns {Promise<boolean>}
- */
-export const avatarModerationReady = async (db = pool) => {
-  const result = await db.query(
-    `SELECT EXISTS (
-              SELECT 1 FROM pg_attribute
-               WHERE attrelid = 'public.users'::regclass
-                 AND attname = 'avatar_approved_url' AND NOT attisdropped
-            )
-        AND to_regclass('public.avatar_file_deletions') IS NOT NULL AS ready`,
-  );
-  return result.rows[0]?.ready === true;
 };
 
 /**

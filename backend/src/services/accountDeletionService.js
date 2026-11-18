@@ -84,7 +84,6 @@ import { AppError } from '../middleware/errorHandler.js';
 import { writeAuditLogInTransaction } from '../models/auditLogModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { enqueueAvatarDeletion } from '../models/avatarDeletionModel.js';
-import { avatarModerationReady } from '../models/avatarModerationModel.js';
 import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
 import * as NotificationService from './notificationService.js';
@@ -436,15 +435,11 @@ export const eraseLeftovers = async (client, userId) => {
 
   // The link of the photo a moderator approved (migration 041,
   // models/avatarModerationModel.js): the photo goes with the account row
-  // (avatar_url), its approval too. The column is not there before the
-  // migration — applied by hand after the deploy — so it is asked first; the
-  // catalogue read never fails the deletion (Phase 3.5 review of #209, LOW-1).
-  changed.avatar_approvals = (await avatarModerationReady(client))
-    ? (await client.query(
-      'UPDATE users SET avatar_approved_url = NULL WHERE id = $1 AND avatar_approved_url IS NOT NULL',
-      [userId],
-    )).rowCount
-    : 0;
+  // (avatar_url), its approval too.
+  changed.avatar_approvals = (await client.query(
+    'UPDATE users SET avatar_approved_url = NULL WHERE id = $1 AND avatar_approved_url IS NOT NULL',
+    [userId],
+  )).rowCount;
 
   // The journal keeps what was done to the account, not who held it: the
   // name a reset replaced (adminUserService.resetUserName, user_name), the

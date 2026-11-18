@@ -27,9 +27,7 @@
  * moderator took down, the one a person cleared or replaced, the registrant's
  * photo of an account taken over. After its folder task a tick removes up to
  * FILE_TASKS_PER_TICK of them — one destroy each, with the CDN's copies, and
- * the same pauses, claims and giving up as a folder. Without that table (the
- * window before 041) the files part says one line at info level per process and
- * does nothing; the folders go on.
+ * the same pauses, claims and giving up as a folder.
  *
  * Whether it runs at all: config/avatarDeletion.js. It must not start under
  * NODE_ENV=test: tests call tick() directly, with the cloud stubbed.
@@ -50,7 +48,6 @@ import {
   recordFailure,
 } from '../models/avatarDeletionModel.js';
 import {
-  avatarFileDeletionTableExists,
   AVATAR_FILE_REASONS,
   claimNextDueFile,
   countOpenFiles,
@@ -67,7 +64,6 @@ let tickPromise = null;
 let stopRequested = false;
 let lastHeartbeatAt = null;
 let lastFileHeartbeatAt = null;
-let saidFileTableAbsent = false;
 
 /**
  * What goes into the table and the journal from a failure.
@@ -246,7 +242,7 @@ const runFolderTask = async () => {
 
 /**
  * One tick: at most one folder, then up to FILE_TASKS_PER_TICK files. Never
- * rejects. The files part is on whenever its table is there.
+ * rejects.
  *
  * @returns {Promise<void>}
  */
@@ -256,13 +252,8 @@ const runTick = async () => {
     await runFolderTask();
 
     if (stopRequested) return;
-    if (await avatarFileDeletionTableExists()) {
-      await fileHeartbeat();
-      await runFileTasks();
-    } else if (!saidFileTableAbsent) {
-      saidFileTableAbsent = true;
-      logger.info('Avatar file deletion: no table yet (migration 041), nothing to do');
-    }
+    await fileHeartbeat();
+    await runFileTasks();
   } catch (error) {
     // The database, not the cloud. A claimed task comes back by itself.
     logger.error('Avatar deletion: tick failed', { error: failureText(error) });
