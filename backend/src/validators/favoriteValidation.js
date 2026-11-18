@@ -23,13 +23,13 @@ import { body, param, query } from 'express-validator';
  * 
  * POST /api/v1/favorites
  * 
- * This endpoint requires only the establishment_id in the request body.
+ * This endpoint requires only establishmentId in the request body.
  * The user_id comes from authenticated context (JWT token), not from
  * the request body, so we don't validate it here.
  * 
  * Validation rules:
- * - establishment_id must be present (not empty after trimming)
- * - establishment_id must be a valid UUID format
+ * - establishmentId must be present (not empty after trimming)
+ * - establishmentId must be a valid UUID format
  * 
  * We validate UUID format to catch obviously invalid inputs early. The
  * actual existence check happens in the service layer with a database query

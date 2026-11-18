@@ -19,11 +19,11 @@
  * new file of the server starts naming the avatar column outside the list of
  * places that may.
  *
- * The approved link is read through to_jsonb(users), where a missing column
- * reads NULL (the reading of 035 and 037) — kept from the window between the
- * deploy and migration 041, when it kept every photo from other people and no
- * query failed. The migration is on production since 11.2026: the writers
- * name the column directly.
+ * The approved link is a column of users (migration 041, on production since
+ * 11.2026) and is named as one. In the window between the deploy and the
+ * migration it was read through to_jsonb(users), where a missing column reads
+ * NULL; with the window closed the reads and the writes agree again: without
+ * the column both fail, loudly.
  *
  * Every fragment takes a table alias from the code, never input.
  */
@@ -39,12 +39,12 @@ const checkedAlias = (alias) => {
 };
 
 /**
- * The link a moderator approved, NULL without one — and without the column.
+ * The link a moderator approved, NULL without one.
  *
  * @param {string} alias - alias of the users table in the query
  * @returns {string} SQL expression
  */
-export const approvedAvatarSql = (alias) => `(to_jsonb(${checkedAlias(alias)}) ->> 'avatar_approved_url')`;
+export const approvedAvatarSql = (alias) => `${checkedAlias(alias)}.avatar_approved_url`;
 
 /**
  * The photo other people may see: the person's link while a moderator has
