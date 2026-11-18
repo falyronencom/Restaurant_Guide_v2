@@ -64,10 +64,8 @@
  * down, and the answer does not wait for it: a task goes into avatar_deletions in
  * the deletion's transaction, whatever the account's link says now (a person who
  * cleared it or moved to a Google picture may still have files there), and
- * services/avatarDeletionLoop.js repeats until the cloud has let them go. Until
- * migration 040 is applied (the window after a deploy) the table is not there:
- * the question is asked before BEGIN, because inside the transaction a missing
- * table would fail the whole deletion; the current picture then goes the old way.
+ * services/avatarDeletionLoop.js repeats until the cloud has let them go. The
+ * task is part of the deletion: where it cannot be written, nothing is deleted.
  *
  * The mark of a deleted account is its journal entry, user_delete_account,
  * written in the same transaction — no new column, as the panel's block keeps
@@ -81,12 +79,11 @@
  */
 
 import pool, { getClient } from '../config/database.js';
-import { deleteImage, ownCloudPublicId, ownedFolders } from '../config/cloudinary.js';
 import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccounts.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { writeAuditLogInTransaction } from '../models/auditLogModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
-import { avatarDeletionTableExists, enqueueAvatarDeletion } from '../models/avatarDeletionModel.js';
+import { enqueueAvatarDeletion } from '../models/avatarDeletionModel.js';
 import { avatarModerationReady } from '../models/avatarModerationModel.js';
 import { BOOKING_TIME_ZONE } from '../models/bookingModel.js';
 import { invalidateAccountStatus, markSessionsRevoked } from './accountStatus.js';
@@ -272,24 +269,6 @@ const notifyCancelledBookings = async (cancelled) => {
         bookingId: booking.id,
         error: error.message,
       });
-    });
-  }
-};
-
-/**
- * The window before migration 040: no table, no task. The current picture only —
- * an asset on our cloud in the person's own avatar folder (a Google or Yandex
- * picture is not ours to delete) — and the CDN's copies of it; the answer does
- * not wait for the cloud. Goes away with the check for the table once the
- * migration is on production.
- *
- * @param {Object} account - the locked row, read before the deletion
- */
-const deleteCurrentAvatarInBackground = (account) => {
-  const avatarPublicId = ownCloudPublicId(account.avatar_url);
-  if (avatarPublicId) {
-    deleteImage(avatarPublicId, [ownedFolders.avatars(account.id)], { invalidate: true }).catch((error) => {
-      logger.warn('Account deletion: avatar left on the cloud', { userId: account.id, error: error.message });
     });
   }
 };
@@ -540,21 +519,15 @@ export const eraseTextsOfDeletedAuthors = async (db, reviewIds) => {
  *
  * @param {Object} client - pg client inside a transaction
  * @param {Object} account - the locked row (lockAccount)
- * @param {Object} by - { userId } the person; { userId: null, label } a script;
- *   queueAvatarDeletion: required, whether the avatar_deletions table is there
- *   (asked before BEGIN with avatarDeletionTableExists) and the task goes in. A
- *   caller that forgot it would leave the person's pictures on the cloud unnoticed
+ * @param {Object} by - { userId } the person; { userId: null, label } a script
  * @returns {Promise<{counts: Object, cancelled: Array<Object>}>} the counts as
  *   journalled; the bookings it cancelled, for the notices after COMMIT
  */
 export const anonymiseAccount = async (
   client,
   account,
-  { userId: actorId = null, label = null, queueAvatarDeletion } = {},
+  { userId: actorId = null, label = null } = {},
 ) => {
-  if (typeof queueAvatarDeletion !== 'boolean') {
-    throw new TypeError('anonymiseAccount: queueAvatarDeletion must say whether the task table is there');
-  }
   const userId = account.id;
 
   // Unfinished cards go first (deleteUnfinishedCards).
@@ -614,9 +587,7 @@ export const anonymiseAccount = async (
 
   // The pictures leave the cloud after COMMIT, but the task to remove them is
   // part of the deletion: the two commit or roll back as one.
-  if (queueAvatarDeletion) {
-    await enqueueAvatarDeletion(client, userId);
-  }
+  await enqueueAvatarDeletion(client, userId);
 
   const counts = {
     reviews_kept: reviews.rows[0].n,
@@ -658,15 +629,12 @@ export const deleteAccount = async (userId, rawConfirmation) => {
     throw refuse('CONFIRMATION_REQUIRED', 422);
   }
 
-  const queueAvatarDeletion = await avatarDeletionTableExists();
-
   const client = await getClient();
-  let account;
   let outcome;
   try {
     await client.query('BEGIN');
 
-    account = await lockAccount(client, userId);
+    const account = await lockAccount(client, userId);
     if (!account) throw refuse('USER_NOT_FOUND', 404);
 
     if (!account.is_active && await wasAccountDeleted(client, userId)) {
@@ -677,7 +645,7 @@ export const deleteAccount = async (userId, rawConfirmation) => {
     const refusal = accountRefusal(account);
     if (refusal) throw refuse(refusal, 409);
 
-    outcome = await anonymiseAccount(client, account, { userId, queueAvatarDeletion });
+    outcome = await anonymiseAccount(client, account, { userId });
 
     await client.query('COMMIT');
   } catch (error) {
@@ -689,10 +657,6 @@ export const deleteAccount = async (userId, rawConfirmation) => {
 
   // The next request of any session reads the switched-off account.
   invalidateAccountStatus(userId);
-
-  if (!queueAvatarDeletion) {
-    deleteCurrentAvatarInBackground(account);
-  }
 
   await notifyCancelledBookings(outcome.cancelled);
 

@@ -13,7 +13,7 @@
  * остаётся, проверяет delete-own-account.test.js). Здесь — чем путь оператора
  * отличается: запись журнала без автора, с именем скрипта; отключённая учётка
  * удаляется; заведению — уведомление тем же текстом, без пуша; фото — задачей
- * для сервера, а до миграции 040 подсказкой оператору, облако скрипт не зовёт;
+ * для сервера (без таблицы задач скрипт отказывает), облако скрипт не зовёт;
  * вывод — без почты и имени. И
  * отказы: владелец карточек, учётки панели и служебные, нет такой учётки; то
  * же, если это случилось, пока скрипт ждал блокировку строки.
@@ -324,8 +324,8 @@ describe('scripts/delete-account.js — удаление по заявке', () 
     expect(tasks.rows[0].n).toBe(1);
   });
 
-  // Окно до миграции 040: таблицу снимает сам тест и возвращает в `finally`. Убитый
-  // между ними прогон оставит её снятой, и следующий упадёт на общем TRUNCATE
+  // Таблицу задач снимает сам тест и возвращает в `finally`. Убитый между ними
+  // прогон оставит её снятой, и следующий упадёт на общем TRUNCATE
   // (testTables.js): вернуть можно, применив migrations/040_avatar_deletions.sql.
   // Изолированный раннер собирает свою базу заново.
   const withoutTaskTable = async (body) => {
@@ -337,60 +337,26 @@ describe('scripts/delete-account.js — удаление по заявке', () 
     }
   };
 
-  test('до миграции 040: удаление проходит; фото на нашем облаке — говорит оператору, что удалить', async () => {
+  test('без таблицы задач: скрипт отказывает, учётная запись цела — фото не остаётся в облаке молча', async () => {
+    // До 11.2026 скрипт спрашивал, есть ли таблица (окно до миграции 040), без неё
+    // удалял учётную запись и советовал оператору удалить файл руками в консоли
+    // облака. Миграция на проде, снимок схемы её несёт: задача — часть удаления.
     const p = await person();
-    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [
-      p.id, `https://res.cloudinary.com/test/image/upload/v1/avatars/${p.id}/face.jpg`,
-    ]);
+    const link = `https://res.cloudinary.com/test/image/upload/v1/avatars/${p.id}/face.jpg`;
+    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [p.id, link]);
 
     await withoutTaskTable(async () => {
       const result = run([`--email=${p.email}`, '--yes']);
 
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain(`✅ Account ${p.id} deleted: `);
-      expect(result.stdout).toContain(
-        `   The picture is left on the cloud: delete avatars/${p.id}/face in the Cloudinary console (Media Library).`,
-      );
-      expect((await userRow(p.id)).avatar_url).toBeNull();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('❌ Failed:');
+      expect(result.stdout).not.toContain(`✅ Account ${p.id} deleted`);
+      expect(await userRow(p.id)).toMatchObject({ email: p.email, avatar_url: link, is_active: true });
     });
-  });
 
-  test('до миграции 040: ссылка фото ведёт в чужую папку облака — скрипт велит ничего не удалять', async () => {
-    // До 02.10 профиль принимал любую ссылку (authController): в строке может
-    // лежать фото чужой карточки. Сервер такое удалить отказался бы
-    // (outside_owned_folders) — оператор тоже не должен.
-    const p = await person();
-    const card = randomUUID();
-    await query('UPDATE users SET avatar_url = $2 WHERE id = $1', [
-      p.id, `https://res.cloudinary.com/test/image/upload/v1/establishments/${card}/interior/photo.jpg`,
-    ]);
-
-    await withoutTaskTable(async () => {
-      const result = run([`--email=${p.email}`, '--yes']);
-
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain(
-        `   The picture link pointed outside the account's folder avatars/${p.id}/ — another file on the cloud, `
-        + 'not the account\'s: delete nothing.',
-      );
-      expect(result.stdout).not.toContain('delete establishments/');
-      expect((await userRow(p.id)).avatar_url).toBeNull();
-    });
-  });
-
-  test('до миграции 040: фото не с нашего облака (Google) — подсказка смотреть папку аватара', async () => {
-    const p = await person();
-    await query(`UPDATE users SET avatar_url = 'https://lh3.googleusercontent.com/a/face' WHERE id = $1`, [p.id]);
-
-    await withoutTaskTable(async () => {
-      const result = run([`--email=${p.email}`, '--yes']);
-
-      expect(result.status).toBe(0);
-      expect(result.stdout).toContain(
-        '   The picture is not on the cloud this machine is set up for (a Google or Yandex picture — or CLOUDINARY_* '
-        + `not set here): look into avatars/${p.id}/ in the Cloudinary console.`,
-      );
-    });
+    // Сцена: с таблицей тот же запуск удаляет.
+    expect(run([`--email=${p.email}`, '--yes']).status).toBe(0);
+    expect((await userRow(p.id)).is_active).toBe(false);
   });
 
   test('почта на yandex.by: учётка записана входом как yandex.ru — найдена и удалена', async () => {

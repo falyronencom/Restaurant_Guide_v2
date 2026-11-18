@@ -21,10 +21,7 @@
  *     call to the cloud at most, bounded by its deadline (deleteAvatarFolder, 20 s),
  *     plus one write to the database — inside the shutdown budget, which is 195 s
  *     on production and 30 s without the drain variable (config/shutdown.js). A
- *     task cut short this way needs no marking: it comes due when its claim ends;
- *   - without the table (the window before migration 040) a tick does nothing and
- *     says one line at info level per process: the deploy's journal shows it, and
- *     nothing else would.
+ *     task cut short this way needs no marking: it comes due when its claim ends.
  *
  * Single files (migration 041, models/avatarFileDeletionModel.js): the photo a
  * moderator took down, the one a person cleared or replaced, the registrant's
@@ -47,7 +44,6 @@ import {
   resolveAvatarDeletionPolicy,
 } from '../config/avatarDeletion.js';
 import {
-  avatarDeletionTableExists,
   claimNextDue,
   countOpen,
   markDone,
@@ -71,7 +67,6 @@ let tickPromise = null;
 let stopRequested = false;
 let lastHeartbeatAt = null;
 let lastFileHeartbeatAt = null;
-let saidTableAbsent = false;
 let saidFileTableAbsent = false;
 
 /**
@@ -251,19 +246,14 @@ const runFolderTask = async () => {
 
 /**
  * One tick: at most one folder, then up to FILE_TASKS_PER_TICK files. Never
- * rejects. Each part is on whenever its table is there.
+ * rejects. The files part is on whenever its table is there.
  *
  * @returns {Promise<void>}
  */
 const runTick = async () => {
   stopRequested = false;
   try {
-    if (await avatarDeletionTableExists()) {
-      await runFolderTask();
-    } else if (!saidTableAbsent) {
-      saidTableAbsent = true;
-      logger.info('Avatar deletion: no table yet (migration 040), nothing to do');
-    }
+    await runFolderTask();
 
     if (stopRequested) return;
     if (await avatarFileDeletionTableExists()) {

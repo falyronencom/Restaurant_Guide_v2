@@ -114,7 +114,7 @@ const racingDeletion = async (userId, action) => {
   try {
     await holder.query('BEGIN');
     const account = await lockAccount(holder, userId);
-    await anonymiseAccount(holder, account, { userId, queueAvatarDeletion: false });
+    await anonymiseAccount(holder, account, { userId });
     const pending = Promise.resolve()
       .then(action)
       .then((value) => ({ value }), (error) => ({ error }));
