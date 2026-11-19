@@ -207,30 +207,56 @@ export const findById = async (id) => {
 };
 
 /**
- * Update specific fields of a menu item.
- * Used for inline editing (Segment B partner UI) and moderator hide/unhide (Segment B admin UI).
- *
- * @param {string} id - UUID
- * @param {Object} updates - Fields to update
- * @returns {Promise<Object|null>} Updated row or null if not found
+ * A row as a write gives it back — the columns of `RETURNING *`, with the two
+ * times as instants. They are timestamp WITHOUT time zone, and node-pg reads
+ * such a value on the clock of its own process: the same as stored where the
+ * process runs in UTC, three hours off on a Minsk machine. AT TIME ZONE 'UTC'
+ * hands the instant over whatever the process's zone — the form the
+ * moderator's queue already has (getFlaggedItems).
  */
-export const updateById = async (id, updates) => {
-  const allowedFields = [
-    'item_name',
-    'price_byn',
-    'category_raw',
-    'confidence',
-    'sanity_flag',
-    'is_hidden_by_admin',
-    'hidden_reason',
-    'position',
-  ];
+const WRITTEN_ROW_COLUMNS = `
+  id, establishment_id, media_id, item_name, price_byn, category_raw, confidence,
+  sanity_flag, is_hidden_by_admin, "position", hidden_reason,
+  created_at AT TIME ZONE 'UTC' AS created_at,
+  updated_at AT TIME ZONE 'UTC' AS updated_at`;
 
+/** Fields updateById / updateByIds may write. */
+const UPDATABLE_FIELDS = [
+  'item_name',
+  'price_byn',
+  'category_raw',
+  'confidence',
+  'sanity_flag',
+  'is_hidden_by_admin',
+  'hidden_reason',
+  'position',
+];
+
+/**
+ * The same change of several rows, as one statement: every row named gets it
+ * or none does. A partner's edit of a dish the menu's files share goes this
+ * way (partnerMenuItemService.updateMenuItem) — row by row, a failure in the
+ * middle left the guest's one line with the new price in some files and the
+ * old one in the others.
+ *
+ * `lockMenuOf` — the establishment whose rows these are: the statement then
+ * runs under the establishment's lock (lockEstablishmentMenu), in line with
+ * the moderator's «Скрыть» and «Показать снова» and the write of a recognised
+ * file. Two statements that each take several rows of one dish could
+ * otherwise wait for each other's rows — a deadlock, and a 500 for one side.
+ *
+ * @param {string[]} ids - UUIDs
+ * @param {Object} updates - Fields to update (UPDATABLE_FIELDS)
+ * @param {Object} [options]
+ * @param {string} [options.lockMenuOf] - establishment UUID
+ * @returns {Promise<Object[]>} The rows changed; a row that is gone is not among them
+ */
+export const updateByIds = async (ids, updates, { lockMenuOf = null } = {}) => {
   const setClauses = [];
   const values = [];
   let paramIndex = 1;
 
-  for (const field of allowedFields) {
+  for (const field of UPDATABLE_FIELDS) {
     if (updates[field] !== undefined) {
       if (field === 'sanity_flag') {
         setClauses.push(`${field} = $${paramIndex}::jsonb`);
@@ -243,22 +269,48 @@ export const updateById = async (id, updates) => {
     }
   }
 
-  if (setClauses.length === 0) {
-    return findById(id);
+  // Nothing to write: the rows as they are, in the same form a write returns.
+  const query = setClauses.length === 0
+    ? `SELECT ${WRITTEN_ROW_COLUMNS} FROM menu_items WHERE id = ANY($${paramIndex}::uuid[])`
+    : `UPDATE menu_items
+       SET ${[...setClauses, 'updated_at = NOW()'].join(', ')}
+       WHERE id = ANY($${paramIndex}::uuid[])
+       RETURNING ${WRITTEN_ROW_COLUMNS}`;
+
+  if (!lockMenuOf) {
+    const result = await pool.query(query, [...values, ids]);
+    return result.rows;
   }
 
-  setClauses.push('updated_at = NOW()');
-  values.push(id);
+  const client = await pool.connect();
+  let broken = null;
+  try {
+    await client.query('BEGIN');
+    await lockEstablishmentMenu(client, lockMenuOf);
+    const result = await client.query(query, [...values, ids]);
+    await client.query('COMMIT');
+    return result.rows;
+  } catch (error) {
+    // As inTransaction below: the ROLLBACK's own failure does not stand in for
+    // the error, and such a client is not given back as healthy.
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+    throw error;
+  } finally {
+    client.release(broken ?? undefined);
+  }
+};
 
-  const query = `
-    UPDATE menu_items
-    SET ${setClauses.join(', ')}
-    WHERE id = $${paramIndex}
-    RETURNING *
-  `;
-
-  const result = await pool.query(query, values);
-  return result.rows[0] || null;
+/**
+ * Update specific fields of a menu item.
+ * Used by the moderator's «Снять флаг» (adminService) — the row and each copy.
+ *
+ * @param {string} id - UUID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<Object|null>} Updated row or null if not found
+ */
+export const updateById = async (id, updates) => {
+  const rows = await updateByIds([id], updates);
+  return rows[0] || null;
 };
 
 /**
@@ -629,7 +681,7 @@ export const hideDish = async ({ menuItemId, reason }) => {
       `UPDATE menu_items
        SET is_hidden_by_admin = TRUE, hidden_reason = $2, updated_at = NOW()
        WHERE id = ANY($1::uuid[])
-       RETURNING *`,
+       RETURNING ${WRITTEN_ROW_COLUMNS}`,
       [ids, reason],
     );
     // Deleting a menu file cascades its rows without the lock: one may have
@@ -675,7 +727,7 @@ export const unhideDish = async ({ menuItemId }) => {
       `UPDATE menu_items
        SET is_hidden_by_admin = FALSE, hidden_reason = NULL, updated_at = NOW()
        WHERE id = ANY($1::uuid[])
-       RETURNING *`,
+       RETURNING ${WRITTEN_ROW_COLUMNS}`,
       [[row.id, ...others.map(r => r.id)]],
     );
     // A row gone with its file meanwhile (see hideDish).

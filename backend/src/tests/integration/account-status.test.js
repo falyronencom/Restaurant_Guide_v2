@@ -23,7 +23,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, query } from '../utils/database.js';
+import { clearAllData, getClient, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 import { createPartnerWithEstablishment } from '../utils/adminTestHelpers.js';
 import { upgradeUserToPartner } from '../../services/authService.js';
@@ -127,6 +127,133 @@ describe('role changed — the role in the database wins over the role in the to
       .get('/api/v1/partner/establishments')
       .set('Authorization', bearer(account))
       .expect(200);
+  });
+});
+
+describe('upgrade to partner — only from the role just read, and with an entry in the journal of actions', () => {
+  // Register, «смена роли „пользователь → партнёр“ без условия на прежнюю роль
+  // и без записи в журнал действий». The function is called directly: the race
+  // is for a row of the database, and two HTTP requests do not make it.
+  const roleOf = async (userId) => (await query('SELECT role FROM users WHERE id = $1', [userId])).rows[0].role;
+  const journalOf = async (userId) => (await query(
+    `SELECT user_id, action, old_data, new_data, host(ip_address) AS ip, user_agent
+       FROM audit_log WHERE entity_type = 'user' AND entity_id = $1 ORDER BY created_at, id`,
+    [userId],
+  )).rows;
+
+  test('a person who becomes a partner by their own step leaves an entry signed by themself', async () => {
+    const account = await newAccount('user');
+
+    const upgraded = await upgradeUserToPartner(account.user.id);
+
+    expect(upgraded.role).toBe('partner');
+    expect(await journalOf(account.user.id)).toEqual([{
+      user_id: account.user.id,
+      action: 'upgrade_user_to_partner',
+      old_data: { role: 'user' },
+      new_data: { role: 'partner' },
+      ip: null,
+      user_agent: null,
+    }]);
+  });
+
+  test('made a partner by a moderator: one entry, signed by the moderator', async () => {
+    const admin = await newAccount('admin');
+    const account = await newAccount('user');
+
+    await upgradeUserToPartner(account.user.id, {
+      actorId: admin.user.id, ipAddress: '203.0.113.7', userAgent: 'panel',
+    });
+
+    expect(await journalOf(account.user.id)).toEqual([{
+      user_id: admin.user.id,
+      action: 'upgrade_user_to_partner',
+      old_data: { role: 'user' },
+      new_data: { role: 'partner' },
+      ip: '203.0.113.7',
+      user_agent: 'panel',
+    }]);
+  });
+
+  test('a partner is left as they are, and the journal says nothing', async () => {
+    const account = await newAccount('partner');
+
+    const result = await upgradeUserToPartner(account.user.id);
+
+    expect(result.role).toBe('partner');
+    expect(await journalOf(account.user.id)).toEqual([]);
+  });
+
+  test('an entry that cannot be written: the role is not changed', async () => {
+    const account = await newAccount('user');
+
+    // user_id is a uuid: the entry fails the way any INSERT can, and nothing
+    // else of the change reads the author.
+    await expect(
+      upgradeUserToPartner(account.user.id, { actorId: 'not-an-id' }),
+    ).rejects.toThrow();
+
+    expect(await roleOf(account.user.id)).toBe('user');
+    expect(await journalOf(account.user.id)).toEqual([]);
+  });
+
+  test('a request address that is not an address does not refuse the change: the entry goes in without it', async () => {
+    // Behind the edge req.ip comes from the chain the proxies wrote
+    // (config/trustProxy.js); ip_address is inet.
+    const admin = await newAccount('admin');
+    const account = await newAccount('user');
+
+    await upgradeUserToPartner(account.user.id, {
+      actorId: admin.user.id, ipAddress: 'unknown', userAgent: 'panel',
+    });
+
+    expect(await roleOf(account.user.id)).toBe('partner');
+    expect(await journalOf(account.user.id)).toMatchObject([{ user_id: admin.user.id, ip: null }]);
+  });
+
+  test('a role changed by someone else between the read and the write is not overwritten', async () => {
+    const account = await newAccount('user');
+    const other = await getClient();
+    let upgrade;
+    let result;
+    try {
+      // Someone makes the account an admin and has not committed yet: the
+      // upgrade still reads «user», and its UPDATE waits for this row.
+      await other.query('BEGIN');
+      await other.query("UPDATE users SET role = 'admin' WHERE id = $1", [account.user.id]);
+
+      upgrade = upgradeUserToPartner(account.user.id);
+      upgrade.catch(() => {});
+
+      // The scene, checked on its own: the upgrade's UPDATE is waiting for the row.
+      let waiting = 0;
+      for (let attempt = 0; attempt < 150 && waiting === 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        waiting = (await query(
+          `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query LIKE '%SET role = ''partner''%'`,
+        )).rows[0].n;
+      }
+      expect(waiting).toBe(1);
+
+      await other.query('COMMIT');
+      result = await upgrade;
+    } catch (error) {
+      await other.query('ROLLBACK').catch(() => {});
+      throw error;
+    } finally {
+      other.release();
+      // On a failure above the upgrade is still on its way: it is let finish
+      // here, not under the next test.
+      await upgrade?.catch(() => {});
+    }
+
+    // Without the condition on the role read, the UPDATE went through once the
+    // other change was committed and made the admin a partner.
+    expect(result.role).toBe('admin');
+    expect(await roleOf(account.user.id)).toBe('admin');
+    expect(await journalOf(account.user.id)).toEqual([]);
   });
 });
 

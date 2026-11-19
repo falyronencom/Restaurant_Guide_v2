@@ -255,14 +255,22 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
     existing.establishment_id,
     { includeHidden: false },
   );
-  const copies = findCopies(menuItemId, visibleRows);
+  // The id as the database writes it: the one in the address may be the same
+  // id in capitals, and the rows are told apart by the stored spelling.
+  const rowId = existing.id;
+  const copies = findCopies(rowId, visibleRows);
   const reasonBefore = withGuestHiddenReason(visibleRows)
-    .find(row => row.id === menuItemId)?.guest_hidden_reason ?? null;
+    .find(row => row.id === rowId)?.guest_hidden_reason ?? null;
 
-  const updated = await MenuItemModel.updateById(menuItemId, filteredUpdates);
-  for (const copy of copies) {
-    await MenuItemModel.updateById(copy.id, filteredUpdates);
-  }
+  // The row and its copies change together or not at all (updateByIds): one
+  // by one, a failure in the middle left the guest's line with two prices.
+  // Under the establishment's lock, in line with the moderator's «Скрыть».
+  const written = await MenuItemModel.updateByIds(
+    [rowId, ...copies.map(copy => copy.id)],
+    filteredUpdates,
+    { lockMenuOf: existing.establishment_id },
+  );
+  const updated = written.find(row => row.id === rowId) ?? null;
 
   // Снятый флаг уменьшает hanging_flags — ту самую величину, что стоит бейджем
   // в рейле админки, строкой на дашборде и карточкой «Флаги без реакции». Правит
@@ -286,7 +294,7 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
       existing.establishment_id,
       { includeHidden: false },
     ));
-    const marked = rowsNow.find(row => row.id === menuItemId) ?? updated;
+    const marked = rowsNow.find(row => row.id === rowId) ?? updated;
     // A rename is how a wrongly hidden dish comes back, and how a wine could.
     // Nothing stops it; the log keeps who brought what back into the guest's view.
     if (reasonBefore !== null && (marked.guest_hidden_reason ?? null) === null) {

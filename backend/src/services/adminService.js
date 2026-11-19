@@ -36,6 +36,41 @@ import { SANITY_FLAG_REASONS } from './ocr/sanityChecker.js';
 import { findCopies } from '../projections/menuItemProjections.js';
 
 /**
+ * A moderator's decision on a card and its entry in the journal of actions —
+ * one transaction: both are written or neither is. Written «softly»
+ * (createAuditLog swallows its errors), an entry that failed left a card
+ * approved, rejected or suspended with nothing in the journal to show who did
+ * it and when (register item К7; cloud critic 2Б Q5).
+ *
+ * @param {(client: Object) => Promise<Object|null>} write - the card's change,
+ *   on the transaction's client; null — the card was changed meanwhile
+ * @param {Object} entry - fields of the journal entry (AuditLogModel)
+ * @returns {Promise<Object|null>} what `write` returned; null — nothing written
+ */
+const decideWithJournalEntry = async (write, entry) => {
+  const client = await getClient();
+  let broken = null;
+  try {
+    await client.query('BEGIN');
+    const changed = await write(client);
+    if (!changed) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await AuditLogModel.writeAuditLogInTransaction(client, entry);
+    await client.query('COMMIT');
+    return changed;
+  } catch (error) {
+    // A failed ROLLBACK must not stand in for the error that caused it, and a
+    // client in that state is not given back to the pool as healthy.
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+    throw error;
+  } finally {
+    client.release(broken ?? undefined);
+  }
+};
+
+/**
  * Get paginated list of pending establishments for the moderation queue
  *
  * @param {Object} params
@@ -81,7 +116,9 @@ export const getPendingEstablishments = async ({ page = 1, perPage = 20 } = {}) 
  *
  * Two carriers. The journal knows every suspension and its author, and
  * outlives the moderator's decision, which replaces the card's notes — but
- * its write is soft (createAuditLog swallows its errors). The card keeps the
+ * the entries of the partner's pause and of the system's suspension are
+ * written softly (createAuditLog swallows its errors), and so was the
+ * moderator's until 11.2026 (decideWithJournalEntry). The card keeps the
  * marks of a moderator's or the system's suspension until that decision:
  * sending it to moderation does not touch them. Where the marks are, they are
  * this very suspension and win; the journal then only names the moderator,
@@ -376,14 +413,32 @@ export const moderateEstablishment = async (establishmentId, params) => {
     const newStatus = action === 'approve' ? 'active' : 'rejected';
     const setPublishedAt = action === 'approve' && !existing.published_at;
 
-    // Execute moderation
-    const moderated = await EstablishmentModel.moderateEstablishment(
-      establishmentId,
+    // Execute moderation — the decision and its journal entry as one write
+    // (decideWithJournalEntry): an entry that cannot be written refuses the
+    // decision (500 below), and the card stays in the queue.
+    const moderated = await decideWithJournalEntry(
+      client => EstablishmentModel.moderateEstablishment(
+        establishmentId,
+        {
+          status: newStatus,
+          moderated_by: adminUserId,
+          moderation_notes,
+          setPublishedAt,
+        },
+        client,
+      ),
       {
-        status: newStatus,
-        moderated_by: adminUserId,
-        moderation_notes,
-        setPublishedAt,
+        user_id: adminUserId,
+        action: `moderate_${action}`,
+        entity_type: 'establishment',
+        entity_id: establishmentId,
+        old_data: { status: existing.status },
+        new_data: {
+          status: newStatus,
+          moderation_notes,
+        },
+        ip_address: ipAddress,
+        user_agent: userAgent,
       },
     );
 
@@ -395,22 +450,7 @@ export const moderateEstablishment = async (establishmentId, params) => {
       );
     }
 
-    // Record audit log — awaited; createAuditLog swallows its own errors
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action: `moderate_${action}`,
-      entity_type: 'establishment',
-      entity_id: establishmentId,
-      old_data: { status: existing.status },
-      new_data: {
-        status: newStatus,
-        moderation_notes,
-      },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
-
-    // Notify partner — awaited, like the audit log: the in-app notification
+    // Notify partner — awaited: the in-app notification
     // exists by the time the moderator sees the response, and no tail is left
     // running after it (such a tail deadlocked the next test's TRUNCATE, and a
     // restart could drop it). The notifier swallows its own errors and keeps
@@ -676,14 +716,29 @@ export const suspendEstablishment = async (establishmentId, params) => {
 
     // The status and the notes the decision was made on are the guard: if
     // the partner resumes or pauses, or another moderator suspends, in the
-    // meantime, nothing is written (409).
-    const updated = await EstablishmentModel.changeEstablishmentStatus(
-      establishmentId,
+    // meantime, nothing is written (409). The suspension and its journal
+    // entry are one write (decideWithJournalEntry): an entry that cannot be
+    // written refuses the suspension (500 below).
+    const updated = await decideWithJournalEntry(
+      client => EstablishmentModel.changeEstablishmentStatus(
+        establishmentId,
+        {
+          fromStatus: existing.status,
+          toStatus: 'suspended',
+          moderationNotes: updatedNotes,
+          expectedModerationNotes: existing.moderation_notes ?? null,
+        },
+        client,
+      ),
       {
-        fromStatus: existing.status,
-        toStatus: 'suspended',
-        moderationNotes: updatedNotes,
-        expectedModerationNotes: existing.moderation_notes ?? null,
+        user_id: adminUserId,
+        action: 'suspend',
+        entity_type: 'establishment',
+        entity_id: establishmentId,
+        old_data: { status: existing.status },
+        new_data: { status: 'suspended', reason },
+        ip_address: ipAddress,
+        user_agent: userAgent,
       },
     );
 
@@ -694,20 +749,6 @@ export const suspendEstablishment = async (establishmentId, params) => {
         'SUSPEND_CONFLICT',
       );
     }
-
-    // Audit log — awaited for parity with moderateEstablishment and to avoid a
-    // race when tests assert the row right after the response. createAuditLog
-    // swallows its own errors, so awaiting cannot fail the suspension.
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action: 'suspend',
-      entity_type: 'establishment',
-      entity_id: establishmentId,
-      old_data: { status: existing.status },
-      new_data: { status: 'suspended', reason },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
 
     // Notify partner — awaited for the same reasons as in moderateEstablishment;
     // the notifier swallows its own errors, so this cannot fail the suspension.
@@ -809,14 +850,29 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
       : 'active';
 
     // Guarded by the notes as read: two moderators lifting the same
-    // suspension at once write once — the second gets 409.
-    const updated = await EstablishmentModel.changeEstablishmentStatus(
-      establishmentId,
+    // suspension at once write once — the second gets 409. The change and its
+    // journal entry are one write (decideWithJournalEntry): an entry that
+    // cannot be written leaves the card suspended (500 below).
+    const updated = await decideWithJournalEntry(
+      client => EstablishmentModel.changeEstablishmentStatus(
+        establishmentId,
+        {
+          fromStatus: 'suspended',
+          toStatus: returnTo,
+          moderationNotes: withoutModeratorSuspension(notes),
+          expectedModerationNotes: existing.moderation_notes ?? null,
+        },
+        client,
+      ),
       {
-        fromStatus: 'suspended',
-        toStatus: returnTo,
-        moderationNotes: withoutModeratorSuspension(notes),
-        expectedModerationNotes: existing.moderation_notes ?? null,
+        user_id: adminUserId,
+        action: 'unsuspend',
+        entity_type: 'establishment',
+        entity_id: establishmentId,
+        old_data: { status: 'suspended', reason: notes.suspend_reason },
+        new_data: { status: returnTo },
+        ip_address: ipAddress,
+        user_agent: userAgent,
       },
     );
 
@@ -827,20 +883,6 @@ export const unsuspendEstablishment = async (establishmentId, params) => {
         'UNSUSPEND_CONFLICT',
       );
     }
-
-    // Audit log — awaited for parity with moderateEstablishment and to avoid a
-    // race when tests assert the row right after the response. createAuditLog
-    // swallows its own errors, so awaiting cannot fail the reactivation.
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action: 'unsuspend',
-      entity_type: 'establishment',
-      entity_id: establishmentId,
-      old_data: { status: 'suspended', reason: notes.suspend_reason },
-      new_data: { status: returnTo },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
 
     // Notify partner — distinct unsuspend notification, worded by where the
     // card went back to; awaited for the same reasons as in
@@ -1461,19 +1503,13 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
     );
   }
 
-  // Upgrade role (idempotent — safe for already-partner users)
-  const updatedUser = await upgradeUserToPartner(targetUserId);
-
-  // Audit log — awaited; createAuditLog swallows its own errors
-  await AuditLogModel.createAuditLog({
-    user_id: adminUserId,
-    action: 'upgrade_user_to_partner',
-    entity_type: 'user',
-    entity_id: targetUserId,
-    old_data: { role: targetUser.role },
-    new_data: { role: 'partner' },
-    ip_address: req.ip,
-    user_agent: req.get('User-Agent'),
+  // Upgrade role (idempotent — safe for already-partner users). The journal
+  // entry is written with the change, in its transaction, and names the
+  // moderator; an account left as it was — already a partner — gets none.
+  const updatedUser = await upgradeUserToPartner(targetUserId, {
+    actorId: adminUserId,
+    ipAddress: req.ip,
+    userAgent: req.get('User-Agent'),
   });
 
   logger.info('Admin upgraded user to partner', {

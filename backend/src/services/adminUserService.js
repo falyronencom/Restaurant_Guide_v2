@@ -99,6 +99,7 @@ import { isOperatorManaged, serviceAccountFlagSql } from '../config/serviceAccou
 import { isPanelRole } from '../config/panelRoles.js';
 import { AppError } from '../middleware/errorHandler.js';
 import * as AdminUserModel from '../models/adminUserModel.js';
+import { journalAddress } from '../models/auditLogModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import { endAllAccess } from './authService.js';
 import { invalidateAccountStatus } from './accountStatus.js';
@@ -280,7 +281,7 @@ const writeAudit = async (client, { actorId, action, userId, oldData, newData, i
       userId,
       JSON.stringify(oldData),
       JSON.stringify(newData),
-      ipAddress || null,
+      journalAddress(ipAddress),
       userAgent || null,
     ],
   );

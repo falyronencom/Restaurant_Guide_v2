@@ -884,9 +884,11 @@ export const countPendingEstablishments = async () => {
  * @param {string} moderationData.moderated_by - Admin user UUID
  * @param {Object} moderationData.moderation_notes - Per-field notes JSON
  * @param {boolean} moderationData.setPublishedAt - Whether to set published_at
+ * @param {Object} [db=pool] - pool, or a client inside the caller's transaction:
+ *   the moderator's decision and its journal entry are one write (adminService)
  * @returns {Promise<Object>} Updated establishment
  */
-export const moderateEstablishment = async (establishmentId, moderationData) => {
+export const moderateEstablishment = async (establishmentId, moderationData, db = pool) => {
   const { status, moderated_by, moderation_notes, setPublishedAt } = moderationData;
 
   const publishedClause = setPublishedAt
@@ -924,17 +926,21 @@ export const moderateEstablishment = async (establishmentId, moderationData) => 
   ];
 
   try {
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
 
     if (result.rows.length === 0) {
       return null;
     }
 
-    logger.info('Establishment moderated', {
-      establishmentId,
-      newStatus: status,
-      moderatedBy: moderated_by,
-    });
+    // Inside the caller's transaction nothing is done until its COMMIT: the
+    // caller says so then (adminService).
+    if (db === pool) {
+      logger.info('Establishment moderated', {
+        establishmentId,
+        newStatus: status,
+        moderatedBy: moderated_by,
+      });
+    }
 
     return result.rows[0];
   } catch (error) {
@@ -1253,12 +1259,15 @@ export const countSearchResults = async (search, filters = {}) => {
  * @param {Object} params.moderationNotes - Optional moderation notes update
  * @param {string|null} [params.expectedModerationNotes] - Optional guard: the
  *   moderation_notes value the decision was made on (undefined — no guard)
+ * @param {Object} [db=pool] - pool, or a client inside the caller's transaction:
+ *   the moderator's suspension and its journal entry are one write (adminService)
  * @returns {Promise<Object|null>} Updated establishment or null if status or
  *   the guarded notes do not match
  */
 export const changeEstablishmentStatus = async (
   establishmentId,
   { fromStatus, toStatus, moderationNotes, expectedModerationNotes },
+  db = pool,
 ) => {
   const values = [toStatus];
   let paramCount = 2;
@@ -1301,17 +1310,21 @@ export const changeEstablishmentStatus = async (
   `;
 
   try {
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
 
     if (result.rows.length === 0) {
       return null;
     }
 
-    logger.info('Establishment status changed', {
-      establishmentId,
-      from: fromStatus,
-      to: toStatus,
-    });
+    // Inside the caller's transaction nothing is done until its COMMIT: the
+    // caller says so then (adminService).
+    if (db === pool) {
+      logger.info('Establishment status changed', {
+        establishmentId,
+        from: fromStatus,
+        to: toStatus,
+      });
+    }
 
     return result.rows[0];
   } catch (error) {

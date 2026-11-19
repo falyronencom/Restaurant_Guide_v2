@@ -21,6 +21,7 @@ import request from 'supertest';
 import app from '../../server.js';
 import { pool } from '../../config/database.js';
 import * as EstablishmentService from '../../services/establishmentService.js';
+import * as AdminService from '../../services/adminService.js';
 import { clearAllData, clearTableTree, query } from '../utils/database.js';
 import { testUsers } from '../fixtures/users.js';
 import {
@@ -1001,5 +1002,142 @@ describe('GET /api/v1/admin/establishments/:id — partner and page_count', () =
       .expect(200);
     const pages = Object.fromEntries(res.body.data.menu_media.map(m => [m.id, m.page_count]));
     expect(pages).toEqual({ [read]: 7, [cut]: 31, [noMeta]: null, [never]: null });
+  });
+});
+
+// ============================================================================
+// A decision on a card and its journal entry — one write (register item К7)
+// ============================================================================
+
+describe('a decision whose journal entry cannot be written is refused', () => {
+  // The entry used to be written after the decision, «softly»: a failed entry
+  // left the card approved, rejected or suspended and nothing in the journal
+  // of actions to show who did it and when. The entry is made to fail here by
+  // a trigger on audit_log that refuses the entries of one marked user agent —
+  // a stand-in for anything the database refuses; left behind by a killed
+  // run, it would refuse nothing else.
+  const WRITABLE = 'journal-test';
+  const UNWRITABLE = 'journal-refused-for-test';
+  const actor = (userAgent, ipAddress = '203.0.113.7') => ({ adminUserId, ipAddress, userAgent });
+  const journalOf = async (establishmentId) => (await query(
+    'SELECT action FROM audit_log WHERE entity_id = $1 ORDER BY created_at, id',
+    [establishmentId],
+  )).rows.map(row => row.action);
+
+  beforeAll(async () => {
+    await query(
+      `CREATE OR REPLACE FUNCTION refuse_journal_entry_for_test() RETURNS trigger AS $$
+       BEGIN RAISE EXCEPTION 'the journal entry cannot be written (test)'; END;
+       $$ LANGUAGE plpgsql`,
+    );
+    await query('DROP TRIGGER IF EXISTS refuse_journal_entry_for_test ON audit_log');
+    await query(
+      `CREATE TRIGGER refuse_journal_entry_for_test BEFORE INSERT ON audit_log
+       FOR EACH ROW WHEN (NEW.user_agent = '${UNWRITABLE}')
+       EXECUTE FUNCTION refuse_journal_entry_for_test()`,
+    );
+  });
+
+  afterAll(async () => {
+    await query('DROP TRIGGER IF EXISTS refuse_journal_entry_for_test ON audit_log');
+    await query('DROP FUNCTION IF EXISTS refuse_journal_entry_for_test()');
+  });
+  const noticesOf = async (establishmentId) => (await query(
+    'SELECT type FROM notifications WHERE establishment_id = $1',
+    [establishmentId],
+  )).rows.map(row => row.type);
+
+  test.each([
+    ['approve', 'pending', (id, agent) => AdminService.moderateEstablishment(
+      id, { ...actor(agent), action: 'approve', moderation_notes: {} },
+    )],
+    ['reject', 'pending', (id, agent) => AdminService.moderateEstablishment(
+      id, { ...actor(agent), action: 'reject', moderation_notes: { name: 'не то название' } },
+    )],
+    ['suspend', 'active', (id, agent) => AdminService.suspendEstablishment(
+      id, { ...actor(agent), reason: 'Нарушение правил' },
+    )],
+  ])('%s: the card stays as it was, the journal is empty, the partner is not told', async (_name, status, act) => {
+    const { establishment } = await createPartnerWithEstablishment(status);
+
+    await expect(act(establishment.id, UNWRITABLE)).rejects.toMatchObject({ statusCode: 500 });
+
+    const card = await getEstablishmentFromDb(establishment.id);
+    expect(card.status).toBe(status);
+    expect(card.moderated_by).toBeNull();
+    expect(card.published_at).toBeNull();
+    expect(card.moderation_notes).toEqual(establishment.moderation_notes);
+    expect(await journalOf(establishment.id)).toEqual([]);
+    expect(await noticesOf(establishment.id)).toEqual([]);
+
+    // The scene: the same decision with an entry that can be written is made
+    // — the refusal above was the entry's, not the card's.
+    await act(establishment.id, WRITABLE);
+    expect((await getEstablishmentFromDb(establishment.id)).status).not.toBe(status);
+    expect(await journalOf(establishment.id)).toHaveLength(1);
+  });
+
+  test('unsuspend: the card stays suspended, with its reason; the journal keeps only the suspension', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    await AdminService.suspendEstablishment(
+      establishment.id, { ...actor(WRITABLE), reason: 'Нарушение правил' },
+    );
+    const suspended = await getEstablishmentFromDb(establishment.id);
+    const noticesBefore = await noticesOf(establishment.id);
+
+    await expect(
+      AdminService.unsuspendEstablishment(establishment.id, actor(UNWRITABLE)),
+    ).rejects.toMatchObject({ statusCode: 500, code: 'UNSUSPEND_FAILED' });
+
+    const card = await getEstablishmentFromDb(establishment.id);
+    expect(card.status).toBe('suspended');
+    expect(card.moderation_notes).toEqual(suspended.moderation_notes);
+    expect(await journalOf(establishment.id)).toEqual(['suspend']);
+    expect(await noticesOf(establishment.id)).toEqual(noticesBefore);
+
+    await AdminService.unsuspendEstablishment(establishment.id, actor(WRITABLE));
+    expect((await getEstablishmentFromDb(establishment.id)).status).toBe('active');
+    expect(await journalOf(establishment.id)).toEqual(['suspend', 'unsuspend']);
+  });
+
+  test.each([
+    ['a word', 'unknown'],
+    ['an address with a port', '203.0.113.7:51234'],
+    ['nothing', null],
+  ])('a request address that is not an address (%s) does not refuse the decision: the entry goes in without it', async (_name, ipAddress) => {
+    // Behind the edge req.ip comes from the chain the proxies wrote, and an
+    // entry of it need not be an address. ip_address is inet: written as it
+    // came, the entry would fail — and, sharing the decision's transaction,
+    // would refuse every decision made from that network.
+    const { establishment } = await createPartnerWithEstablishment('active');
+
+    await AdminService.suspendEstablishment(
+      establishment.id, { ...actor(WRITABLE, ipAddress), reason: 'Нарушение правил' },
+    );
+
+    expect((await getEstablishmentFromDb(establishment.id)).status).toBe('suspended');
+    const entries = (await query(
+      'SELECT action, host(ip_address) AS ip FROM audit_log WHERE entity_id = $1',
+      [establishment.id],
+    )).rows;
+    expect(entries).toEqual([{ action: 'suspend', ip: null }]);
+  });
+
+  test('a request address that is one is kept, in either spelling', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+
+    await AdminService.suspendEstablishment(
+      establishment.id, { ...actor(WRITABLE, '::ffff:203.0.113.7'), reason: 'Нарушение правил' },
+    );
+    await AdminService.unsuspendEstablishment(establishment.id, actor(WRITABLE, '2001:db8::7'));
+
+    const entries = (await query(
+      'SELECT action, host(ip_address) AS ip FROM audit_log WHERE entity_id = $1 ORDER BY created_at, id',
+      [establishment.id],
+    )).rows;
+    expect(entries).toEqual([
+      { action: 'suspend', ip: '::ffff:203.0.113.7' },
+      { action: 'unsuspend', ip: '2001:db8::7' },
+    ]);
   });
 });

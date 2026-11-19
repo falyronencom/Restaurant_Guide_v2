@@ -1254,8 +1254,8 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
   // request reads the stamp.
   invalidateAccountStatus(existingUser.id);
 
-  // Outside the transaction, as the moderator's own suspension does: the
-  // journal and the notice must not undo a takeover that is already committed.
+  // Outside the transaction: the journal and the notice must not undo a
+  // takeover that is already committed.
   for (const { id: establishmentId, from } of parkedCards) {
     await AuditLogModel.createAuditLog({
       user_id: null,
@@ -1559,90 +1559,156 @@ export async function authenticateWithOAuth(providerData, { reserveNewAccount })
   }
 }
 
-export async function upgradeUserToPartner(userId) {
+/** How many times the role is read before the change is given up (see below). */
+const ROLE_CHANGE_ATTEMPTS = 2;
+
+/**
+ * Make a person a partner: the first card does it for its author
+ * (establishmentService.createEstablishment), a moderator does it from the
+ * panel (adminService.adminUpgradeUserToPartner). A partner or an admin is
+ * left as they are.
+ *
+ * The role is changed only from the role just read: the read takes no lock,
+ * and whoever changed the role since — an operator making the account an
+ * admin, another request making it a partner — must not have that undone.
+ * No row: the role is read again and the decision made again, once.
+ *
+ * The change and its entry in the journal of actions are one transaction. A
+ * person who became a partner by their own first card used to leave a line in
+ * the server's journal only: the moderator could not see when it happened
+ * (register, «смена роли … без записи в журнал действий»). The entry names
+ * who made the change — the person themself unless `journal.actorId` says
+ * otherwise.
+ *
+ * @param {string} userId - whose role changes
+ * @param {Object} [journal] - for the journal entry
+ * @param {string} [journal.actorId=userId] - who makes the change
+ * @param {string|null} [journal.ipAddress]
+ * @param {string|null} [journal.userAgent]
+ * @returns {Promise<Object>} The account row; of an account left as it was —
+ *   { id, role }
+ */
+export async function upgradeUserToPartner(
+  userId,
+  { actorId = userId, ipAddress = null, userAgent = null } = {},
+) {
   try {
-    // First check current role
-    const checkQuery = `
-      SELECT id, role FROM users WHERE id = $1 AND is_active = true
-    `;
-    const checkResult = await pool.query(checkQuery, [userId]);
+    for (let attempt = 1; attempt <= ROLE_CHANGE_ATTEMPTS; attempt += 1) {
+      const checkResult = await pool.query(
+        'SELECT id, role FROM users WHERE id = $1 AND is_active = true',
+        [userId],
+      );
 
-    if (checkResult.rows.length === 0) {
-      throw new Error('USER_NOT_FOUND');
-    }
-
-    const currentRole = checkResult.rows[0].role;
-
-    // Only upgrade if currently a 'user' role
-    if (currentRole === 'partner' || currentRole === 'admin') {
-      logger.debug('User already has elevated role, no upgrade needed', {
-        userId,
-        currentRole,
-      });
-      return checkResult.rows[0];
-    }
-
-    // Upgrade role to partner — of an account still active: the read above
-    // takes no lock, and a deletion that committed since must not get its
-    // empty shell made a partner (critic 2Г, 2.01). The UPDATE waits for the
-    // deletion's row lock and then reads the row the deletion left.
-    const updateQuery = `
-      UPDATE users
-      SET role = 'partner', updated_at = $1
-      WHERE id = $2 AND is_active = true
-      RETURNING id, email, phone, name, role, auth_method, created_at
-    `;
-    // No row: switched off or deleted since the read — as the read would say.
-    const upgraded = (update) => {
-      if (update.rows.length === 0) throw new Error('USER_NOT_FOUND');
-      return update;
-    };
-
-    let result;
-    if (isPanelRole(currentRole)) {
-      // Out of a panel role (a viewer made a partner from the panel): every
-      // session the account had was opened as a panel session and must not
-      // carry on as a partner's — sessions, push devices and unused reset
-      // links end with the change, in one transaction (directive
-      // service_accounts 2026-10-15, B4; critic 2B B2).
-      const client = await getClient();
-      try {
-        await client.query('BEGIN');
-        result = upgraded(await client.query(updateQuery, [new Date(), userId]));
-        await revokeAllSessions(client, userId);
-        await deactivateDevices(client, userId);
-        await client.query(
-          'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
-          [userId],
-        );
-        await client.query('COMMIT');
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally {
-        client.release();
+      if (checkResult.rows.length === 0) {
+        throw new Error('USER_NOT_FOUND');
       }
-    } else {
-      result = upgraded(await pool.query(updateQuery, [new Date(), userId]));
+
+      const currentRole = checkResult.rows[0].role;
+
+      // Only upgrade if currently a 'user' role
+      if (currentRole === 'partner' || currentRole === 'admin') {
+        logger.debug('User already has elevated role, no upgrade needed', {
+          userId,
+          currentRole,
+        });
+        return checkResult.rows[0];
+      }
+
+      const upgraded = await changeRoleToPartner(userId, currentRole, { actorId, ipAddress, userAgent });
+      if (!upgraded) continue;
+
+      // authenticate reads the role from the database (cached briefly): the
+      // new role applies from the next request, whatever token is presented.
+      invalidateAccountStatus(userId);
+
+      logger.info('User upgraded to partner role', {
+        userId,
+        previousRole: currentRole,
+        newRole: 'partner',
+        self: actorId === userId,
+      });
+
+      return upgraded;
     }
 
-    // authenticate reads the role from the database (cached briefly): the
-    // new role applies from the next request, whatever token is presented.
-    invalidateAccountStatus(userId);
-
-    logger.info('User upgraded to partner role', {
-      userId,
-      previousRole: currentRole,
-      newRole: 'partner',
-    });
-
-    return result.rows[0];
+    // The role changed under two reads in a row: nothing written, and no
+    // guess made about which of the roles is the last word.
+    throw new Error('USER_ROLE_CHANGED');
   } catch (error) {
     logger.error('Failed to upgrade user to partner', {
       userId,
       error: error.message,
     });
     throw error;
+  }
+}
+
+/**
+ * The write of upgradeUserToPartner: the role, what goes with leaving a panel
+ * role, and the journal entry — one transaction.
+ *
+ * @param {string} userId
+ * @param {string} fromRole - the role just read; the row is changed only from it
+ * @param {Object} journal - { actorId, ipAddress, userAgent }
+ * @returns {Promise<Object|null>} The account row; null — the role, or the
+ *   account, is no longer what was read, and nothing is written
+ */
+async function changeRoleToPartner(userId, fromRole, { actorId, ipAddress, userAgent }) {
+  const client = await getClient();
+  let broken = null;
+  try {
+    await client.query('BEGIN');
+
+    // Of an account still active and still in the role read above: the UPDATE
+    // waits for a row lock held by a deletion or by another change of role,
+    // and then reads the row that transaction left (critic 2Г, 2.01 — a
+    // deleted account's empty shell must not be made a partner).
+    const update = await client.query(
+      `UPDATE users
+       SET role = 'partner', updated_at = $1
+       WHERE id = $2 AND is_active = true AND role = $3
+       RETURNING id, email, phone, name, role, auth_method, created_at`,
+      [new Date(), userId, fromRole],
+    );
+    if (update.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    if (isPanelRole(fromRole)) {
+      // Out of a panel role (a viewer made a partner from the panel): every
+      // session the account had was opened as a panel session and must not
+      // carry on as a partner's — sessions, push devices and unused reset
+      // links end with the change, in one transaction (directive
+      // service_accounts 2026-10-15, B4; critic 2B B2).
+      await revokeAllSessions(client, userId);
+      await deactivateDevices(client, userId);
+      await client.query(
+        'UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND used_at IS NULL',
+        [userId],
+      );
+    }
+
+    await AuditLogModel.writeAuditLogInTransaction(client, {
+      user_id: actorId,
+      action: 'upgrade_user_to_partner',
+      entity_type: 'user',
+      entity_id: userId,
+      old_data: { role: fromRole },
+      new_data: { role: 'partner' },
+      ip_address: ipAddress,
+      user_agent: userAgent,
+    });
+
+    await client.query('COMMIT');
+    return update.rows[0];
+  } catch (error) {
+    // A failed ROLLBACK must not stand in for the error that caused it, and a
+    // client in that state is not given back to the pool as healthy.
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+    throw error;
+  } finally {
+    client.release(broken ?? undefined);
   }
 }
 

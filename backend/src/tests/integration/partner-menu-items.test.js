@@ -595,6 +595,72 @@ describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several 
 
     expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
   });
+
+  test('the id in the address in capitals: the same row, its copy too, and the row in the answer', async () => {
+    // The database writes an id in small letters, and the rows are told apart
+    // by that spelling — the one of the address must not decide which row is
+    // the edited one, or the answer is empty and the copy is left behind.
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const photoId = await seedPhotoMedia(estId, 'menu');
+    const pdfId = await seedPdfMedia(estId);
+    const [photoLatte] = await seedMenu(estId, photoId, [['Латте', 7]]);
+    const [pdfLatte] = await seedMenu(estId, pdfId, [['Латте', 7]]);
+
+    const res = await request(app)
+      .patch(`/api/v1/partner/menu-items/${photoLatte.id.toUpperCase()}`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .send({ price_byn: 7.5 })
+      .expect(200);
+
+    expect(res.body.data.id).toBe(photoLatte.id);
+    expect(Number(res.body.data.price_byn)).toBe(7.5);
+    expect(Number((await rowOf(photoLatte.id)).price_byn)).toBe(7.5);
+    expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7.5);
+  });
+
+  test('a copy that cannot be written: the row acted on is not changed either — the edit is one write', async () => {
+    // Row by row, a failure between the rows left the guest's one line with
+    // the new price in one file and the old one in the other, and the partner
+    // with an error over a half-made edit (register, «после правки блюдо …
+    // стоит дважды», server part). The failure here is a trigger on the copy
+    // alone — a stand-in for anything the database refuses in the middle.
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const photoId = await seedPhotoMedia(estId, 'menu');
+    const pdfId = await seedPdfMedia(estId);
+    const [photoLatte] = await seedMenu(estId, photoId, [['Латте', 7]]);
+    const [pdfLatte] = await seedMenu(estId, pdfId, [['Латте', 7]]);
+
+    await query(
+      `CREATE OR REPLACE FUNCTION refuse_copy_update_for_test() RETURNS trigger AS $$
+       BEGIN RAISE EXCEPTION 'the copy cannot be written (test)'; END;
+       $$ LANGUAGE plpgsql`,
+    );
+    await query(
+      `CREATE TRIGGER refuse_copy_update_for_test BEFORE UPDATE ON menu_items
+       FOR EACH ROW WHEN (OLD.id = '${pdfLatte.id}'::uuid)
+       EXECUTE FUNCTION refuse_copy_update_for_test()`,
+    );
+    let res;
+    try {
+      res = await request(app)
+        .patch(`/api/v1/partner/menu-items/${photoLatte.id}`)
+        .set('Authorization', `Bearer ${partner.accessToken}`)
+        .send({ price_byn: 7.5 });
+    } finally {
+      await query('DROP TRIGGER IF EXISTS refuse_copy_update_for_test ON menu_items');
+      await query('DROP FUNCTION IF EXISTS refuse_copy_update_for_test()');
+    }
+
+    expect(res.status).toBe(500);
+    // The scene: the trigger is gone, and without it the copy is writable.
+    expect((await query(
+      "SELECT 1 FROM pg_trigger WHERE tgname = 'refuse_copy_update_for_test'",
+    )).rows).toEqual([]);
+    expect(Number((await rowOf(photoLatte.id)).price_byn)).toBe(7);
+    expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
+  });
 });
 
 describe('PATCH /api/v1/partner/menu-items/:id', () => {

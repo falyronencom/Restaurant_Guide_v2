@@ -416,6 +416,8 @@ describe('страж принципа: флаг живёт только на н�
   const ROW_UPDATE_FORMS = [
     { form: 'UPDATE menu_items', re: /\bUPDATE\s+(?:public\.)?menu_items\b/gi },
     { form: 'вызов updateById', re: /\b[Mm]enuItemModel\.updateById\s*\(/g },
+    // Та же правка нескольких строк одной записью (строка и её копии).
+    { form: 'вызов updateByIds', re: /\b[Mm]enuItemModel\.updateByIds\s*\(/g },
   ];
 
   const findRowUpdates = (text) => ROW_UPDATE_FORMS.flatMap(({ form, re }) => [...text.matchAll(re)].map(() => form));
@@ -456,7 +458,8 @@ describe('страж принципа: флаг живёт только на н�
    * распознавания, и перераспознавание её сотрёт.
    */
   const ROW_WRITERS = [
-    ['src/models/menuItemModel.js · UPDATE menu_items', 'updateById — общий UPDATE; кто им пишет — строки ниже'],
+    ['src/models/menuItemModel.js · UPDATE menu_items',
+      'updateByIds — общий UPDATE (updateById — он же для одной строки); кто им пишет — строки ниже'],
     ['src/models/menuItemModel.js · UPDATE menu_items',
       'hideDish («Скрыть» на блюдо во всех файлах заведения, 29.10, п. 3а): только is_hidden_by_admin '
         + 'и hidden_reason — содержимое не меняется; журнал на каждую строку пишет adminService'],
@@ -468,10 +471,9 @@ describe('страж принципа: флаг живёт только на н�
     ['src/services/adminService.js · вызов updateById', 'dismissMenuItemFlag: sanity_flag = null'],
     ['src/services/adminService.js · вызов updateById',
       'applyToMenuItemCopies: «Снять флаг» на копиях — sanity_flag = null'],
-    ['src/services/partnerMenuItemService.js · вызов updateById',
-      'updateMenuItem: правка партнёра обнуляет флаг всегда (последний тест)'],
-    ['src/services/partnerMenuItemService.js · вызов updateById',
-      'updateMenuItem: та же правка на копиях строки — те же поля, флаг обнуляется'],
+    ['src/services/partnerMenuItemService.js · вызов updateByIds',
+      'updateMenuItem: правка партнёра — строка и её копии одной записью, те же поля; флаг '
+        + 'обнуляется всегда (последний тест)'],
   ];
 
   test('якорь: сканер узнаёт каждую форму записи и не принимает за неё снятие и чтение', () => {
@@ -506,6 +508,7 @@ describe('страж принципа: флаг живёт только на н�
     expect(findRowUpdates('UPDATE public.menu_items mi SET item_name = $1')).toEqual(['UPDATE menu_items']);
     expect(findRowUpdates('await MenuItemModel.updateById(id, { price_byn: 5 })')).toEqual(['вызов updateById']);
     expect(findRowUpdates('menuItemModel.updateById(itemId, updates)')).toEqual(['вызов updateById']);
+    expect(findRowUpdates('await MenuItemModel.updateByIds([id, ...copies], updates)')).toEqual(['вызов updateByIds']);
     expect(findRowUpdates([
       'export const updateById = async (id, updates) => {',
       'await EstablishmentModel.updateById(id, { name })',

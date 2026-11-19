@@ -1039,8 +1039,11 @@ describe('setVisibility: the journal entry is part of the change', () => {
     const review = await createTestReview(null, testEstablishmentId, { rating: 1 });
     const before = (await query('SELECT average_rating, review_count FROM establishments WHERE id = $1', [testEstablishmentId])).rows[0];
 
-    // ip_address is INET: this value makes the INSERT into audit_log fail.
-    await expect(adminReviewService.setVisibility(review.id, false, await adminId(), { ipAddress: 'not-an-address' }))
+    // user_id is a uuid: an author that is not one makes the INSERT into
+    // audit_log fail, and nothing else of the hide reads the author. (An
+    // address that is not one no longer does: the entry is written without
+    // it — auditLogModel.journalAddress.)
+    await expect(adminReviewService.setVisibility(review.id, false, 'not-an-id', { ipAddress: '127.0.0.1' }))
       .rejects.toMatchObject({ statusCode: 500, code: 'VISIBILITY_UPDATE_FAILED' });
 
     const stored = (await query('SELECT is_visible FROM reviews WHERE id = $1', [review.id])).rows[0];

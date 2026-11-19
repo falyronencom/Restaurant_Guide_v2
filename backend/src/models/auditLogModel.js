@@ -10,8 +10,28 @@
  *   user_agent TEXT, created_at TIMESTAMP
  */
 
+import net from 'node:net';
 import pool from '../config/database.js';
 import logger from '../utils/logger.js';
+
+/**
+ * The request's address as the journal keeps it (ip_address is inet), or null
+ * when the text is not an address. Behind the edge req.ip is taken from the
+ * chain the proxies wrote (config/trustProxy.js), and an entry of that chain
+ * need not be an address («unknown», an address with a port). An entry
+ * written with its action (writeAuditLogInTransaction) must not refuse the
+ * action over that, and a soft one (createAuditLog) must not be lost over it:
+ * the entry is written without the address.
+ *
+ * @param {*} value - req.ip
+ * @returns {string|null}
+ */
+export const journalAddress = (value) => {
+  if (typeof value !== 'string') return null;
+  // A zone (`fe80::1%eth0`) names an interface of the host; inet takes none.
+  const address = value.split('%')[0];
+  return net.isIP(address) === 0 ? null : address;
+};
 
 /**
  * Insert an audit log entry
@@ -89,7 +109,7 @@ export const createAuditLog = async (data) => {
     entity_id,
     old_data ? JSON.stringify(old_data) : null,
     new_data ? JSON.stringify(new_data) : null,
-    ip_address,
+    journalAddress(ip_address),
     user_agent,
   ];
 
@@ -157,7 +177,7 @@ export const writeAuditLogInTransaction = async (client, data) => {
       entity_id,
       old_data ? JSON.stringify(old_data) : null,
       new_data ? JSON.stringify(new_data) : null,
-      ip_address,
+      journalAddress(ip_address),
       user_agent,
     ],
   );
