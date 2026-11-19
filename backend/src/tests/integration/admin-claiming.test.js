@@ -24,12 +24,20 @@ import {
   getEstablishmentFromDb,
   checkAuditLogExists,
 } from '../utils/adminTestHelpers.js';
+import {
+  UNWRITABLE_AGENT,
+  WRITABLE_AGENT,
+  refuseMarkedJournalEntries,
+  writeAllJournalEntries,
+} from '../utils/journalRefusal.js';
 
 let adminToken;
+let adminUserId;
 
 beforeAll(async () => {
   const admin = await createAdminAndGetToken();
   adminToken = admin.accessToken;
+  adminUserId = admin.user.id;
 });
 
 beforeEach(async () => {
@@ -296,6 +304,100 @@ describe('POST /api/v1/admin/establishments/:id/claim', () => {
     // Verify establishment partner_id unchanged
     const dbEstablishment = await getEstablishmentFromDb(establishment.id);
     expect(dbEstablishment.partner_id).toBe(oldPartnerId);
+  });
+});
+
+// ============================================================================
+// The claim and its journal entries — one write
+// ============================================================================
+//
+// The entry of the claim used to be written after the transaction, «softly»:
+// a failed entry left the card handed over with nothing in the journal to show
+// who did it and when. And the role a claim changed had no entry of its own —
+// the only change of a role to partner without «Пользователь повышен до
+// партнёра» (server cleanup, finding 1). Decision of the Coordinator,
+// 19.11.2026: a moderator's action is written with its entries or not at all.
+
+describe('the claim and its journal entries are one write', () => {
+  const claim = (establishmentId, userId, agent) => request(app)
+    .post(`/api/v1/admin/establishments/${establishmentId}/claim`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .set('User-Agent', agent)
+    .send({ user_id: userId });
+  const journalOf = async (...entityIds) => (await query(
+    `SELECT action, entity_type, user_id, old_data, new_data FROM audit_log
+      WHERE entity_id = ANY($1::uuid[]) ORDER BY created_at, id`,
+    [entityIds],
+  )).rows;
+  const actionsOf = async (...entityIds) => (await journalOf(...entityIds)).map(entry => entry.action);
+
+  beforeAll(refuseMarkedJournalEntries);
+  afterAll(writeAllJournalEntries);
+
+  test('an entry that cannot be written refuses the claim: the card, its legal record and the account stay as they were', async () => {
+    const { partner: holder, establishment } = await createPartnerWithEstablishment('active');
+    await query(
+      `INSERT INTO partner_documents (partner_id, establishment_id, document_type, document_url,
+                                      company_name, tax_id, contact_person, contact_email)
+       VALUES ($1, $2, 'registration_certificate', '', 'ООО «Вкус»', '191234567', 'Иван Прежний', 'ivan@test.com')`,
+      [holder.user.id, establishment.id],
+    );
+    const target = await createRegularUser();
+
+    const refused = await claim(establishment.id, target.user.id, UNWRITABLE_AGENT);
+
+    expect(refused.status).toBe(500);
+    expect(refused.body.error.code).toBe('CLAIM_FAILED');
+    const card = await getEstablishmentFromDb(establishment.id);
+    expect({ partner_id: card.partner_id, claimed_at: card.claimed_at })
+      .toEqual({ partner_id: holder.user.id, claimed_at: null });
+    const docs = await query('SELECT contact_person FROM partner_documents WHERE establishment_id = $1', [establishment.id]);
+    expect(docs.rows).toEqual([{ contact_person: 'Иван Прежний' }]);
+    const account = await query('SELECT role FROM users WHERE id = $1', [target.user.id]);
+    expect(account.rows[0].role).toBe('user');
+    expect(await journalOf(establishment.id, target.user.id)).toEqual([]);
+    const notices = await query(
+      "SELECT id FROM notifications WHERE user_id = $1 AND type = 'establishment_claimed'",
+      [target.user.id],
+    );
+    expect(notices.rows).toEqual([]);
+
+    // The scene: the same claim with entries that can be written is made.
+    await claim(establishment.id, target.user.id, WRITABLE_AGENT).expect(200);
+    expect((await getEstablishmentFromDb(establishment.id)).partner_id).toBe(target.user.id);
+    expect(await actionsOf(establishment.id, target.user.id))
+      .toEqual(['claim_establishment', 'upgrade_user_to_partner']);
+  });
+
+  test('a user the claim makes a partner gets «повышен до партнёра» by the moderator; a partner gets no such entry', async () => {
+    const { establishment: first } = await createPartnerWithEstablishment('active');
+    const { establishment: second } = await createPartnerWithEstablishment('active');
+    const target = await createRegularUser();
+
+    await claim(first.id, target.user.id, WRITABLE_AGENT).expect(200);
+
+    expect(await journalOf(first.id, target.user.id)).toEqual([
+      {
+        action: 'claim_establishment',
+        entity_type: 'establishment',
+        user_id: adminUserId,
+        old_data: { partner_id: first.partner_id },
+        new_data: { partner_id: target.user.id },
+      },
+      {
+        action: 'upgrade_user_to_partner',
+        entity_type: 'user',
+        user_id: adminUserId,
+        old_data: { role: 'user' },
+        new_data: { role: 'partner' },
+      },
+    ]);
+
+    // A second card to the same person, a partner now: the role stays, and
+    // the journal gets the claim only.
+    await claim(second.id, target.user.id, WRITABLE_AGENT).expect(200);
+    expect(await actionsOf(second.id)).toEqual(['claim_establishment']);
+    expect(await actionsOf(target.user.id)).toEqual(['upgrade_user_to_partner']);
   });
 });
 

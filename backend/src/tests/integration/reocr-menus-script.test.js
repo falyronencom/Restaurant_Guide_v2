@@ -233,8 +233,8 @@ describe('scripts/reocr-menus — отбор файлов на базе', () => 
     const files = {};
     const ids = {};
     // A dish of its own in each file: one dish in two files of a venue is one
-    // menu's line, and «Скрыть» reaches its copy (adminService,
-    // applyToMenuItemCopies) — the four writers here are about one file each.
+    // menu's line, and «Скрыть» reaches its copy (MenuItemModel.hideDish) —
+    // the four writers here are about one file each.
     for (const [label, flag, dish] of [
       ['панель: «Снять флаг»', DELTA_FLAG, 'Суп'],
       ['скрипт снятия флагов', DELTA_FLAG, 'Борщ'],
@@ -443,11 +443,9 @@ describe('страж принципа: флаг живёт только на н�
       'createMany: вставляет, что передали; вызовов вне тестов нет — новый поймает «вызов вставки»'],
     ['src/models/menuItemModel.js · столбец вставки', 'replaceForMedia: вставка распознавания в транзакции замены'],
     ['src/services/adminService.js · ключ объекта',
-      'dismissMenuItemFlag: old_data записи журнала — пишется в audit_log, не в позицию'],
-    ['src/services/adminService.js · ключ объекта',
-      'dismissMenuItemFlag на копиях строки (П5+П6, 21.10, A1-07): old_data записи журнала '
-        + 'каждой копии — её прежний флаг, пишется в audit_log, не в позицию; сама копия '
-        + 'получает sanity_flag = null'],
+      'dismissMenuItemFlag (и на копиях строки, П5+П6, 21.10, A1-07): old_data записи журнала '
+        + 'строки и каждой копии — её прежний флаг, пишется в audit_log, не в позицию; сами '
+        + 'строки получают sanity_flag = NULL (menuItemModel.dismissFlag)'],
   ];
 
   /**
@@ -459,18 +457,19 @@ describe('страж принципа: флаг живёт только на н�
    */
   const ROW_WRITERS = [
     ['src/models/menuItemModel.js · UPDATE menu_items',
-      'updateByIds — общий UPDATE (updateById — он же для одной строки); кто им пишет — строки ниже'],
+      'updateByIds — общий UPDATE; кто им пишет — строки ниже'],
     ['src/models/menuItemModel.js · UPDATE menu_items',
       'hideDish («Скрыть» на блюдо во всех файлах заведения, 29.10, п. 3а): только is_hidden_by_admin '
-        + 'и hidden_reason — содержимое не меняется; журнал на каждую строку пишет adminService'],
+        + 'и hidden_reason — содержимое не меняется; журнал на каждую строку пишет adminService '
+        + 'в той же транзакции'],
     ['src/models/menuItemModel.js · UPDATE menu_items', 'unhideDish («Показать снова» на блюдо): то же'],
+    ['src/models/menuItemModel.js · UPDATE menu_items',
+      'dismissFlag («Снять флаг» на строку и копии её строки у гостя): только sanity_flag = NULL; '
+        + 'журнал — adminService в той же транзакции'],
     ['scripts/dismiss-menu-flags/dismiss.js · UPDATE menu_items', 'снимает флаг, журнал — тем же запросом'],
     ['scripts/hidden-dish-copies/plan.js · UPDATE menu_items',
       'скрывает видимые копии скрытых блюд (П4а, слово Координатора): только is_hidden_by_admin '
         + 'и hidden_reason, журнал — тем же запросом'],
-    ['src/services/adminService.js · вызов updateById', 'dismissMenuItemFlag: sanity_flag = null'],
-    ['src/services/adminService.js · вызов updateById',
-      'applyToMenuItemCopies: «Снять флаг» на копиях — sanity_flag = null'],
     ['src/services/partnerMenuItemService.js · вызов updateByIds',
       'updateMenuItem: правка партнёра — строка и её копии одной записью, те же поля; флаг '
         + 'обнуляется всегда (последний тест)'],

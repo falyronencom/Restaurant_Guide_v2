@@ -31,6 +31,12 @@ import {
   getEstablishmentFromDb,
   checkAuditLogExists,
 } from '../utils/adminTestHelpers.js';
+import {
+  UNWRITABLE_AGENT,
+  WRITABLE_AGENT,
+  refuseMarkedJournalEntries,
+  writeAllJournalEntries,
+} from '../utils/journalRefusal.js';
 
 let adminToken;
 let adminUserId;
@@ -1013,35 +1019,18 @@ describe('a decision whose journal entry cannot be written is refused', () => {
   // The entry used to be written after the decision, «softly»: a failed entry
   // left the card approved, rejected or suspended and nothing in the journal
   // of actions to show who did it and when. The entry is made to fail here by
-  // a trigger on audit_log that refuses the entries of one marked user agent —
-  // a stand-in for anything the database refuses; left behind by a killed
-  // run, it would refuse nothing else.
-  const WRITABLE = 'journal-test';
-  const UNWRITABLE = 'journal-refused-for-test';
+  // a trigger on audit_log that refuses the entries of one marked user agent
+  // (utils/journalRefusal.js).
+  const WRITABLE = WRITABLE_AGENT;
+  const UNWRITABLE = UNWRITABLE_AGENT;
   const actor = (userAgent, ipAddress = '203.0.113.7') => ({ adminUserId, ipAddress, userAgent });
   const journalOf = async (establishmentId) => (await query(
     'SELECT action FROM audit_log WHERE entity_id = $1 ORDER BY created_at, id',
     [establishmentId],
   )).rows.map(row => row.action);
 
-  beforeAll(async () => {
-    await query(
-      `CREATE OR REPLACE FUNCTION refuse_journal_entry_for_test() RETURNS trigger AS $$
-       BEGIN RAISE EXCEPTION 'the journal entry cannot be written (test)'; END;
-       $$ LANGUAGE plpgsql`,
-    );
-    await query('DROP TRIGGER IF EXISTS refuse_journal_entry_for_test ON audit_log');
-    await query(
-      `CREATE TRIGGER refuse_journal_entry_for_test BEFORE INSERT ON audit_log
-       FOR EACH ROW WHEN (NEW.user_agent = '${UNWRITABLE}')
-       EXECUTE FUNCTION refuse_journal_entry_for_test()`,
-    );
-  });
-
-  afterAll(async () => {
-    await query('DROP TRIGGER IF EXISTS refuse_journal_entry_for_test ON audit_log');
-    await query('DROP FUNCTION IF EXISTS refuse_journal_entry_for_test()');
-  });
+  beforeAll(refuseMarkedJournalEntries);
+  afterAll(writeAllJournalEntries);
   const noticesOf = async (establishmentId) => (await query(
     'SELECT type FROM notifications WHERE establishment_id = $1',
     [establishmentId],
@@ -1098,6 +1087,47 @@ describe('a decision whose journal entry cannot be written is refused', () => {
     await AdminService.unsuspendEstablishment(establishment.id, actor(WRITABLE));
     expect((await getEstablishmentFromDb(establishment.id)).status).toBe('active');
     expect(await journalOf(establishment.id)).toEqual(['suspend', 'unsuspend']);
+  });
+
+  // The moderator's corrections of a card go the same way (decision of the
+  // Coordinator, 19.11.2026): the entry used to be written after the change,
+  // «softly».
+  test('coordinates: the point stays where it was, the journal is empty', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const pointOf = async () => {
+      const card = await getEstablishmentFromDb(establishment.id);
+      return [Number(card.latitude), Number(card.longitude)];
+    };
+    const move = (agent) => AdminService.updateEstablishmentCoordinates(
+      establishment.id, { ...actor(agent), latitude: 53.91, longitude: 27.56 },
+    );
+    const before = await pointOf();
+
+    await expect(move(UNWRITABLE)).rejects.toMatchObject({ statusCode: 500, code: 'COORDINATES_UPDATE_FAILED' });
+
+    expect(await pointOf()).toEqual(before);
+    expect(await journalOf(establishment.id)).toEqual([]);
+
+    await move(WRITABLE);
+    expect(await pointOf()).toEqual([53.91, 27.56]);
+    expect(await journalOf(establishment.id)).toEqual(['admin_update_coordinates']);
+  });
+
+  test('page address: the page keeps its address, the journal is empty', async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const slugOf = async () => (await getEstablishmentFromDb(establishment.id)).slug;
+    const readdress = (agent) => AdminService.updateEstablishmentSlug(
+      establishment.id, { ...actor(agent), slug: 'novyi-adres-s-zhurnalom' },
+    );
+
+    await expect(readdress(UNWRITABLE)).rejects.toMatchObject({ statusCode: 500, code: 'SLUG_UPDATE_FAILED' });
+
+    expect(await slugOf()).toBe(establishment.slug);
+    expect(await journalOf(establishment.id)).toEqual([]);
+
+    await readdress(WRITABLE);
+    expect(await slugOf()).toBe('novyi-adres-s-zhurnalom');
+    expect(await journalOf(establishment.id)).toEqual(['admin_update_slug']);
   });
 
   test.each([

@@ -34,10 +34,74 @@ export const journalAddress = (value) => {
 };
 
 /**
+ * old_data as the journal keeps it, for both writers below ($3 — entity_type,
+ * $4 — entity_id, $5 — old_data as the writer gave it).
+ *
+ * Позиция меню получает в old_data снимок своего названия и заведения на
+ * момент действия (проход по панели модератора, 20.10, пункт A3-03): журнал
+ * читает человек, а «Позиция меню 7f5534fa» ему ничего не говорит, и после
+ * повторного распознавания строки с этим id уже нет — присоединить её имя
+ * при чтении журнала будет не к чему. Снимок берётся одним оператором с самой
+ * записью, — поэтому его получают все писатели позиций меню, и копии одного
+ * клика тоже, без правки каждого из них. Ключи, переданные писателем, сильнее
+ * снимка. Запись в транзакции действия читает строку такой, какой её оставила
+ * эта транзакция.
+ */
+const OLD_DATA_WITH_MENU_ITEM_SNAPSHOT = `
+      CASE
+        WHEN $3::text = 'menu_item' THEN NULLIF(
+          COALESCE((
+            SELECT jsonb_strip_nulls(jsonb_build_object(
+              'item_name', mi.item_name,
+              'establishment_name', e.name,
+              'establishment_city', e.city
+            ))
+            FROM menu_items mi
+            LEFT JOIN establishments e ON e.id = mi.establishment_id
+            WHERE mi.id = $4::uuid
+          ), '{}'::jsonb) || COALESCE($5::jsonb, '{}'::jsonb),
+          '{}'::jsonb
+        )
+        ELSE $5::jsonb
+      END`;
+
+/**
+ * The values of an entry, in the order both writers' statements take them.
+ *
+ * @param {Object} data - see createAuditLog
+ * @returns {Array}
+ */
+const entryValues = ({
+  user_id,
+  action,
+  entity_type,
+  entity_id,
+  old_data = null,
+  new_data = null,
+  ip_address = null,
+  user_agent = null,
+}) => [
+  user_id,
+  action,
+  entity_type,
+  entity_id,
+  old_data ? JSON.stringify(old_data) : null,
+  new_data ? JSON.stringify(new_data) : null,
+  journalAddress(ip_address),
+  user_agent,
+];
+
+/**
  * Insert an audit log entry
  *
  * Non-critical: failures are logged but do not propagate.
  * This ensures audit logging never blocks the primary operation.
+ *
+ * Only for an action that goes on without its entry by decision of the
+ * Coordinator (19.11.2026): the partner's pause and resume — a refusal to the
+ * partner over the journal is worse than a lost entry — and the system's own
+ * actions, which must not undo a protective step already taken. A moderator's
+ * action writes its entry with writeAuditLogInTransaction.
  *
  * @param {Object} data
  * @param {string} data.user_id - UUID of the admin performing the action
@@ -56,20 +120,8 @@ export const createAuditLog = async (data) => {
     action,
     entity_type,
     entity_id,
-    old_data = null,
-    new_data = null,
-    ip_address = null,
-    user_agent = null,
   } = data;
 
-  // Позиция меню получает в old_data снимок своего названия и заведения на
-  // момент действия (проход по панели модератора, 20.10, пункт A3-03): журнал
-  // читает человек, а «Позиция меню 7f5534fa» ему ничего не говорит, и после
-  // повторного распознавания строки с этим id уже нет — присоединить её имя
-  // при чтении журнала будет не к чему. Снимок берётся здесь, одним
-  // оператором с самой записью, — поэтому его получают все писатели позиций
-  // меню, и копии одного клика тоже, без правки каждого из них. Ключи,
-  // переданные писателем, сильнее снимка.
   const query = `
     INSERT INTO audit_log (
       user_id,
@@ -81,37 +133,12 @@ export const createAuditLog = async (data) => {
       ip_address,
       user_agent
     )
-    SELECT $1::uuid, $2::text, $3::text, $4::uuid,
-      CASE
-        WHEN $3::text = 'menu_item' THEN NULLIF(
-          COALESCE((
-            SELECT jsonb_strip_nulls(jsonb_build_object(
-              'item_name', mi.item_name,
-              'establishment_name', e.name,
-              'establishment_city', e.city
-            ))
-            FROM menu_items mi
-            LEFT JOIN establishments e ON e.id = mi.establishment_id
-            WHERE mi.id = $4::uuid
-          ), '{}'::jsonb) || COALESCE($5::jsonb, '{}'::jsonb),
-          '{}'::jsonb
-        )
-        ELSE $5::jsonb
-      END,
+    SELECT $1::uuid, $2::text, $3::text, $4::uuid,${OLD_DATA_WITH_MENU_ITEM_SNAPSHOT},
       $6::jsonb, $7::inet, $8::text
     RETURNING id, created_at
   `;
 
-  const values = [
-    user_id,
-    action,
-    entity_type,
-    entity_id,
-    old_data ? JSON.stringify(old_data) : null,
-    new_data ? JSON.stringify(new_data) : null,
-    journalAddress(ip_address),
-    user_agent,
-  ];
+  const values = entryValues(data);
 
   try {
     const result = await pool.query(query, values);
@@ -140,46 +167,32 @@ export const createAuditLog = async (data) => {
 
 /**
  * Insert an audit log entry inside the caller's transaction — and fail with
- * it. For an entry another action reads back: the unblock of a person
- * (adminUserService.unblockUser) leaves hidden a review a moderator hid or
- * showed one by one after the block, and learns that from this entry. Written
- * «softly» (createAuditLog), a lost entry let the unblock show again a review
- * the moderator had hidden (tester walkthrough 17.10, P8 report, finding 4).
+ * it: the action is written with its entry or not at all.
+ *
+ * Every action of a moderator goes this way (decision of the Coordinator,
+ * 19.11.2026): written «softly» (createAuditLog), an entry the database
+ * refused left the action done with nothing in the journal to show who did it
+ * and when. And an entry another action reads back must not be lost: the
+ * unblock of a person (adminUserService.unblockUser) leaves hidden a review a
+ * moderator hid or showed one by one after the block, and learns that from
+ * this entry (tester walkthrough 17.10, P8 report, finding 4).
  *
  * created_at is clock_timestamp() — the moment of the write, after the row
  * lock the action waited for — not CURRENT_TIMESTAMP, the start of the
- * transaction; the same rule as the block's own entry.
+ * transaction; the same rule as the block's own entry. A menu item gets the
+ * snapshot of its name, as with createAuditLog.
  *
  * @param {Object} client - pg client inside a transaction
  * @param {Object} data - same fields as createAuditLog
  * @returns {Promise<{id: string, created_at: Date}>}
  */
 export const writeAuditLogInTransaction = async (client, data) => {
-  const {
-    user_id,
-    action,
-    entity_type,
-    entity_id,
-    old_data = null,
-    new_data = null,
-    ip_address = null,
-    user_agent = null,
-  } = data;
-
   const result = await client.query(
     `INSERT INTO audit_log (user_id, action, entity_type, entity_id, old_data, new_data, ip_address, user_agent, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, clock_timestamp())
+     SELECT $1::uuid, $2::text, $3::text, $4::uuid,${OLD_DATA_WITH_MENU_ITEM_SNAPSHOT},
+       $6::jsonb, $7::inet, $8::text, clock_timestamp()
      RETURNING id, created_at`,
-    [
-      user_id,
-      action,
-      entity_type,
-      entity_id,
-      old_data ? JSON.stringify(old_data) : null,
-      new_data ? JSON.stringify(new_data) : null,
-      journalAddress(ip_address),
-      user_agent,
-    ],
+    entryValues(data),
   );
   return result.rows[0];
 };
