@@ -10,7 +10,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import pool, { getClient } from '../config/database.js';
+import { getClient } from '../config/database.js';
 import * as AdminReviewModel from '../models/adminReviewModel.js';
 import * as ReviewModel from '../models/reviewModel.js';
 import * as AuditLogModel from '../models/auditLogModel.js';
@@ -365,7 +365,11 @@ export const setVisibility = async (reviewId, isVisible, adminUserId, { ipAddres
 };
 
 /**
- * Soft-delete a review, update establishment aggregates, write audit log
+ * Soft-delete a review, update establishment aggregates, write audit log —
+ * one transaction, as setVisibility: the entry is written with the deletion
+ * or neither is (decision of the Coordinator, 19.11.2026). Written after it,
+ * «softly», a lost entry left the review deleted with nothing in the journal
+ * to show who did it and when.
  *
  * @param {string} reviewId
  * @param {string} adminUserId
@@ -386,49 +390,61 @@ export const deleteReview = async (reviewId, adminUserId, rawReason, { ipAddress
       throw refuse('REVIEW_ALREADY_DELETED', 400);
     }
 
-    // Soft-delete the review
-    const deleted = await ReviewModel.softDeleteReview(reviewId);
+    let deleted;
+    let broken = null;
+    const client = await getClient();
+    try {
+      await client.query('BEGIN');
+      // Soft-delete the review
+      deleted = await ReviewModel.softDeleteReview(reviewId, client);
+      if (deleted) {
+        // A review of a deleted account, deleted now, loses its text
+        // (accountDeletionService.eraseTextsOfDeletedAuthors); the recount
+        // below follows.
+        await eraseTextsOfDeletedAuthors(client, [reviewId]);
+        // Recalculate establishment aggregates (rating/count)
+        await ReviewModel.updateEstablishmentAggregates(review.establishment_id, client);
+        await AuditLogModel.writeAuditLogInTransaction(client, {
+          user_id: adminUserId,
+          action: 'review_delete',
+          entity_type: 'review',
+          entity_id: reviewId,
+          old_data: {
+            is_deleted: false,
+            is_visible: review.is_visible,
+            establishment_id: review.establishment_id,
+          },
+          new_data: {
+            is_deleted: true,
+            reason,
+          },
+          ip_address: ipAddress,
+          user_agent: userAgent,
+        });
+      }
+      await client.query(deleted ? 'COMMIT' : 'ROLLBACK');
+    } catch (error) {
+      // A failed ROLLBACK must not stand in for the error that caused it, and
+      // a client in that state is not given back to the pool as healthy.
+      await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+      throw error;
+    } finally {
+      client.release(broken ?? undefined);
+    }
 
     if (!deleted) {
       throw refuse('REVIEW_DELETE_FAILED', 500);
     }
 
-    // A review of a deleted account, deleted now, loses its text
-    // (accountDeletionService.eraseTextsOfDeletedAuthors); the recount below
-    // follows.
-    await eraseTextsOfDeletedAuthors(pool, [reviewId]);
-
-    // Recalculate establishment aggregates (rating/count)
-    await ReviewModel.updateEstablishmentAggregates(review.establishment_id);
-
-    // Notify review author, before the answer (see setVisibility)
+    // Notify review author: after the COMMIT, before the answer (see setVisibility)
     await NotificationService.notifyReviewModerated(reviewId, 'deleted')
       .catch(() => {});
 
-    // Audit log — awaited for determinism and parity with the other admin
-    // handlers: the row must exist by the time the response returns.
-    // createAuditLog swallows its own errors, so awaiting cannot fail the call.
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action: 'review_delete',
-      entity_type: 'review',
-      entity_id: reviewId,
-      old_data: {
-        is_deleted: false,
-        is_visible: review.is_visible,
-        establishment_id: review.establishment_id,
-      },
-      new_data: {
-        is_deleted: true,
-        reason,
-      },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
-
     return { success: true };
   } catch (error) {
-    if (error.code) throw error; // Re-throw AppError
+    // A refusal of the service. A database error has a code too (an entry
+    // that could not be written, for one), and must not leave as it is.
+    if (error instanceof AppError) throw error;
     logger.error('Error in deleteReview service', {
       error: error.message,
       reviewId,

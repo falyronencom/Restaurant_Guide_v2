@@ -219,7 +219,7 @@ describe('scripts/dismiss-menu-flags — на базе', () => {
     expect(tea).toEqual({
       is_hidden_by_admin: true,
       hidden_reason: 'проверено вручную',
-      // Как у «Снять флаг» в панели (MenuItemModel.updateById).
+      // Как у «Снять флаг» в панели (MenuItemModel.dismissFlag).
       updated_at_unchanged: false,
     });
 

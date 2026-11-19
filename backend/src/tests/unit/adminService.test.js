@@ -35,6 +35,7 @@ jest.unstable_mockModule('../../models/establishmentModel.js', () => ({
   searchAllEstablishments: jest.fn(),
   countSearchResults: jest.fn(),
   updateEstablishment: jest.fn(),
+  checkDuplicateSlug: jest.fn(),
   claimEstablishment: jest.fn(),
 }));
 
@@ -45,11 +46,10 @@ jest.unstable_mockModule('../../models/mediaModel.js', () => ({
 
 jest.unstable_mockModule('../../models/menuItemModel.js', () => ({
   findById: jest.fn(),
-  updateById: jest.fn(),
-  getByEstablishmentId: jest.fn(),
   getFlaggedItems: jest.fn(),
   hideDish: jest.fn(),
   unhideDish: jest.fn(),
+  dismissFlag: jest.fn(),
   // Не функция, но экспорт: `getFlaggedMenuItems` сверяет по нему режим видимости.
   // Мок без него молча отдал бы undefined, и валидация упала бы на `.includes`
   // вместо того, чтобы отвергнуть неизвестный режим.
@@ -152,6 +152,7 @@ const NotificationService = await import('../../services/notificationService.js'
 const EstablishmentService = await import('../../services/establishmentService.js');
 const AuthService = await import('../../services/authService.js');
 const QualityHealthService = await import('../../services/qualityHealthService.js');
+const BadgesService = await import('../../services/badgesService.js');
 const DB = await import('../../config/database.js');
 
 const {
@@ -161,6 +162,7 @@ const {
   claimEstablishment,
   adminUpgradeUserToPartner,
   updateEstablishmentCoordinates,
+  updateEstablishmentSlug,
   searchUsers,
   hideMenuItem,
   unhideMenuItem,
@@ -243,8 +245,6 @@ beforeEach(() => {
   OcrJobModel.hasCompletedJobForMedia.mockResolvedValue(false);
   OcrJobModel.enqueue.mockResolvedValue(undefined);
   EstablishmentService.validateCityCoordinates.mockReturnValue({ valid: true });
-  // Rows of the establishment for «Скрыть»/«Вернуть» on copies — none by default.
-  MenuItemModel.getByEstablishmentId.mockResolvedValue([]);
   OcrJobModel.getPdfPageCounts.mockResolvedValue(new Map());
 });
 
@@ -903,7 +903,7 @@ describe('claimEstablishment', () => {
     ).rejects.toMatchObject({ code: 'USER_INACTIVE', statusCode: 400 });
     expect(EstablishmentModel.claimEstablishment).not.toHaveBeenCalled();
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
-    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
   });
 
   test('reads the target account inside the transaction, under FOR UPDATE, before the claim', async () => {
@@ -921,7 +921,7 @@ describe('claimEstablishment', () => {
     expect(DB.query).not.toHaveBeenCalledWith(expect.stringContaining('FROM users'), expect.anything());
   });
 
-  test('completes transaction on user→partner upgrade: BEGIN, claim, legal record, UPDATE role, COMMIT', async () => {
+  test('completes transaction on user→partner upgrade: BEGIN, claim, legal record, UPDATE role, journal, COMMIT', async () => {
     const updated = baseEstablishment({ partner_id: TARGET_USER_ID });
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
     EstablishmentModel.claimEstablishment.mockResolvedValue(updated);
@@ -948,18 +948,21 @@ describe('claimEstablishment', () => {
     // The legal record goes with the card on the same client (account
     // deletion, 19.10.2026): the previous holder's contacts leave it.
     expect(PartnerDocumentsModel.dropPreviousHolderRecords).toHaveBeenCalledWith(client, EST_ID, TARGET_USER_ID);
-    // The order the title names — the claim, the legal record and the role
-    // inside one transaction: a role written after COMMIT would leave a
-    // committed owner without the partner role if that write failed.
+    // The order the title names — the claim, the legal record, the role and
+    // the journal inside one transaction: a role written after COMMIT would
+    // leave a committed owner without the partner role if that write failed,
+    // and an entry written after it a claim nobody can trace.
     const at = (fn, isCall) => fn.mock.invocationCallOrder[fn.mock.calls.findIndex(isCall)];
     const order = {
       begin: at(client.query, ([sql]) => sql === 'BEGIN'),
       claim: at(EstablishmentModel.claimEstablishment, () => true),
       legal: at(PartnerDocumentsModel.dropPreviousHolderRecords, () => true),
       role: at(client.query, ([sql]) => String(sql).includes("UPDATE users SET role = 'partner'")),
+      journal: at(AuditLogModel.writeAuditLogInTransaction, ([db]) => db === client),
       commit: at(client.query, ([sql]) => sql === 'COMMIT'),
     };
-    expect(Object.keys(order).sort((a, b) => order[a] - order[b])).toEqual(['begin', 'claim', 'legal', 'role', 'commit']);
+    expect(Object.keys(order).sort((a, b) => order[a] - order[b]))
+      .toEqual(['begin', 'claim', 'legal', 'role', 'journal', 'commit']);
     expect(client.release).toHaveBeenCalled();
   });
 
@@ -977,6 +980,9 @@ describe('claimEstablishment', () => {
     );
     expect(updateUserCalls).toHaveLength(0);
     expect(client.query).toHaveBeenCalledWith('COMMIT');
+    // A role left as it was gets no «повышен до партнёра».
+    expect(AuditLogModel.writeAuditLogInTransaction.mock.calls.map(([, entry]) => entry.action))
+      .toEqual(['claim_establishment']);
   });
 
   test('rolls back transaction and throws CLAIM_FAILED when claim model errors', async () => {
@@ -993,8 +999,28 @@ describe('claimEstablishment', () => {
     expect(queries).toContain('ROLLBACK');
     expect(queries).not.toContain('COMMIT');
     expect(client.release).toHaveBeenCalled();
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
     expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
     expect(NotificationService.notifyEstablishmentClaimed).not.toHaveBeenCalled();
+  });
+
+  test('an entry that cannot be written refuses the claim: rolled back, CLAIM_FAILED, the partner not told', async () => {
+    EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
+    EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
+    AuditLogModel.writeAuditLogInTransaction.mockRejectedValue(new Error('audit_log is unavailable'));
+    const client = buildClaimClient([activeUser]);
+    DB.getClient.mockResolvedValue(client);
+
+    await expect(
+      claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq()),
+    ).rejects.toMatchObject({ code: 'CLAIM_FAILED', statusCode: 500 });
+
+    const queries = client.query.mock.calls.map((c) => c[0]);
+    expect(queries).toContain('ROLLBACK');
+    expect(queries).not.toContain('COMMIT');
+    expect(NotificationService.notifyEstablishmentClaimed).not.toHaveBeenCalled();
+    // The «soft» writer is not a way round.
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 
   test('always releases client even when transaction fails', async () => {
@@ -1010,25 +1036,34 @@ describe('claimEstablishment', () => {
     expect(client.release).toHaveBeenCalledTimes(1);
   });
 
-  test('writes audit_log with previous and new partner_id', async () => {
+  test('writes the claim, with previous and new partner_id, and the upgrade of the role — on the transaction\'s client', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment());
     EstablishmentModel.claimEstablishment.mockResolvedValue(baseEstablishment());
-    DB.getClient.mockResolvedValue(buildClaimClient([activeUser]));
+    const client = buildClaimClient([activeUser]);
+    DB.getClient.mockResolvedValue(client);
 
     await claimEstablishment(EST_ID, TARGET_USER_ID, ADMIN_ID, buildReq());
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: ADMIN_ID,
+    const request = { user_id: ADMIN_ID, ip_address: '127.0.0.1', user_agent: 'TestAgent/1.0' };
+    expect(AuditLogModel.writeAuditLogInTransaction.mock.calls).toEqual([
+      [client, {
+        ...request,
         action: 'claim_establishment',
         entity_type: 'establishment',
         entity_id: EST_ID,
         old_data: { partner_id: PARTNER_ID },
         new_data: { partner_id: TARGET_USER_ID },
-        ip_address: '127.0.0.1',
-        user_agent: 'TestAgent/1.0',
-      }),
-    );
+      }],
+      [client, {
+        ...request,
+        action: 'upgrade_user_to_partner',
+        entity_type: 'user',
+        entity_id: TARGET_USER_ID,
+        old_data: { role: 'user' },
+        new_data: { role: 'partner' },
+      }],
+    ]);
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 
   test('triggers claimed notification for the new partner', async () => {
@@ -1147,7 +1182,9 @@ describe('partner notification is written before the action returns', () => {
 // swallows its errors): an entry that failed left a card approved, rejected or
 // suspended with nothing in the journal to show who did it and when. Now the
 // two share a transaction, and an entry that cannot be written refuses the
-// decision.
+// decision. The moderator's corrections of a card — its point on the map, the
+// address of its page — go the same way (decision of the Coordinator,
+// 19.11.2026).
 
 describe('a moderator decision on a card and its journal entry are one write', () => {
   const actor = { adminUserId: ADMIN_ID, ipAddress: '127.0.0.1', userAgent: 'TestAgent/1.0' };
@@ -1195,6 +1232,29 @@ describe('a moderator decision on a card and its journal entry are one write', (
         EstablishmentModel.changeEstablishmentStatus.mockResolvedValue(baseEstablishment({ status: 'active' }));
       },
       act: () => unsuspendEstablishment(EST_ID, actor),
+    },
+    {
+      name: 'coordinates',
+      write: 'updateEstablishment',
+      failure: 'COORDINATES_UPDATE_FAILED',
+      arrange: () => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(baseEstablishment({ status: 'active' }));
+        EstablishmentModel.updateEstablishment.mockResolvedValue(baseEstablishment({ status: 'active' }));
+      },
+      act: () => updateEstablishmentCoordinates(EST_ID, { ...actor, latitude: 53.91, longitude: 27.56 }),
+    },
+    {
+      name: 'page address',
+      write: 'updateEstablishment',
+      failure: 'SLUG_UPDATE_FAILED',
+      arrange: () => {
+        EstablishmentModel.findEstablishmentById.mockResolvedValue(
+          baseEstablishment({ status: 'active', slug: 'staryi-adres' }),
+        );
+        EstablishmentModel.checkDuplicateSlug.mockResolvedValue(false);
+        EstablishmentModel.updateEstablishment.mockResolvedValue(baseEstablishment({ status: 'active' }));
+      },
+      act: () => updateEstablishmentSlug(EST_ID, { ...actor, slug: 'novyi-adres' }),
     },
   ];
 
@@ -1385,10 +1445,11 @@ describe('updateEstablishmentCoordinates', () => {
     expect(EstablishmentModel.updateEstablishment).toHaveBeenCalledWith(
       EST_ID,
       { latitude: validParams.latitude, longitude: validParams.longitude },
+      journalClient,
     );
   });
 
-  test('writes audit_log with parsed old coords and new coords', async () => {
+  test('writes the journal entry with parsed old coords and new coords, in the change\'s transaction', async () => {
     EstablishmentModel.findEstablishmentById.mockResolvedValue(
       baseEstablishment({ latitude: '53.5', longitude: '27.0' }),
     );
@@ -1396,7 +1457,8 @@ describe('updateEstablishmentCoordinates', () => {
 
     await updateEstablishmentCoordinates(EST_ID, validParams);
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+    expect(AuditLogModel.writeAuditLogInTransaction).toHaveBeenCalledWith(
+      journalClient,
       expect.objectContaining({
         user_id: ADMIN_ID,
         action: 'admin_update_coordinates',
@@ -1406,6 +1468,7 @@ describe('updateEstablishmentCoordinates', () => {
         new_data: { latitude: validParams.latitude, longitude: validParams.longitude },
       }),
     );
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 });
 
@@ -1464,6 +1527,20 @@ const baseMenuItem = (overrides = {}) => ({
   ...overrides,
 });
 
+/**
+ * The model's transaction of a moderator's action on a dish (hideDish,
+ * unhideDish, dismissFlag), as the real one runs it: the journal entries the
+ * service hands over (`record`) are written on its client before it commits,
+ * and only for a dish actually changed. Its client here is journalClient; a
+ * failure of `record` is the transaction's failure.
+ */
+const dishTransaction = (done) => async ({ record }) => {
+  if (done.status === 'done' && record) await record(journalClient, done);
+  return done;
+};
+
+const journalEntries = () => AuditLogModel.writeAuditLogInTransaction.mock.calls;
+
 describe('hideMenuItem', () => {
   const baseParams = {
     reason: 'Inappropriate content',
@@ -1504,35 +1581,36 @@ describe('hideMenuItem', () => {
 
   test('throws MENU_ITEM_HIDE_CONFLICT when the row is gone by the time the dish is hidden', async () => {
     MenuItemModel.findById.mockResolvedValue(baseMenuItem());
-    MenuItemModel.hideDish.mockResolvedValue({ status: 'gone' });
+    MenuItemModel.hideDish.mockImplementation(dishTransaction({ status: 'gone' }));
 
     await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_HIDE_CONFLICT', statusCode: 409 });
-    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
   });
 
   test('throws MENU_ITEM_ALREADY_HIDDEN when another moderator hid it meanwhile', async () => {
     MenuItemModel.findById.mockResolvedValue(baseMenuItem());
-    MenuItemModel.hideDish.mockResolvedValue({ status: 'already' });
+    MenuItemModel.hideDish.mockImplementation(dishTransaction({ status: 'already' }));
 
     await expect(hideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_ALREADY_HIDDEN', statusCode: 400 });
-    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
   });
 
-  test('hides item with reason, writes audit log, and does NOT trigger notification (Phase 1 policy)', async () => {
+  test('hides item with reason, writes the journal entry in the hide\'s transaction, and does NOT trigger notification (Phase 1 policy)', async () => {
     MenuItemModel.findById.mockResolvedValue(baseMenuItem());
     const updated = baseMenuItem({ is_hidden_by_admin: true, hidden_reason: baseParams.reason });
-    MenuItemModel.hideDish.mockResolvedValue({ status: 'done', row: updated, others: [] });
+    MenuItemModel.hideDish.mockImplementation(dishTransaction({ status: 'done', row: updated, others: [] }));
 
     const result = await hideMenuItem(MENU_ITEM_ID, baseParams);
 
     expect(result).toEqual(updated);
-    expect(MenuItemModel.hideDish).toHaveBeenCalledWith({
+    expect(MenuItemModel.hideDish).toHaveBeenCalledWith(expect.objectContaining({
       menuItemId: MENU_ITEM_ID,
       reason: baseParams.reason,
-    });
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
+    }));
+    expect(journalEntries()).toEqual([[
+      journalClient,
       expect.objectContaining({
         user_id: ADMIN_ID,
         action: 'hide_menu_item',
@@ -1541,10 +1619,21 @@ describe('hideMenuItem', () => {
         old_data: { is_hidden_by_admin: false },
         new_data: { is_hidden_by_admin: true, reason: baseParams.reason },
       }),
-    );
+    ]]);
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
     // Phase 1 decision: no partner notification on hide
     expect(NotificationService.notifyEstablishmentStatusChange).not.toHaveBeenCalled();
     expect(NotificationService.notifyEstablishmentClaimed).not.toHaveBeenCalled();
+  });
+
+  test('an entry that cannot be written is the hide\'s failure: it reaches the caller, the queue counters stay', async () => {
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem());
+    MenuItemModel.hideDish.mockImplementation(dishTransaction({ status: 'done', row: baseMenuItem(), others: [] }));
+    AuditLogModel.writeAuditLogInTransaction.mockRejectedValue(new Error('audit_log is unavailable'));
+
+    await expect(hideMenuItem(MENU_ITEM_ID, baseParams)).rejects.toThrow('audit_log is unavailable');
+    expect(BadgesService.invalidateCache).not.toHaveBeenCalled();
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 });
 
@@ -1563,24 +1652,24 @@ describe('hideMenuItem — the dish in the other files of the establishment', ()
     const pdfCopy = baseMenuItem({ id: uuidv4(), media_id: uuidv4() });
     const lunchRow = baseMenuItem({ id: uuidv4(), media_id: uuidv4(), price_byn: 9 });
     MenuItemModel.findById.mockResolvedValue(primary);
-    MenuItemModel.hideDish.mockResolvedValue({
+    MenuItemModel.hideDish.mockImplementation(dishTransaction({
       status: 'done',
       row: { ...primary, is_hidden_by_admin: true, hidden_reason: baseParams.reason },
       others: [pdfCopy, lunchRow],
-    });
+    }));
 
     await hideMenuItem(MENU_ITEM_ID, baseParams);
 
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledTimes(3);
+    expect(journalEntries()).toHaveLength(3);
     for (const other of [pdfCopy, lunchRow]) {
-      expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
+      expect(AuditLogModel.writeAuditLogInTransaction).toHaveBeenCalledWith(journalClient, expect.objectContaining({
         user_id: ADMIN_ID,
         action: 'hide_menu_item',
         entity_id: other.id,
         new_data: { is_hidden_by_admin: true, reason: baseParams.reason, copy_of: MENU_ITEM_ID },
       }));
     }
-    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
   });
 });
 
@@ -1616,48 +1705,64 @@ describe('unhideMenuItem', () => {
     MenuItemModel.findById.mockResolvedValue(
       baseMenuItem({ is_hidden_by_admin: true }),
     );
-    MenuItemModel.unhideDish.mockResolvedValue({ status: 'gone' });
+    MenuItemModel.unhideDish.mockImplementation(dishTransaction({ status: 'gone' }));
 
     await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_UNHIDE_CONFLICT', statusCode: 409 });
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
   });
 
   test('throws MENU_ITEM_NOT_HIDDEN when another moderator showed it meanwhile', async () => {
     MenuItemModel.findById.mockResolvedValue(
       baseMenuItem({ is_hidden_by_admin: true }),
     );
-    MenuItemModel.unhideDish.mockResolvedValue({ status: 'not_hidden' });
+    MenuItemModel.unhideDish.mockImplementation(dishTransaction({ status: 'not_hidden' }));
 
     await expect(unhideMenuItem(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_NOT_HIDDEN', statusCode: 400 });
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
   });
 
-  test('unhides item, clears hidden_reason, and writes audit log', async () => {
+  test('unhides item, clears hidden_reason, and writes the journal entries in the unhide\'s transaction', async () => {
     MenuItemModel.findById.mockResolvedValue(
       baseMenuItem({ is_hidden_by_admin: true, hidden_reason: 'old reason' }),
     );
     const updated = baseMenuItem({ is_hidden_by_admin: false, hidden_reason: null });
     const other = baseMenuItem({ id: uuidv4(), is_hidden_by_admin: true, hidden_reason: 'old reason' });
-    MenuItemModel.unhideDish.mockResolvedValue({ status: 'done', row: updated, others: [other], forgotten: 1 });
+    MenuItemModel.unhideDish.mockImplementation(
+      dishTransaction({ status: 'done', row: updated, others: [other], forgotten: 1 }),
+    );
 
     const result = await unhideMenuItem(MENU_ITEM_ID, baseParams);
 
     expect(result).toEqual(updated);
-    expect(MenuItemModel.unhideDish).toHaveBeenCalledWith({ menuItemId: MENU_ITEM_ID });
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'unhide_menu_item',
-      entity_id: other.id,
-      new_data: { is_hidden_by_admin: false, copy_of: MENU_ITEM_ID },
-    }));
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(MenuItemModel.unhideDish).toHaveBeenCalledWith(expect.objectContaining({ menuItemId: MENU_ITEM_ID }));
+    expect(journalEntries()).toEqual([
+      [journalClient, expect.objectContaining({
         action: 'unhide_menu_item',
         entity_type: 'menu_item',
         entity_id: MENU_ITEM_ID,
         old_data: { is_hidden_by_admin: true },
         new_data: { is_hidden_by_admin: false },
-      }),
+      })],
+      [journalClient, expect.objectContaining({
+        action: 'unhide_menu_item',
+        entity_id: other.id,
+        new_data: { is_hidden_by_admin: false, copy_of: MENU_ITEM_ID },
+      })],
+    ]);
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  test('an entry that cannot be written is the unhide\'s failure: it reaches the caller, the queue counters stay', async () => {
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem({ is_hidden_by_admin: true }));
+    MenuItemModel.unhideDish.mockImplementation(
+      dishTransaction({ status: 'done', row: baseMenuItem(), others: [], forgotten: 0 }),
     );
+    AuditLogModel.writeAuditLogInTransaction.mockRejectedValue(new Error('audit_log is unavailable'));
+
+    await expect(unhideMenuItem(MENU_ITEM_ID, baseParams)).rejects.toThrow('audit_log is unavailable');
+    expect(BadgesService.invalidateCache).not.toHaveBeenCalled();
   });
 });
 
@@ -1686,7 +1791,7 @@ describe('dismissMenuItemFlag', () => {
 
     await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_NO_FLAG', statusCode: 400 });
-    expect(MenuItemModel.updateById).not.toHaveBeenCalled();
+    expect(MenuItemModel.dismissFlag).not.toHaveBeenCalled();
   });
 
   test('throws MENU_ITEM_NO_FLAG when sanity_flag is undefined', async () => {
@@ -1696,36 +1801,66 @@ describe('dismissMenuItemFlag', () => {
 
     await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams))
       .rejects.toMatchObject({ code: 'MENU_ITEM_NO_FLAG', statusCode: 400 });
+    expect(MenuItemModel.dismissFlag).not.toHaveBeenCalled();
   });
 
-  test('clears sanity_flag, writes audit log, and does NOT touch is_hidden_by_admin', async () => {
+  // Checked again in the model's transaction, under the establishment's lock
+  // (integration: admin-menu-items, «at the same time as another»).
+  test.each([
+    ['the flag was cleared meanwhile', 'no_flag', { code: 'MENU_ITEM_NO_FLAG', statusCode: 400 }],
+    ['the row is gone with its file', 'gone', { code: 'MENU_ITEM_NOT_FOUND', statusCode: 404 }],
+  ])('%s — the same refusal as before the action, nothing written', async (_name, status, refusal) => {
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem({ sanity_flag: { reason: 'low_confidence' } }));
+    MenuItemModel.dismissFlag.mockImplementation(dishTransaction({ status }));
+
+    await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams)).rejects.toMatchObject(refusal);
+    expect(AuditLogModel.writeAuditLogInTransaction).not.toHaveBeenCalled();
+  });
+
+  test('clears the flag through the model and writes each row\'s entry, with the flag it carried, in its transaction', async () => {
     const flag = { reason: 'price_too_high', confidence: 0.9 };
+    const copyFlag = { reason: 'price_too_high', confidence: 0.7 };
     MenuItemModel.findById.mockResolvedValue(
       baseMenuItem({ sanity_flag: flag, is_hidden_by_admin: false }),
     );
     const updated = baseMenuItem({ sanity_flag: null, is_hidden_by_admin: false });
-    MenuItemModel.updateById.mockResolvedValue(updated);
+    const copy = baseMenuItem({ id: uuidv4(), sanity_flag: copyFlag });
+    MenuItemModel.dismissFlag.mockImplementation(
+      dishTransaction({ status: 'done', row: updated, flag, others: [copy] }),
+    );
 
     const result = await dismissMenuItemFlag(MENU_ITEM_ID, baseParams);
 
     expect(result).toEqual(updated);
-    expect(MenuItemModel.updateById).toHaveBeenCalledWith(MENU_ITEM_ID, {
-      sanity_flag: null,
-    });
-    // Critical: dismissing a flag must NOT change visibility — those are
-    // separate admin actions per Component 8 design.
-    expect(MenuItemModel.updateById).not.toHaveBeenCalledWith(
-      MENU_ITEM_ID,
-      expect.objectContaining({ is_hidden_by_admin: expect.anything() }),
-    );
-    expect(AuditLogModel.createAuditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(MenuItemModel.dismissFlag).toHaveBeenCalledWith(expect.objectContaining({ menuItemId: MENU_ITEM_ID }));
+    expect(journalEntries()).toEqual([
+      [journalClient, expect.objectContaining({
         action: 'dismiss_sanity_flag',
         entity_type: 'menu_item',
+        entity_id: MENU_ITEM_ID,
         old_data: { sanity_flag: flag },
         new_data: { sanity_flag: null },
-      }),
+      })],
+      [journalClient, expect.objectContaining({
+        action: 'dismiss_sanity_flag',
+        entity_id: copy.id,
+        old_data: { sanity_flag: copyFlag },
+        new_data: { sanity_flag: null, copy_of: MENU_ITEM_ID },
+      })],
+    ]);
+    expect(AuditLogModel.createAuditLog).not.toHaveBeenCalled();
+  });
+
+  test('an entry that cannot be written is the dismissal\'s failure: it reaches the caller, the queue counters stay', async () => {
+    const flag = { reason: 'low_confidence' };
+    MenuItemModel.findById.mockResolvedValue(baseMenuItem({ sanity_flag: flag }));
+    MenuItemModel.dismissFlag.mockImplementation(
+      dishTransaction({ status: 'done', row: baseMenuItem(), flag, others: [] }),
     );
+    AuditLogModel.writeAuditLogInTransaction.mockRejectedValue(new Error('audit_log is unavailable'));
+
+    await expect(dismissMenuItemFlag(MENU_ITEM_ID, baseParams)).rejects.toThrow('audit_log is unavailable');
+    expect(BadgesService.invalidateCache).not.toHaveBeenCalled();
   });
 });
 

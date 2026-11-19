@@ -33,14 +33,15 @@ import { isCanonicalUuid } from '../utils/canonicalUuid.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
 import { SANITY_FLAG_REASONS } from './ocr/sanityChecker.js';
-import { findCopies } from '../projections/menuItemProjections.js';
 
 /**
  * A moderator's decision on a card and its entry in the journal of actions —
  * one transaction: both are written or neither is. Written «softly»
  * (createAuditLog swallows its errors), an entry that failed left a card
  * approved, rejected or suspended with nothing in the journal to show who did
- * it and when (register item К7; cloud critic 2Б Q5).
+ * it and when (register item К7; cloud critic 2Б Q5). The moderator's
+ * corrections of a card — its point on the map, the address of its page — go
+ * the same way (decision of the Coordinator, 19.11.2026).
  *
  * @param {(client: Object) => Promise<Object|null>} write - the card's change,
  *   on the transaction's client; null — the card was changed meanwhile
@@ -1043,25 +1044,29 @@ export const updateEstablishmentCoordinates = async (establishmentId, params) =>
       );
     }
 
-    const updated = await EstablishmentModel.updateEstablishment(
-      establishmentId,
-      { latitude, longitude },
-    );
-
-    // Audit log — awaited; createAuditLog swallows its own errors
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action: 'admin_update_coordinates',
-      entity_type: 'establishment',
-      entity_id: establishmentId,
-      old_data: {
-        latitude: existing.latitude ? parseFloat(existing.latitude) : null,
-        longitude: existing.longitude ? parseFloat(existing.longitude) : null,
+    // The point and its journal entry as one write (decideWithJournalEntry):
+    // an entry that cannot be written refuses the correction (500 below), and
+    // the point stays where it was.
+    const updated = await decideWithJournalEntry(
+      client => EstablishmentModel.updateEstablishment(
+        establishmentId,
+        { latitude, longitude },
+        client,
+      ),
+      {
+        user_id: adminUserId,
+        action: 'admin_update_coordinates',
+        entity_type: 'establishment',
+        entity_id: establishmentId,
+        old_data: {
+          latitude: existing.latitude ? parseFloat(existing.latitude) : null,
+          longitude: existing.longitude ? parseFloat(existing.longitude) : null,
+        },
+        new_data: { latitude, longitude },
+        ip_address: ipAddress,
+        user_agent: userAgent,
       },
-      new_data: { latitude, longitude },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
+    );
 
     logger.info('Admin updated establishment coordinates', {
       establishmentId,
@@ -1168,21 +1173,26 @@ export const updateEstablishmentSlug = async (establishmentId, params) => {
       );
     }
 
-    const updated = await EstablishmentModel.updateEstablishment(
-      establishmentId,
-      { slug: trimmed },
+    // The address and its journal entry as one write (decideWithJournalEntry):
+    // an entry that cannot be written refuses the change (500 below), and the
+    // page keeps its address.
+    const updated = await decideWithJournalEntry(
+      client => EstablishmentModel.updateEstablishment(
+        establishmentId,
+        { slug: trimmed },
+        client,
+      ),
+      {
+        user_id: adminUserId,
+        action: 'admin_update_slug',
+        entity_type: 'establishment',
+        entity_id: establishmentId,
+        old_data: { slug: existing.slug },
+        new_data: { slug: trimmed },
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      },
     );
-
-    await AuditLogModel.createAuditLog({
-      user_id: adminUserId,
-      action: 'admin_update_slug',
-      entity_type: 'establishment',
-      entity_id: establishmentId,
-      old_data: { slug: existing.slug },
-      new_data: { slug: trimmed },
-      ip_address: ipAddress,
-      user_agent: userAgent,
-    });
 
     logger.info('Admin updated establishment slug', {
       establishmentId,
@@ -1312,7 +1322,8 @@ export const searchUsers = async (query, limit = 10) => {
  * to partner role. Follows the moderateEstablishment pattern (lines 192-296)
  * with the addition of a database transaction wrapping both operations. The
  * card's legal record passes in the same transaction: the legal entity stays,
- * the previous holder's contact person and e-mail leave the card.
+ * the previous holder's contact person and e-mail leave the card. So do the
+ * journal entries — the claim, and the upgrade when the role changed.
  *
  * @param {string} establishmentId - UUID of the establishment to claim
  * @param {string} targetUserId - UUID of the user receiving ownership
@@ -1406,11 +1417,37 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
 
     // 3c. Upgrade user to partner role (idempotent)
     // Execute within transaction using same client for atomicity
-    if (targetUser.role === 'user') {
+    const upgraded = targetUser.role === 'user';
+    if (upgraded) {
       await client.query(
         "UPDATE users SET role = 'partner', updated_at = $1 WHERE id = $2",
         [new Date(), targetUserId],
       );
+    }
+
+    // 4. The journal — in the same transaction: an entry that cannot be written
+    // refuses the claim (CLAIM_FAILED below), and the card stays with its
+    // holder (decision of the Coordinator, 19.11.2026). A role changed here
+    // gets the entry every other change of role to partner writes
+    // (authService.upgradeUserToPartner); an account already a partner, none.
+    const journal = { user_id: adminUserId, ip_address: req.ip, user_agent: req.get('User-Agent') };
+    await AuditLogModel.writeAuditLogInTransaction(client, {
+      ...journal,
+      action: 'claim_establishment',
+      entity_type: 'establishment',
+      entity_id: establishmentId,
+      old_data: { partner_id: previousPartnerId },
+      new_data: { partner_id: targetUserId },
+    });
+    if (upgraded) {
+      await AuditLogModel.writeAuditLogInTransaction(client, {
+        ...journal,
+        action: 'upgrade_user_to_partner',
+        entity_type: 'user',
+        entity_id: targetUserId,
+        old_data: { role: 'user' },
+        new_data: { role: 'partner' },
+      });
     }
 
     await client.query('COMMIT');
@@ -1435,18 +1472,6 @@ export const claimEstablishment = async (establishmentId, targetUserId, adminUse
   // The role may have changed (user → partner): authenticate reads it from the
   // database, cached briefly — forget the cached one once the change is committed.
   invalidateAccountStatus(targetUserId);
-
-  // 4. Audit log — awaited, outside transaction; createAuditLog swallows its own errors
-  await AuditLogModel.createAuditLog({
-    user_id: adminUserId,
-    action: 'claim_establishment',
-    entity_type: 'establishment',
-    entity_id: establishmentId,
-    old_data: { partner_id: previousPartnerId },
-    new_data: { partner_id: targetUserId },
-    ip_address: req.ip,
-    user_agent: req.get('User-Agent'),
-  });
 
   // 5. Notify new partner — awaited for the same reasons as in
   // moderateEstablishment. The notifier swallows its own errors; keep the
@@ -1526,79 +1551,29 @@ export const adminUpgradeUserToPartner = async (targetUserId, adminUserId, req) 
 // ============================================================================
 
 /**
- * «Снять флаг» on one row reaches its copies. The guest sees one line
- * for a dish the menu's files share (collapseMenuRepeats): a flag left on a
- * copy kept the same dish in the queue. Each copy gets its own audit entry,
- * marked with the row the moderator acted on. («Скрыть» and «Показать снова»
- * reach further — the dish in every file of the establishment — and do it in
- * one transaction of their own: MenuItemModel.hideDish / unhideDish.)
+ * Journal entries of a moderator's action on a dish — one for the row acted
+ * on, one for each other row the action reached, marked with copy_of —
+ * written in the action's own transaction (MenuItemModel.hideDish, unhideDish,
+ * dismissFlag): an entry that cannot be written undoes the action, and every
+ * row stays as it was (decision of the Coordinator, 19.11.2026). Written after
+ * it, «softly», a lost entry left the dish hidden, shown or unflagged with
+ * nothing in the journal to show who did it and when.
  *
- * The copies are found among the rows as the guest saw them before the action
- * — `before` — so the line is the one the guest had (the guest's grouping sees
- * no hidden rows). The row acted on is always among them.
- *
- * A re-read of a copy's file (replaceForMedia) may delete the copy while it
- * is being changed — the new rows of that file then come back without the
- * decision. Such a copy is looked for once more among fresh rows, where the
- * re-read's row of the same line stands in for it.
- *
- * @param {Object} existing - The row the moderator acted on, before the action
- * @param {Object} rule - { before, applies }: rows of the guest's view before
- *                        the action; which copies the action reaches
- * @param {Object} change - { updates, action, oldData, newData }; oldData may be
- *                          a function of the copy (the flag a copy carried)
- * @param {Object} params - { adminUserId, ipAddress, userAgent }
- * @returns {Promise<string[]>} Ids of the copies changed
- */
-const applyToMenuItemCopies = async (existing, rule, change, params) => {
-  const changed = [];
-  for (let pass = 0; pass < 2; pass += 1) {
-    const rows = (await MenuItemModel.getByEstablishmentId(existing.establishment_id, {
-      includeHidden: true,
-    })).filter(row => row.id === existing.id || rule.before(row));
-    const copies = findCopies(existing.id, rows).filter(rule.applies);
-
-    let vanished = 0;
-    for (const copy of copies) {
-      const updated = await MenuItemModel.updateById(copy.id, change.updates);
-      if (!updated) {
-        vanished += 1;
-        continue;
-      }
-      await AuditLogModel.createAuditLog({
-        user_id: params.adminUserId,
-        action: change.action,
-        entity_type: 'menu_item',
-        entity_id: copy.id,
-        old_data: typeof change.oldData === 'function' ? change.oldData(copy) : change.oldData,
-        new_data: { ...change.newData, copy_of: existing.id },
-        ip_address: params.ipAddress,
-        user_agent: params.userAgent,
-      });
-      changed.push(copy.id);
-    }
-    if (vanished === 0) break;
-  }
-  return changed;
-};
-
-/**
- * Audit entries of a moderator's action on a dish: one for the row acted on,
- * one for each other row the action reached, marked with copy_of.
- *
+ * @param {Object} client - the action's transaction
  * @param {Object} row - The row acted on
- * @param {Object[]} others - The other rows changed
- * @param {Object} entry - { action, oldData, newData }
+ * @param {Object[]} others - The other rows changed, as they were before
+ * @param {Object} entry - { action, oldData, newData }; oldData may be a
+ *                         function of the row (the flag a row carried)
  * @param {Object} params - { adminUserId, ipAddress, userAgent }
  */
-const auditDishAction = async (row, others, { action, oldData, newData }, params) => {
+const journalDishAction = async (client, row, others, { action, oldData, newData }, params) => {
   for (const target of [row, ...others]) {
-    await AuditLogModel.createAuditLog({
+    await AuditLogModel.writeAuditLogInTransaction(client, {
       user_id: params.adminUserId,
       action,
       entity_type: 'menu_item',
       entity_id: target.id,
-      old_data: oldData,
+      old_data: typeof oldData === 'function' ? oldData(target) : oldData,
       new_data: target.id === row.id ? newData : { ...newData, copy_of: row.id },
       ip_address: params.ipAddress,
       user_agent: params.userAgent,
@@ -1612,9 +1587,9 @@ const auditDishAction = async (row, others, { action, oldData, newData }, params
  * line, the shown rows of the same dish in the other files; and the dish is
  * remembered, so a file uploaded later comes back with it hidden (decision of
  * the Coordinator 29.10.2026, п. 3а, П2а).
- * Parallel to suspendEstablishment: validate reason, guard state, update,
- * write audit log (awaited; it swallows its own errors). Phase 1: no partner
- * notification.
+ * Parallel to suspendEstablishment: validate reason, guard state, update and
+ * write the journal entries in one transaction (journalDishAction). Phase 1:
+ * no partner notification.
  *
  * @param {string} menuItemId - UUID
  * @param {Object} params
@@ -1644,7 +1619,15 @@ export const hideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  const result = await MenuItemModel.hideDish({ menuItemId, reason });
+  const result = await MenuItemModel.hideDish({
+    menuItemId,
+    reason,
+    record: (client, { row, others }) => journalDishAction(client, row, others, {
+      action: 'hide_menu_item',
+      oldData: { is_hidden_by_admin: false },
+      newData: { is_hidden_by_admin: true, reason },
+    }, params),
+  });
 
   if (result.status === 'already') {
     throw new AppError(
@@ -1662,11 +1645,6 @@ export const hideMenuItem = async (menuItemId, params) => {
   }
 
   const { row: updated, others } = result;
-  await auditDishAction(updated, others, {
-    action: 'hide_menu_item',
-    oldData: { is_hidden_by_admin: false },
-    newData: { is_hidden_by_admin: true, reason },
-  }, params);
   const copies = others.map(other => other.id);
 
   // Phase 1 decision (Segment C): no partner notification on hide.
@@ -1729,7 +1707,15 @@ export const unhideMenuItem = async (menuItemId, params) => {
     );
   }
 
-  const result = await MenuItemModel.unhideDish({ menuItemId });
+  // The rows shown and the journal entries — one transaction, as in hideMenuItem.
+  const result = await MenuItemModel.unhideDish({
+    menuItemId,
+    record: (client, { row, others }) => journalDishAction(client, row, others, {
+      action: 'unhide_menu_item',
+      oldData: { is_hidden_by_admin: true },
+      newData: { is_hidden_by_admin: false },
+    }, params),
+  });
 
   if (result.status === 'not_hidden') {
     throw new AppError(
@@ -1747,11 +1733,6 @@ export const unhideMenuItem = async (menuItemId, params) => {
   }
 
   const { row: updated, others, forgotten } = result;
-  await auditDishAction(updated, others, {
-    action: 'unhide_menu_item',
-    oldData: { is_hidden_by_admin: true },
-    newData: { is_hidden_by_admin: false },
-  }, params);
   const copies = others.map(other => other.id);
 
   // Размер очереди изменился — счётчики рейла обязаны это увидеть
@@ -1782,9 +1763,9 @@ export const unhideMenuItem = async (menuItemId, params) => {
  * Reaches the copies of the row, as «Скрыть» and «Вернуть» do (walkthrough of
  * the moderator panel, 2026-10-20, A1-07): the guest sees one line for a dish
  * the menu's files share, and a flag left on a copy kept the same dish in the
- * queue — the button looked broken. The copies are those of the line as the
- * guest saw it: for a visible row, the visible rows; for a hidden row, also
- * the rows hidden with the same reason (the line it was hidden as).
+ * queue — the button looked broken. Which copies — MenuItemModel.dismissFlag.
+ * The flags and the journal entries — one for the row, one for each copy —
+ * are one transaction (journalDishAction).
  *
  * @param {string} menuItemId - UUID
  * @param {Object} params
@@ -1794,52 +1775,39 @@ export const unhideMenuItem = async (menuItemId, params) => {
  * @returns {Promise<Object>} Updated menu_items row
  */
 export const dismissMenuItemFlag = async (menuItemId, params) => {
-  const { adminUserId, ipAddress, userAgent } = params;
+  const { adminUserId } = params;
+  const noFlag = () => new AppError(
+    'Флаг с позиции уже снят',
+    400,
+    'MENU_ITEM_NO_FLAG',
+  );
+  const notFound = () => new AppError(
+    'Позиция не найдена — возможно, меню распознали заново',
+    404,
+    'MENU_ITEM_NOT_FOUND',
+  );
 
   const existing = await MenuItemModel.findById(menuItemId);
-  if (!existing) {
-    throw new AppError('Позиция не найдена — возможно, меню распознали заново', 404, 'MENU_ITEM_NOT_FOUND');
-  }
+  if (!existing) throw notFound();
+  if (existing.sanity_flag === null || existing.sanity_flag === undefined) throw noFlag();
 
-  if (existing.sanity_flag === null || existing.sanity_flag === undefined) {
-    throw new AppError(
-      'Флаг с позиции уже снят',
-      400,
-      'MENU_ITEM_NO_FLAG',
-    );
-  }
-
-  const updated = await MenuItemModel.updateById(menuItemId, {
-    sanity_flag: null,
-  });
-
-  await AuditLogModel.createAuditLog({
-    user_id: adminUserId,
-    action: 'dismiss_sanity_flag',
-    entity_type: 'menu_item',
-    entity_id: menuItemId,
-    old_data: { sanity_flag: existing.sanity_flag },
-    new_data: { sanity_flag: null },
-    ip_address: ipAddress,
-    user_agent: userAgent,
-  });
-
-  const hiddenRow = existing.is_hidden_by_admin === true;
-  const copies = await applyToMenuItemCopies(
-    existing,
-    {
-      before: row => row.is_hidden_by_admin !== true
-        || (hiddenRow && row.hidden_reason === existing.hidden_reason),
-      applies: copy => copy.sanity_flag !== null && copy.sanity_flag !== undefined,
-    },
-    {
-      updates: { sanity_flag: null },
+  const result = await MenuItemModel.dismissFlag({
+    menuItemId,
+    record: (client, { row, flag, others }) => journalDishAction(client, row, others, {
       action: 'dismiss_sanity_flag',
-      oldData: copy => ({ sanity_flag: copy.sanity_flag }),
+      // The flag each row carried: the row's own, read under the lock, and each copy's.
+      oldData: target => ({ sanity_flag: target.id === row.id ? flag : target.sanity_flag }),
       newData: { sanity_flag: null },
-    },
-    params,
-  );
+    }, params),
+  });
+
+  // Checked again under the establishment's lock: another moderator cleared
+  // the flag meanwhile, or a re-read of the file replaced the row.
+  if (result.status === 'no_flag') throw noFlag();
+  if (result.status !== 'done') throw notFound();
+
+  const { row: updated, others } = result;
+  const copies = others.map(other => other.id);
 
   // Размер очереди изменился — счётчики рейла обязаны это увидеть
   // сразу, иначе бейдж до полминуты показывал бы число, которое

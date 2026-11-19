@@ -220,7 +220,7 @@ const WRITTEN_ROW_COLUMNS = `
   created_at AT TIME ZONE 'UTC' AS created_at,
   updated_at AT TIME ZONE 'UTC' AS updated_at`;
 
-/** Fields updateById / updateByIds may write. */
+/** Fields updateByIds may write. */
 const UPDATABLE_FIELDS = [
   'item_name',
   'price_byn',
@@ -301,19 +301,6 @@ export const updateByIds = async (ids, updates, { lockMenuOf = null } = {}) => {
 };
 
 /**
- * Update specific fields of a menu item.
- * Used by the moderator's «Снять флаг» (adminService) — the row and each copy.
- *
- * @param {string} id - UUID
- * @param {Object} updates - Fields to update
- * @returns {Promise<Object|null>} Updated row or null if not found
- */
-export const updateById = async (id, updates) => {
-  const rows = await updateByIds([id], updates);
-  return rows[0] || null;
-};
-
-/**
  * The moderator's «Скрыть» decisions, ready to be looked up by the rows of a
  * new read of a file.
  *
@@ -391,11 +378,12 @@ const ownSectionDecision = (item, { bySection }) => (item.item_name
 
 /**
  * Serialize the writers of one establishment's menu decisions: a recognised
- * file being written (replaceForMedia) and the moderator's «Скрыть» and
- * «Показать снова». Without it a file read while «Скрыть» was clicked on
- * another file would miss the decision on both sides — the write took the
- * decisions before the click, the click scanned the rows before the write —
- * and the dish would stay on the card. Held to the end of the transaction.
+ * file being written (replaceForMedia) and the moderator's «Скрыть»,
+ * «Показать снова» and «Снять флаг». Without it a file read while «Скрыть»
+ * was clicked on another file would miss the decision on both sides — the
+ * write took the decisions before the click, the click scanned the rows
+ * before the write — and the dish would stay on the card. Held to the end of
+ * the transaction.
  *
  * @param {Object} client - Connected client inside BEGIN
  * @param {string} establishmentId - UUID
@@ -652,11 +640,14 @@ const inTransaction = async (fn) => {
  * @param {Object} params
  * @param {string} params.menuItemId - UUID
  * @param {string} params.reason - The moderator's reason
+ * @param {Function} [params.record] - (client, done) → written in the same
+ *   transaction before it commits: the moderator's journal entries
+ *   (adminService). A failure there undoes the hide.
  * @returns {Promise<{status: 'gone'}|{status: 'already'}|
  *                   {status: 'done', row: Object, others: Object[]}>}
  *          others — the other rows hidden, as they were before
  */
-export const hideDish = async ({ menuItemId, reason }) => {
+export const hideDish = async ({ menuItemId, reason, record = null }) => {
   return inTransaction(async (client) => {
     const menu = await openEstablishmentMenu(client, menuItemId);
     if (!menu || !menu.row) return { status: 'gone' };
@@ -693,7 +684,9 @@ export const hideDish = async ({ menuItemId, reason }) => {
     const changed = [...others.values()].filter(r => updatedIds.has(r.id));
     await rememberHidden(client, establishmentId, [row, ...changed], reason);
 
-    return { status: 'done', row: updatedRow, others: changed };
+    const done = { status: 'done', row: updatedRow, others: changed };
+    if (record) await record(client, done);
+    return done;
   });
 };
 
@@ -708,10 +701,12 @@ export const hideDish = async ({ menuItemId, reason }) => {
  *
  * @param {Object} params
  * @param {string} params.menuItemId - UUID
+ * @param {Function} [params.record] - (client, done) → written in the same
+ *   transaction before it commits, as in hideDish
  * @returns {Promise<{status: 'gone'}|{status: 'not_hidden'}|
  *                   {status: 'done', row: Object, others: Object[], forgotten: number}>}
  */
-export const unhideDish = async ({ menuItemId }) => {
+export const unhideDish = async ({ menuItemId, record = null }) => {
   return inTransaction(async (client) => {
     const menu = await openEstablishmentMenu(client, menuItemId);
     if (!menu || !menu.row) return { status: 'gone' };
@@ -749,12 +744,85 @@ export const unhideDish = async ({ menuItemId }) => {
       forgotten = deleted.rowCount;
     }
 
-    return {
+    const done = {
       status: 'done',
       row: updatedRow,
       others: others.filter(r => updatedIds.has(r.id)),
       forgotten,
     };
+    if (record) await record(client, done);
+    return done;
+  });
+};
+
+/**
+ * The moderator's «Снять флаг» on one row: the flag goes from the row and from
+ * the copies of its line as the guest saw it — for a shown row, the shown
+ * rows; for a hidden row, also the rows hidden with the same reason, the line
+ * it was hidden as (walkthrough of the moderator panel, 2026-10-20, A1-07: a
+ * flag left on a copy kept the same dish in the queue). A copy without a flag
+ * is not touched. Visibility does not change: that is «Скрыть».
+ *
+ * One statement for the row and its copies, in one transaction under the
+ * establishment's lock, as hideDish and unhideDish (decision of the
+ * Coordinator, 19.11.2026: the action is written with its journal entries or
+ * not at all). Row by row, a failure in the middle left some copies without
+ * the flag and others with it; and a re-read of a copy's file could replace
+ * the copy midway — it now waits for the lock (replaceForMedia).
+ *
+ * «The flag is still there» is checked in the UPDATE itself, not in the rows
+ * read: the operator's script of flags (scripts/dismiss-menu-flags) does not
+ * take the lock, and a flag it cleared meanwhile must not be cleared — and
+ * journalled — again. A row the UPDATE did not take is then looked up once
+ * more: gone with its file, or its flag gone.
+ *
+ * @param {Object} params
+ * @param {string} params.menuItemId - UUID
+ * @param {Function} [params.record] - (client, done) → written in the same
+ *   transaction before it commits, as in hideDish
+ * @returns {Promise<{status: 'gone'}|{status: 'no_flag'}|
+ *                   {status: 'done', row: Object, flag: Object, others: Object[]}>}
+ *          flag — the row's flag before; others — the copies cleared, as they
+ *          were before (with their flags)
+ */
+export const dismissFlag = async ({ menuItemId, record = null }) => {
+  return inTransaction(async (client) => {
+    const menu = await openEstablishmentMenu(client, menuItemId);
+    if (!menu || !menu.row) return { status: 'gone' };
+    const { row, rows } = menu;
+    const flagged = r => r.sanity_flag !== null && r.sanity_flag !== undefined;
+
+    const hiddenRow = row.is_hidden_by_admin === true;
+    const seen = rows.filter(r => r.id === row.id
+      || r.is_hidden_by_admin !== true
+      || (hiddenRow && r.hidden_reason === row.hidden_reason));
+    const copies = findCopies(row.id, seen).filter(flagged);
+
+    const updated = await client.query(
+      `UPDATE menu_items
+       SET sanity_flag = NULL, updated_at = NOW()
+       WHERE id = ANY($1::uuid[]) AND sanity_flag IS NOT NULL
+       RETURNING ${WRITTEN_ROW_COLUMNS}`,
+      [[row.id, ...copies.map(copy => copy.id)]],
+    );
+    const updatedRow = updated.rows.find(r => r.id === row.id);
+    if (!updatedRow) {
+      // No flag on it — cleared before the lock was taken, or by the script
+      // meanwhile; or its file deleted with its rows (the cascade takes no
+      // lock). Nothing is kept: the transaction rolls back.
+      const still = await client.query('SELECT 1 FROM menu_items WHERE id = $1', [row.id]);
+      return { status: still.rowCount === 0 ? 'gone' : 'no_flag' };
+    }
+    const updatedIds = new Set(updated.rows.map(r => r.id));
+
+    const done = {
+      status: 'done',
+      row: updatedRow,
+      flag: row.sanity_flag,
+      others: copies.filter(copy => updatedIds.has(copy.id)),
+    };
+    if (record) await record(client, done);
+    return done;
   });
 };
 

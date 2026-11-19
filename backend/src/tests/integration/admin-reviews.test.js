@@ -36,6 +36,12 @@ import {
   createTestReview,
   checkAuditLogExists,
 } from '../utils/adminTestHelpers.js';
+import {
+  UNWRITABLE_AGENT,
+  WRITABLE_AGENT,
+  refuseMarkedJournalEntries,
+  writeAllJournalEntries,
+} from '../utils/journalRefusal.js';
 
 let adminToken;
 let reviewerUserId;
@@ -1068,6 +1074,56 @@ describe('setVisibility: the journal entry is part of the change', () => {
     expect(entry).toHaveLength(1);
     expect(entry[0].new_data).toEqual({ is_visible: false });
     expect(entry[0].ip).toBe('127.0.0.1/32');
+  });
+});
+
+// ============================================================================
+// The entry of a deletion is written with the deletion, or neither is
+// ============================================================================
+//
+// The entry used to be written after the deletion, «softly»: a failed entry
+// left the review deleted with nothing in the journal to show who did it and
+// when. Decision of the Coordinator, 19.11.2026: a moderator's action is
+// written with its entry or not at all.
+
+describe('deleteReview: the journal entry is part of the deletion', () => {
+  const adminId = async () => (await query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")).rows[0].id;
+  const ratingOf = async () => (await query(
+    'SELECT average_rating, review_count FROM establishments WHERE id = $1',
+    [testEstablishmentId],
+  )).rows[0];
+
+  beforeAll(refuseMarkedJournalEntries);
+  afterAll(writeAllJournalEntries);
+
+  test('an entry that cannot be written refuses the deletion: the review stays, the rating untouched, the author not told', async () => {
+    await createTestReview(null, testEstablishmentId, { rating: 5 });
+    const review = await createTestReview(null, testEstablishmentId, { rating: 1 });
+    const before = await ratingOf();
+    const admin = await adminId();
+    const remove = (agent) => adminReviewService.deleteReview(review.id, admin, 'спам', {
+      ipAddress: '127.0.0.1',
+      userAgent: agent,
+    });
+    const deletedOf = async () => (await query('SELECT is_deleted FROM reviews WHERE id = $1', [review.id])).rows[0].is_deleted;
+    const noticesOf = async () => (await query(
+      "SELECT id FROM notifications WHERE user_id = $1 AND type = 'review_deleted'",
+      [review.user_id],
+    )).rows;
+
+    await expect(remove(UNWRITABLE_AGENT))
+      .rejects.toMatchObject({ statusCode: 500, code: 'REVIEW_DELETE_FAILED' });
+
+    expect(await deletedOf()).toBe(false);
+    expect(await ratingOf()).toEqual(before);
+    expect(await checkAuditLogExists(review.id, 'review_delete')).toBe(false);
+    expect(await noticesOf()).toEqual([]);
+
+    // The scene: the same deletion with an entry that can be written is made.
+    await remove(WRITABLE_AGENT);
+    expect(await deletedOf()).toBe(true);
+    expect(await checkAuditLogExists(review.id, 'review_delete')).toBe(true);
+    expect(await noticesOf()).toHaveLength(1);
   });
 });
 

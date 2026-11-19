@@ -16,20 +16,30 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, clearTableTree, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, getClient, query } from '../utils/database.js';
 import {
   createAdminAndGetToken,
   createPartnerWithEstablishment,
   createViewerAndGetToken,
 } from '../utils/adminTestHelpers.js';
+import {
+  UNWRITABLE_AGENT,
+  WRITABLE_AGENT,
+  refuseMarkedJournalEntries,
+  writeAllJournalEntries,
+} from '../utils/journalRefusal.js';
 import * as qualityHealthModel from '../../models/qualityHealthModel.js';
+import * as adminService from '../../services/adminService.js';
+import { SERVER_FAILURE_MESSAGE } from '../../middleware/errorHandler.js';
 import { SANITY_FLAG_REASONS } from '../../services/ocr/sanityChecker.js';
 
 let adminToken;
+let adminUserId;
 
 beforeAll(async () => {
   const admin = await createAdminAndGetToken();
   adminToken = admin.accessToken;
+  adminUserId = admin.user.id;
 });
 
 beforeEach(async () => {
@@ -587,6 +597,198 @@ describe('dismiss-flag — one menu uploaded as several files', () => {
 
     expect(await flagOf(pdfSteak)).toBeNull();
     expect(await flagOf(boardSteak)).toEqual(flag);
+  });
+});
+
+// ============================================================================
+// «Скрыть», «Показать снова», «Снять флаг» and their journal entries — one write
+// ============================================================================
+//
+// The entries used to be written after the action, «softly»: a failed entry
+// left the dish hidden, shown or unflagged with nothing in the journal to show
+// who did it and when. Decision of the Coordinator, 19.11.2026: a moderator's
+// action is written with its entries or not at all. The moderator gets the
+// refusal of any failure of the database in these actions — no new text.
+
+describe('«Скрыть», «Показать снова», «Снять флаг» — with the journal entries or not at all', () => {
+  const insertMedia = async (estId) => (await query(
+    `INSERT INTO establishment_media
+       (establishment_id, type, file_type, url, thumbnail_url, preview_url)
+     VALUES ($1, 'menu', 'pdf', 'http://test/m.pdf', 'http://test/t.png', 'http://test/p.png')
+     RETURNING id`,
+    [estId],
+  )).rows[0].id;
+  const flag = { reason: 'price_above_threshold', details: { price: 900, threshold: 500 } };
+  const insertFlagged = async (estId, mediaId, itemName) => (await query(
+    `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, sanity_flag, position)
+     VALUES ($1, $2, $3, 900, $4::jsonb, 0)
+     RETURNING id`,
+    [estId, mediaId, itemName, JSON.stringify(flag)],
+  )).rows[0].id;
+
+  /** One dish in two menu files — one line for the guest — flagged in both. */
+  const seedDish = async () => {
+    const { establishment } = await createPartnerWithEstablishment('active');
+    const files = [await insertMedia(establishment.id), await insertMedia(establishment.id)];
+    const ids = [
+      await insertFlagged(establishment.id, files[0], 'Стейк'),
+      await insertFlagged(establishment.id, files[1], 'СТЕЙК'),
+    ];
+    return { establishment, files, ids };
+  };
+  const rowsOf = async (ids) => (await query(
+    `SELECT id, is_hidden_by_admin, hidden_reason, sanity_flag FROM menu_items
+      WHERE id = ANY($1::uuid[]) ORDER BY item_name`,
+    [ids],
+  )).rows;
+  const journalOf = async (ids) => (await query(
+    'SELECT action FROM audit_log WHERE entity_id = ANY($1::uuid[]) ORDER BY created_at, id',
+    [ids],
+  )).rows.map(row => row.action);
+  const rememberedOf = async (estId) => (await query(
+    'SELECT item_name, hidden_reason FROM menu_item_hidden_names WHERE establishment_id = $1 ORDER BY item_name',
+    [estId],
+  )).rows;
+  const post = (path, agent, body = {}) => request(app)
+    .post(`/api/v1/admin/menu-items/${path}`)
+    .set('Authorization', `Bearer ${adminToken}`)
+    .set('User-Agent', agent)
+    .send(body);
+
+  beforeAll(refuseMarkedJournalEntries);
+  afterAll(writeAllJournalEntries);
+
+  test('«Скрыть»: an entry that cannot be written — the dish stays shown in both files and is not remembered', async () => {
+    const { establishment, ids } = await seedDish();
+    const before = await rowsOf(ids);
+
+    const refused = await post(`${ids[0]}/hide`, UNWRITABLE_AGENT, { reason: 'нет в продаже' });
+
+    expect({ status: refused.status, message: refused.body.message })
+      .toEqual({ status: 500, message: SERVER_FAILURE_MESSAGE });
+    expect(await rowsOf(ids)).toEqual(before);
+    expect(await rememberedOf(establishment.id)).toEqual([]);
+    expect(await journalOf(ids)).toEqual([]);
+
+    // The scene: the same click, with entries that can be written.
+    await post(`${ids[0]}/hide`, WRITABLE_AGENT, { reason: 'нет в продаже' }).expect(200);
+    expect((await rowsOf(ids)).map(row => row.is_hidden_by_admin)).toEqual([true, true]);
+    expect(await journalOf(ids)).toEqual(['hide_menu_item', 'hide_menu_item']);
+  });
+
+  test('«Показать снова»: an entry that cannot be written — the dish stays hidden in both files and remembered', async () => {
+    const { establishment, ids } = await seedDish();
+    await post(`${ids[0]}/hide`, WRITABLE_AGENT, { reason: 'нет в продаже' }).expect(200);
+    const hidden = await rowsOf(ids);
+    const remembered = await rememberedOf(establishment.id);
+
+    const refused = await post(`${ids[1]}/unhide`, UNWRITABLE_AGENT);
+
+    expect({ status: refused.status, message: refused.body.message })
+      .toEqual({ status: 500, message: SERVER_FAILURE_MESSAGE });
+    expect(await rowsOf(ids)).toEqual(hidden);
+    expect(await rememberedOf(establishment.id)).toEqual(remembered);
+    expect(await journalOf(ids)).toEqual(['hide_menu_item', 'hide_menu_item']);
+
+    await post(`${ids[1]}/unhide`, WRITABLE_AGENT).expect(200);
+    expect((await rowsOf(ids)).map(row => row.is_hidden_by_admin)).toEqual([false, false]);
+    expect(await rememberedOf(establishment.id)).toEqual([]);
+  });
+
+  test('«Снять флаг»: an entry that cannot be written — the flag stays on the row and on its copy', async () => {
+    const { ids } = await seedDish();
+    const before = await rowsOf(ids);
+
+    const refused = await post(`${ids[0]}/dismiss-flag`, UNWRITABLE_AGENT);
+
+    expect({ status: refused.status, message: refused.body.message })
+      .toEqual({ status: 500, message: SERVER_FAILURE_MESSAGE });
+    expect(await rowsOf(ids)).toEqual(before);
+    expect(await journalOf(ids)).toEqual([]);
+
+    await post(`${ids[0]}/dismiss-flag`, WRITABLE_AGENT).expect(200);
+    expect((await rowsOf(ids)).map(row => row.sanity_flag)).toEqual([null, null]);
+    expect(await journalOf(ids)).toEqual(['dismiss_sanity_flag', 'dismiss_sanity_flag']);
+  });
+
+  // «Снять флаг» was the row and its copies one by one, outside any lock. Now
+  // it is one statement under the establishment's lock (MenuItemModel.
+  // dismissFlag). The other side is a transaction of the test's own, kept open
+  // until the moderator's call waits for it; the call goes to the service, not
+  // over HTTP (a race below HTTP: feedback of 10.09.2026).
+  describe('at the same time as another', () => {
+    const waitForWaiterOn = async (blockerPid) => {
+      for (let attempt = 0; attempt < 250; attempt += 1) {
+        const { rows } = await query(
+          `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+            WHERE $1 = ANY(pg_blocking_pids(pid))`,
+          [blockerPid],
+        );
+        if (rows[0].n > 0) return;
+        await new Promise((resolve) => { setTimeout(resolve, 20); });
+      }
+      throw new Error('никто не ждёт блокировки');
+    };
+
+    /** `act` started while another transaction holds what `statements` took. */
+    const whileAnotherHolds = async (statements, act) => {
+      const other = await getClient();
+      let outcome;
+      try {
+        await other.query('BEGIN');
+        const { rows: [{ pid }] } = await other.query('SELECT pg_backend_pid() AS pid');
+        for (const [sql, values] of statements) await other.query(sql, values);
+        outcome = act().then(() => 'done', (error) => error);
+        await waitForWaiterOn(pid);
+        await other.query('COMMIT');
+      } catch (error) {
+        await other.query('ROLLBACK');
+        throw error;
+      } finally {
+        other.release();
+      }
+      return outcome;
+    };
+    const dismiss = (id) => adminService.dismissMenuItemFlag(id, {
+      adminUserId,
+      ipAddress: '127.0.0.1',
+      userAgent: WRITABLE_AGENT,
+    });
+    const clearFlags = ['UPDATE menu_items SET sanity_flag = NULL WHERE id = ANY($1::uuid[])'];
+
+    test('another moderator clearing the same line: the second «Снять флаг» waits for the first and writes nothing', async () => {
+      const { establishment, ids } = await seedDish();
+
+      const outcome = await whileAnotherHolds([
+        ['SELECT pg_advisory_xact_lock(hashtext($1))', [`menu_items:${establishment.id}`]],
+        [...clearFlags, [ids]],
+      ], () => dismiss(ids[0]));
+
+      expect(outcome).toMatchObject({ statusCode: 400, code: 'MENU_ITEM_NO_FLAG' });
+      expect(await journalOf(ids)).toEqual([]);
+    });
+
+    test('the operator\'s script clearing the flag (it takes no lock): no second clearing, no entry', async () => {
+      const { ids } = await seedDish();
+
+      const outcome = await whileAnotherHolds([[...clearFlags, [ids]]], () => dismiss(ids[0]));
+
+      expect(outcome).toMatchObject({ statusCode: 400, code: 'MENU_ITEM_NO_FLAG' });
+      expect(await journalOf(ids)).toEqual([]);
+    });
+
+    test('the row\'s file deleted meanwhile (the cascade takes no lock): 404, the copy keeps its flag, no entry', async () => {
+      const { files, ids } = await seedDish();
+
+      const outcome = await whileAnotherHolds(
+        [['DELETE FROM establishment_media WHERE id = $1', [files[0]]]],
+        () => dismiss(ids[0]),
+      );
+
+      expect(outcome).toMatchObject({ statusCode: 404, code: 'MENU_ITEM_NOT_FOUND' });
+      expect((await rowsOf(ids)).map(row => [row.id, row.sanity_flag])).toEqual([[ids[1], flag]]);
+      expect(await journalOf(ids)).toEqual([]);
+    });
   });
 });
 

@@ -457,10 +457,13 @@ export const countPartnerEstablishments = async (partnerId, status = null) => {
  * 
  * @param {string} establishmentId - UUID of the establishment to update
  * @param {Object} updates - Object containing fields to update
+ * @param {Object} [db] - a client inside a transaction: a moderator's correction
+ *   is written with its journal entry (adminService.decideWithJournalEntry);
+ *   the pool is the default
  * @returns {Promise<Object>} The updated establishment object
  * @throws {Error} If establishment not found or database operation fails
  */
-export const updateEstablishment = async (establishmentId, updates) => {
+export const updateEstablishment = async (establishmentId, updates, db = pool) => {
   const fields = [];
   const values = [];
   let paramCount = 1;
@@ -626,7 +629,7 @@ export const updateEstablishment = async (establishmentId, updates) => {
   `;
 
   try {
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
 
     if (result.rows.length === 0) {
       throw new Error('Establishment not found');
