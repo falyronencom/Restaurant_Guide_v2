@@ -8,6 +8,7 @@ import 'package:restaurant_guide_mobile/config/theme.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 import 'package:restaurant_guide_mobile/widgets/adaptive_title.dart';
+import 'package:restaurant_guide_mobile/widgets/fast_soft_shadow.dart';
 
 /// Reusable card component for displaying establishment information
 /// Figma design implementation with image on left, content on right
@@ -215,7 +216,8 @@ class EstablishmentCard extends StatelessWidget {
   /// Build content area with beige background (Figma design)
   Widget _buildContentArea() {
     return Container(
-      decoration: const BoxDecoration(
+      // Вид как у BoxDecoration, тень рисуется быстрым способом.
+      decoration: const FastSoftShadowDecoration(
         color: _backgroundColor,
         borderRadius: BorderRadius.only(
           topRight: Radius.circular(10),
