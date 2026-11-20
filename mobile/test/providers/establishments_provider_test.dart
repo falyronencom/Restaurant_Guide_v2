@@ -535,11 +535,54 @@ void main() {
       final p = EstablishmentsProvider();
       addTearDown(p.dispose);
 
-      await p.toggleFavorite('abc');
+      final applied = await p.toggleFavorite('abc');
 
       expect(p.isFavorite('abc'), isFalse,
           reason: 'сердечко осталось гореть у незаписанного избранного');
-      expect(p.error, isNotNull);
+      expect(applied, isFalse,
+          reason: 'экран показал бы «Добавлено в избранное» после отказа');
+      // Общую ошибку читает выдача: записанная сюда, она показывала бы
+      // «Ошибка загрузки» у пустой выдачи на другой вкладке.
+      expect(p.error, isNull);
+    });
+
+    test('принятое сервером добавление и снятие — true', () async {
+      installWireStand((options) => options.method == 'GET'
+          ? jsonBody(favoritesEnvelope(
+              favorites: [favoriteRow(id: 'abc', name: 'Васильки')]))
+          : jsonBody(<String, dynamic>{'success': true, 'data': {}}));
+      final p = EstablishmentsProvider();
+      addTearDown(p.dispose);
+
+      expect(await p.toggleFavorite('abc'), isTrue);
+      expect(p.isFavorite('abc'), isTrue);
+      expect(await p.toggleFavorite('abc'), isTrue);
+      expect(p.isFavorite('abc'), isFalse);
+      expect(p.error, isNull);
+    });
+
+    test('отказ, дошедший после смены учётной записи, — false, без отката',
+        () async {
+      // Истёкшая сессия сбрасывает избранное раньше, чем отказ доходит до
+      // провайдера: откатывать чужой список нечего, но и удачей это не было.
+      // Снятие, а не добавление: откат снятия вернул бы место — в список уже
+      // другой учётной записи.
+      installWireStand((options) => options.method == 'GET'
+          ? jsonBody(favoritesEnvelope(
+              favorites: [favoriteRow(id: 'abc', name: 'Васильки')]))
+          : jsonBody(<String, dynamic>{'error': 'boom'}, status: 403));
+      final p = EstablishmentsProvider();
+      addTearDown(p.dispose);
+      await p.loadFavorites();
+      expect(p.isFavorite('abc'), isTrue, reason: 'предпосылка');
+
+      final pending = p.toggleFavorite('abc');
+      p.resetAccountScope();
+
+      expect(await pending, isFalse);
+      expect(p.isFavorite('abc'), isFalse,
+          reason: 'место прежней учётной записи вернулось в новую');
+      expect(p.favoriteEstablishments, isEmpty);
     });
 
     test('отказ сервера откатывает и удаление — карточка возвращается',

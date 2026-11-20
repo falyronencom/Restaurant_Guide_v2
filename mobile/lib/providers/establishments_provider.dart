@@ -808,8 +808,15 @@ class EstablishmentsProvider with ChangeNotifier {
   // Favorites Operations
   // ============================================================================
 
-  /// Toggle favorite status for establishment
-  Future<void> toggleFavorite(String establishmentId) async {
+  /// Toggle favorite status for establishment.
+  ///
+  /// Возвращает, изменилось ли избранное: `true` — сервер принял, `false` —
+  /// не принял (сердце откачено) или ответ пришёл уже другой учётной записи.
+  /// Сбой не бросается, и экран выбирает сообщение по этому признаку: прежде
+  /// он узнавал исход по исключению, которого не было, и показывал «Удалено
+  /// из избранного» у места, вернувшегося в список (проба экранов Nirivio v4,
+  /// находка 4, 21.11.2026).
+  Future<bool> toggleFavorite(String establishmentId) async {
     final wasFavorite = _favoriteIds.contains(establishmentId);
     final tap = _favoriteTaps[establishmentId] =
         (_favoriteTaps[establishmentId] ?? 0) + 1;
@@ -857,11 +864,12 @@ class EstablishmentsProvider with ChangeNotifier {
           await loadFavorites(fresh: true);
         }
       }
+      return true;
     } catch (e) {
       // Revert on error — unless the account changed meanwhile (an expired
       // session resets the scope before the failure reaches this catch): the
       // list being reverted belongs to the previous account and is gone.
-      if (generation != _generation) return;
+      if (generation != _generation) return false;
       if (wasFavorite) {
         _favoriteIds.add(establishmentId);
         // Restore removed establishment to list
@@ -873,9 +881,11 @@ class EstablishmentsProvider with ChangeNotifier {
       }
       notifyListeners();
 
-      // Show error but don't throw
-      _error = 'Не удалось обновить избранное';
-      notifyListeners();
+      // Общая ошибка [error] не пишется: её читает выдача, и выдача «Ничего
+      // не найдено» во вкладке поиска после сбоя сердца в «Избранном» или в
+      // карточке заведения показывала «Ошибка загрузки». О сбое сообщает
+      // экран, где нажали сердце.
+      return false;
     }
   }
 

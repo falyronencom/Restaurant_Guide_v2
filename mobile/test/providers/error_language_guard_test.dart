@@ -154,18 +154,9 @@ void main() {
       expect(message, 'Город указан неверно');
     });
 
-    test('неудачное избранное сообщает по-русски', () async {
-      installWireStand(
-        (_) => jsonBody(<String, dynamic>{}, status: 403),
-      );
-      final p = EstablishmentsProvider();
-      addTearDown(p.dispose);
-
-      await p.toggleFavorite('abc');
-
-      expect(p.error, isNotNull);
-      expect(latinChunks(p.error!), isEmpty, reason: 'в тексте: ${p.error}');
-    });
+    // Неудачное сердце текста в провайдере больше не оставляет (21.11.2026):
+    // «Не удалось обновить избранное» пишут экраны, где его нажали, и
+    // дословно его проверяет test/screens/favorite_heart_failure_test.dart.
   });
 
   group('Разные отказы различимы', () {

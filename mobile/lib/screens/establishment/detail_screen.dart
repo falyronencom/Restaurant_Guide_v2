@@ -268,7 +268,19 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
     }
 
     final provider = context.read<EstablishmentsProvider>();
-    provider.toggleFavorite(widget.establishmentId);
+    // Удача видна по сердцу. Сбой сердце откатывает само, через несколько
+    // секунд повторов, — без сообщения нажатие выглядело бы пропавшим.
+    provider.toggleFavorite(widget.establishmentId).then((applied) {
+      if (applied || !mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Не удалось обновить избранное'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    });
   }
 
   /// Navigate to write review screen (with auth check)
