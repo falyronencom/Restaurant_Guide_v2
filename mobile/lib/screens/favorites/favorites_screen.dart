@@ -113,8 +113,10 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
     final provider = context.read<EstablishmentsProvider>();
     final wasFavorite = provider.isFavorite(establishmentId);
 
-    provider.toggleFavorite(establishmentId).then((_) {
-      if (mounted) {
+    // Сбой провайдер не бросает: откатывает сердце и возвращает `false`.
+    provider.toggleFavorite(establishmentId).then((applied) {
+      if (!mounted) return;
+      if (applied) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -124,9 +126,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-      }
-    }).catchError((error) {
-      if (mounted) {
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Не удалось обновить избранное'),
