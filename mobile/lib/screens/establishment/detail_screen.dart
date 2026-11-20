@@ -42,6 +42,7 @@ import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/russian_plural.dart';
 import 'package:restaurant_guide_mobile/models/public_menu_item.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
+import 'package:restaurant_guide_mobile/widgets/fast_soft_shadow.dart';
 
 /// Establishment detail screen displaying full information
 /// Figma design: Hero image with overlay, menu carousel, attributes, map, reviews
@@ -1412,7 +1413,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
             child: Container(
               width: 165,
               margin: EdgeInsets.only(right: index < maxIndex ? 10 : 0),
-              decoration: BoxDecoration(
+              // Вид как у BoxDecoration, тень рисуется быстрым способом.
+              decoration: FastSoftShadowDecoration(
                 borderRadius: BorderRadius.only(
                   topLeft: index == 0
                       ? const Radius.circular(30)
@@ -1672,7 +1674,8 @@ class _EstablishmentDetailScreenState extends State<EstablishmentDetailScreen> {
           child: Container(
             height: 384,
             margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
+            // Вид как у BoxDecoration, тень рисуется быстрым способом.
+            decoration: FastSoftShadowDecoration(
               color: Colors.grey[300],
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(30),

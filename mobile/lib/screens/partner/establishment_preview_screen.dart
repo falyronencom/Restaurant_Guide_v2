@@ -6,6 +6,7 @@ import 'package:restaurant_guide_mobile/models/partner_registration.dart';
 import 'package:restaurant_guide_mobile/utils/open_status.dart';
 import 'package:restaurant_guide_mobile/utils/venue_labels.dart';
 import 'package:restaurant_guide_mobile/widgets/average_check_line.dart';
+import 'package:restaurant_guide_mobile/widgets/fast_soft_shadow.dart';
 
 /// Preview screen for partner to see how their establishment card will look
 /// Based on EstablishmentDetailScreen but with preview mode:
@@ -694,7 +695,8 @@ class _EstablishmentPreviewScreenState
             child: Container(
               width: 165,
               margin: EdgeInsets.only(right: index < maxIndex ? 10 : 0),
-              decoration: BoxDecoration(
+              // Вид как у BoxDecoration, тень рисуется быстрым способом.
+              decoration: FastSoftShadowDecoration(
                 borderRadius: BorderRadius.only(
                   topLeft: index == 0
                       ? const Radius.circular(30)
