@@ -1,0 +1,19 @@
+# Какие игнорируемые файлы Claude Code копирует из основной папки в новую рабочую копию
+# (параллельные сессии приложения, `claude --worktree`, рабочие копии помощников).
+# Синтаксис — как у .gitignore. Копируется только то, что совпало с шаблоном И игнорируется git.
+# Документация: https://code.claude.com/docs/en/worktrees
+#
+# Здесь только тестовые настройки и настройки сборки Android. НЕ добавлять:
+#   backend/.env.production — ключи прода, копироваться не должны;
+#   backend/.env, web/.env.local — настоящие ключи платных служб и входа через Яндекс;
+#   docs/, CHANGELOG.md, PROJECT_MAP.md — документы живут только в основной папке.
+
+# Тесты сервера: backend/src/tests/setup-env.js читает backend/.env.test
+backend/.env.test
+
+# Maestro: тестовый пользователь стенда (mobile/.maestro/e2e.sh)
+mobile/.maestro/.env.local
+
+# Сборка Android: конфиг Firebase и ключи карты — клиентские, всё равно едут в APK
+mobile/android/app/google-services.json
+mobile/android/local.properties
