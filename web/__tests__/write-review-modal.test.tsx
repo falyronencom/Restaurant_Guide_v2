@@ -7,6 +7,11 @@
  *
  * Slice 2: edit mode (editTarget prop) — pre-fill, retitle, and routing to
  * updateReviewAction — is covered alongside the unchanged create contract.
+ *
+ * «Отзыв без текста» (11.2026): the text is optional — a rating alone is a
+ * review (В6). Create without text passes no `content` key; an edit with the
+ * text erased passes `content: ''` («стереть текст», В5). The two former
+ * «text is required» cases are turned around.
  */
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -66,22 +71,65 @@ it('renders the establishment name and the character counter', () => {
   expect(screen.getByText('0 / 1000')).toBeInTheDocument();
 });
 
-it('blocks submit with no rating / empty content and does NOT call the action', async () => {
+it('labels the text optional and keeps the hint under it (В6)', () => {
+  renderModal();
+
+  const field = screen.getByLabelText('Отзыв (необязательно)');
+  const hintId = field.getAttribute('aria-describedby');
+  expect(hintId).toBeTruthy();
+  expect(document.getElementById(hintId as string)).toHaveTextContent(
+    'Текст можно не писать: достаточно оценки',
+  );
+});
+
+it('without a rating blocks submit on the rating alone — no text is not an error', async () => {
   renderModal();
 
   await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
 
   expect(mockCreate).not.toHaveBeenCalled();
   expect(screen.getByText('Поставьте оценку от 1 до 5.')).toBeInTheDocument();
-  expect(screen.getByText('Напишите текст отзыва.')).toBeInTheDocument();
+  expect(screen.queryByText('Напишите текст отзыва.')).not.toBeInTheDocument();
+  // The hint stays in place of a text error.
+  expect(
+    screen.getByText('Текст можно не писать: достаточно оценки'),
+  ).toBeInTheDocument();
 });
+
+it.each([
+  ['no text at all', ''],
+  ['spaces only', '   '],
+])(
+  'a rating alone is a review (%s): submits with no `content` key',
+  async (_label, typed) => {
+    mockCreate.mockResolvedValue({ ok: true });
+    renderModal();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Оценка 4 из 5' }));
+    if (typed) {
+      await userEvent.type(screen.getByLabelText('Отзыв (необязательно)'), typed);
+    }
+    await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const sent = mockCreate.mock.calls[0][0];
+    // toStrictEqual: an explicit `content: undefined` or '' would not pass.
+    expect(sent).toStrictEqual({
+      establishmentId: 'est-1',
+      rating: 4,
+      detailPath: '/minsk/restorany/some-slug',
+    });
+    expect(sent).not.toHaveProperty('content');
+    expect(mockOnSuccess).toHaveBeenCalled();
+  },
+);
 
 it('submits the rating + trimmed content and fires onSuccess', async () => {
   mockCreate.mockResolvedValue({ ok: true });
   renderModal();
 
   await userEvent.click(screen.getByRole('button', { name: 'Оценка 5 из 5' }));
-  await userEvent.type(screen.getByLabelText('Отзыв'), '  Отлично  ');
+  await userEvent.type(screen.getByLabelText('Отзыв (необязательно)'), '  Отлично  ');
   await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
 
   expect(mockCreate).toHaveBeenCalledWith({
@@ -102,7 +150,7 @@ it('renders a mapped summary error and keeps the modal open on failure', async (
   renderModal();
 
   await userEvent.click(screen.getByRole('button', { name: 'Оценка 4 из 5' }));
-  await userEvent.type(screen.getByLabelText('Отзыв'), 'Норм');
+  await userEvent.type(screen.getByLabelText('Отзыв (необязательно)'), 'Норм');
   await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
 
   expect(
@@ -119,7 +167,7 @@ describe('edit mode (editTarget)', () => {
     expect(
       screen.getByRole('button', { name: 'Оценка 4 из 5' }),
     ).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByLabelText('Отзыв')).toHaveValue(
+    expect(screen.getByLabelText('Отзыв (необязательно)')).toHaveValue(
       'Отличное место, вернёмся ещё.',
     );
     // Live counter reflects the pre-filled length, not 0.
@@ -141,7 +189,7 @@ describe('edit mode (editTarget)', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Оценка 5 из 5' }),
     );
-    const textarea = screen.getByLabelText('Отзыв');
+    const textarea = screen.getByLabelText('Отзыв (необязательно)');
     await userEvent.clear(textarea);
     await userEvent.type(textarea, '  Стало ещё лучше  ');
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
@@ -156,13 +204,21 @@ describe('edit mode (editTarget)', () => {
     expect(mockOnSuccess).toHaveBeenCalled();
   });
 
-  it('keeps the client guard in edit mode: clearing the content blocks submit', async () => {
+  it('erasing the text saves the rating alone: content "" means «стереть текст» (В5)', async () => {
+    mockUpdate.mockResolvedValue({ ok: true });
     renderEditModal();
 
-    await userEvent.clear(screen.getByLabelText('Отзыв'));
+    await userEvent.clear(screen.getByLabelText('Отзыв (необязательно)'));
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }));
 
-    expect(mockUpdate).not.toHaveBeenCalled();
-    expect(screen.getByText('Напишите текст отзыва.')).toBeInTheDocument();
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate.mock.calls[0][0]).toStrictEqual({
+      reviewId: 'r-1',
+      rating: 4,
+      content: '',
+      detailPath: '/minsk/restorany/some-slug',
+    });
+    expect(screen.queryByText('Напишите текст отзыва.')).not.toBeInTheDocument();
+    expect(mockOnSuccess).toHaveBeenCalled();
   });
 });

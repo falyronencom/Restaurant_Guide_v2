@@ -223,9 +223,16 @@ export default async function EstablishmentPage({
   //    hour. `null` renders MenuLoadFailed / ReviewsLoadFailed instead — each
   //    loads its part from the visitor's browser and, on success, drops the
   //    cached page (reloadMenuAction, Ш8; reloadReviewsAction, Х5 / Х23).
+  //    The card shows only reviews with text (В1 = А — a rating alone still
+  //    counts in the average and in «N отзывов», and is listed on «Все
+  //    отзывы»), so every count of reviews on this page is the card's own
+  //    `review_count`: the filtered list's `pagination.total` counts only the
+  //    reviews with text.
   const [menuItemsResult, reviewsResult, meta] = await Promise.all([
     getMenuItems(slug).catch(() => null),
-    getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT }).catch(() => null),
+    getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT, with_text: true }).catch(
+      () => null,
+    ),
     getMetadata(),
   ]);
 
@@ -259,8 +266,8 @@ export default async function EstablishmentPage({
       id: 'reviews',
       label: 'Отзывы',
       suffix:
-        reviewsResult && reviewsResult.pagination.total > 0
-          ? ` (${reviewsResult.pagination.total})`
+        establishment.review_count > 0
+          ? ` (${establishment.review_count})`
           : undefined,
     },
   ];
@@ -404,7 +411,7 @@ export default async function EstablishmentPage({
             {reviewsResult ? (
               <ReviewCarousel
                 reviews={reviewsResult.reviews}
-                totalCount={reviewsResult.pagination.total}
+                totalCount={establishment.review_count}
                 averageRating={establishment.average_rating}
                 reviewsHref={`${address.path}/reviews`}
                 establishmentId={establishment.id}
@@ -414,6 +421,7 @@ export default async function EstablishmentPage({
             ) : (
               <ReviewsLoadFailed
                 slug={establishment.slug}
+                totalCount={establishment.review_count}
                 averageRating={establishment.average_rating}
                 reviewsHref={`${address.path}/reviews`}
                 establishmentId={establishment.id}

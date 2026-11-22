@@ -111,3 +111,46 @@ describe('ReviewCarousel — "Все N отзывов →" link', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/*
+ * «Отзыв без текста» (11.2026, В1 = А): `reviews` are the first reviews with
+ * text, `totalCount` is the card's review_count (every review). A card whose
+ * reviews are all ratings without text gets an empty list and a count.
+ */
+describe('ReviewCarousel — a card with ratings only', () => {
+  it('says «Пока только оценки» and links to all N reviews — not «Пока нет отзывов»', () => {
+    render(
+      <ReviewCarousel
+        reviews={[]}
+        totalCount={3}
+        averageRating={4}
+        reviewsHref='/minsk/restorany/some-slug/reviews'
+        {...EST_PROPS}
+      />,
+    );
+
+    expect(screen.getByText('Пока только оценки')).toBeInTheDocument();
+    expect(screen.queryByText(/Пока нет отзывов/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Все 3 отзыва →' }),
+    ).toHaveAttribute('href', '/minsk/restorany/some-slug/reviews');
+  });
+
+  it('a card without any review keeps «Пока нет отзывов…» and no link', () => {
+    render(
+      <ReviewCarousel
+        reviews={[]}
+        totalCount={0}
+        averageRating={null}
+        reviewsHref='/minsk/restorany/some-slug/reviews'
+        {...EST_PROPS}
+      />,
+    );
+
+    expect(
+      screen.getByText('Пока нет отзывов. Будьте первым, кто оставит отзыв!'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Пока только оценки')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Все/ })).not.toBeInTheDocument();
+  });
+});

@@ -82,6 +82,25 @@ describe('createReviewAction — success', () => {
     expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
     expect(result).toEqual({ ok: true });
   });
+
+  it('a review of one rating (no content) reaches the endpoint with no `content` key', async () => {
+    createReviewMock.mockResolvedValue(undefined);
+
+    const result = await createReviewAction({
+      establishmentId: INPUT.establishmentId,
+      rating: 3,
+      detailPath: INPUT.detailPath,
+    });
+
+    expect(createReviewMock).toHaveBeenCalledTimes(1);
+    const sent = createReviewMock.mock.calls[0][0];
+    expect(sent).toStrictEqual({
+      establishmentId: INPUT.establishmentId,
+      rating: 3,
+    });
+    expect(sent).not.toHaveProperty('content');
+    expect(result).toEqual({ ok: true });
+  });
 });
 
 describe('createReviewAction — error mapping (never revalidates)', () => {
@@ -114,9 +133,15 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
     // Real wire: the backend `validate` middleware emits `details` as an ARRAY
     // [{field, message, value}] (errorHandler.js:198), NOT a {field:[msgs]}
     // object. Pinning the true shape so the mock cannot re-green the old bug.
+    // The text is optional now, so the only refusal of the field the server
+    // has left is its length (the English message never reaches the screen).
     createReviewMock.mockRejectedValue(
       new ApiError(422, 'Validation', 'VALIDATION_ERROR', [
-        { field: 'content', message: 'Review content is required', value: '' },
+        {
+          field: 'content',
+          message: 'Review content must not exceed 1000 characters',
+          value: '…',
+        },
       ]),
     );
 
@@ -125,7 +150,7 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
     expect(result).toMatchObject({
       ok: false,
       code: 'VALIDATION_ERROR',
-      fieldErrors: { content: expect.stringMatching(/от 1 до 1000/) },
+      fieldErrors: { content: 'Текст отзыва: не больше 1000 символов.' },
     });
   });
 
@@ -170,6 +195,17 @@ describe('updateReviewAction — success', () => {
       '/minsk/restorany/some-slug',
     );
     expect(result).toEqual({ ok: true });
+  });
+
+  it('forwards an erased text as content "" — «стереть текст» (В5)', async () => {
+    updateReviewMock.mockResolvedValue(undefined);
+
+    await updateReviewAction({ ...UPDATE_INPUT, content: '' });
+
+    expect(updateReviewMock).toHaveBeenCalledWith(UPDATE_INPUT.reviewId, {
+      rating: 4,
+      content: '',
+    });
   });
 });
 
@@ -309,7 +345,7 @@ describe('reloadReviewsAction', () => {
     pagination: { page: 1, limit: 5, total: 12, totalPages: 3, hasNext: true, hasPrevious: false },
   };
 
-  it('returns the first five and busts the literal detail path', async () => {
+  it('returns the first five with text and busts the literal detail path', async () => {
     getReviewsMock.mockResolvedValue(PAGE);
 
     const result = await reloadReviewsAction({
@@ -317,8 +353,15 @@ describe('reloadReviewsAction', () => {
       detailPath: '/minsk/restorany/some-slug',
     });
 
-    expect(getReviewsMock).toHaveBeenCalledWith('some-slug', { limit: 5 }, { visitor: null });
-    expect(result).toEqual({ ok: true, reviews: PAGE.reviews, total: 12 });
+    // The page's own slice: only reviews with text (В1 = А).
+    expect(getReviewsMock).toHaveBeenCalledWith(
+      'some-slug',
+      { limit: 5, with_text: true },
+      { visitor: null },
+    );
+    // No count: the filtered list's total counts only reviews with text —
+    // the island shows the card's review_count instead.
+    expect(result).toStrictEqual({ ok: true, reviews: PAGE.reviews });
     expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
   });
 

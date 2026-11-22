@@ -10,7 +10,8 @@ import { parseDayHours } from '@/lib/working-hours';
 /**
  * How many reviews the establishment detail page shows (the carousel); the rest
  * are on «Все отзывы». Shared by the page and reloadReviewsAction, which
- * re-fetches the same slice when the page's own fetch failed.
+ * re-fetches the same slice when the page's own fetch failed. Both ask for the
+ * first reviews with text only (`with_text`, В1 = А).
  */
 export const DETAIL_REVIEWS_LIMIT = 5;
 

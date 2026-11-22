@@ -27,9 +27,15 @@ import { cn } from '@/lib/utils';
  * `editTarget` prop pre-fills the fields, retitles to «Редактировать отзыв» /
  * «Сохранить», and routes submit to updateReviewAction. Without it the Slice-1
  * create contract is byte-for-byte unchanged.
+ *
+ * The text is optional (thread «Отзыв без текста», В6): a rating alone is a
+ * review. Create without text sends no `content` key; an edit with the text
+ * erased sends `content: ''`, which the server reads as «стереть текст» (В5).
  */
 
 const MAX_CONTENT = 1000;
+
+const CONTENT_HINT = 'Текст можно не писать: достаточно оценки';
 
 export type ReviewEditTarget = {
   reviewId: string;
@@ -86,15 +92,13 @@ export function WriteReviewModal({
 
   async function handleSubmit() {
     // Client-side guard mirrors the backend validator (rating 1–5 int, content
-    // 1–1000 trimmed) so the common cases never round-trip; the server mapping
-    // is the backstop for anything that slips through.
+    // optional, up to 1000 trimmed) so the common cases never round-trip; the
+    // server mapping is the backstop for anything that slips through.
     const fieldErrors: Record<string, string> = {};
     if (rating < 1 || rating > 5) {
       fieldErrors.rating = 'Поставьте оценку от 1 до 5.';
     }
-    if (trimmed.length < 1) {
-      fieldErrors.content = 'Напишите текст отзыва.';
-    } else if (content.length > MAX_CONTENT) {
+    if (content.length > MAX_CONTENT) {
       fieldErrors.content = `Не более ${MAX_CONTENT} символов.`;
     }
     if (Object.keys(fieldErrors).length > 0) {
@@ -108,13 +112,15 @@ export function WriteReviewModal({
       ? await updateReviewAction({
           reviewId: editTarget.reviewId,
           rating,
+          // '' when the text was erased — the review keeps only its rating.
           content: trimmed,
           detailPath,
         })
       : await createReviewAction({
           establishmentId,
           rating,
-          content: trimmed,
+          // No text → no `content` key: a review of one rating.
+          ...(trimmed ? { content: trimmed } : {}),
           detailPath,
         });
     setPending(false);
@@ -179,13 +185,15 @@ export function WriteReviewModal({
           ) : null}
         </div>
 
-        {/* Content */}
+        {/* Content — optional (В6). The hint under the field is always
+            there and gives way to the field's error, as the password hint of
+            RegisterForm does. */}
         <div className='flex flex-col gap-1.5'>
           <label
             htmlFor='review-content'
             className='text-label-m text-foreground'
           >
-            Отзыв
+            Отзыв (необязательно)
           </label>
           <Textarea
             id='review-content'
@@ -195,19 +203,19 @@ export function WriteReviewModal({
             rows={4}
             placeholder='Расскажите, что понравилось…'
             aria-invalid={contentError ? true : undefined}
-            aria-describedby={contentError ? 'review-content-error' : undefined}
+            aria-describedby='review-content-hint'
           />
-          <div className='flex items-center justify-between gap-2'>
-            {contentError ? (
-              <p
-                id='review-content-error'
-                className='text-caption-l text-destructive'
-              >
-                {contentError}
-              </p>
-            ) : (
-              <span aria-hidden='true' />
-            )}
+          <div className='flex items-start justify-between gap-2'>
+            <p
+              id='review-content-hint'
+              className={
+                contentError
+                  ? 'text-caption-l text-destructive'
+                  : 'text-caption-l text-figma-text-dark'
+              }
+            >
+              {contentError ?? CONTENT_HINT}
+            </p>
             <span className='shrink-0 text-caption-m text-figma-text-grey'>
               {content.length} / {MAX_CONTENT}
             </span>

@@ -48,7 +48,9 @@ export type CreateReviewResult = ReviewActionResult;
  * in the UI — mirror of auth/actions.ts FIELD_TEXTS_RU for the review fields.
  */
 const FIELD_TEXTS_RU: Record<string, string> = {
-  content: 'Текст отзыва: от 1 до 1000 символов.',
+  // The text is optional (a review of one rating), so the only rule left on
+  // the field is its length.
+  content: 'Текст отзыва: не больше 1000 символов.',
   rating: 'Поставьте оценку от 1 до 5.',
 };
 
@@ -58,19 +60,20 @@ const VALIDATION_SUMMARY_RU = 'Проверьте правильность за�
  * Create a review. On success busts the ISR detail page so the new review is
  * visible on next render; returns a mapped `{ok:false, code, message,
  * fieldErrors?}` on any rejection (the modal renders per-field 422 + a summary
- * banner for 409/429/network).
+ * banner for 409/429/network). No `content` — a review of one rating: the
+ * endpoint then gets no `content` key at all.
  */
 export async function createReviewAction(input: {
   establishmentId: string;
   rating: number;
-  content: string;
+  content?: string;
   detailPath: string;
 }): Promise<CreateReviewResult> {
   try {
     await createReview({
       establishmentId: input.establishmentId,
       rating: input.rating,
-      content: input.content,
+      ...(input.content !== undefined ? { content: input.content } : {}),
     });
   } catch (err) {
     const daily = dailyLimitRefusal(err);
@@ -88,7 +91,8 @@ export async function createReviewAction(input: {
 
 /**
  * Update the user's own review (rating + content — the form always submits
- * both). Mirrors createReviewAction: literal revalidatePath on success only.
+ * both; content '' erases the text, the review keeps only its rating — В5).
+ * Mirrors createReviewAction: literal revalidatePath on success only.
  * Ownership is authoritative server-side (403 UNAUTHORIZED_REVIEW_MODIFICATION);
  * the client check on the card is a UX affordance.
  */
@@ -130,13 +134,16 @@ export async function deleteReviewAction(input: {
 }
 
 export type ReloadReviewsResult =
-  | { ok: true; reviews: PublicReview[]; total: number }
+  | { ok: true; reviews: PublicReview[] }
   | { ok: false };
 
 /**
  * Re-fetch the detail page's review slice after the page's own fetch failed
  * (ReviewsLoadFailed calls it from the visitor's browser — the public API URL
- * is server-only, hence an action, not a client fetch).
+ * is server-only, hence an action, not a client fetch). The same slice as the
+ * page's: the first reviews with text only (В1 = А). No count is returned —
+ * the filtered list counts only reviews with text; the island takes the
+ * card's `review_count` from the page.
  *
  * On success it also busts the literal detail path: the ISR page cached the
  * failed render (no reviews in its HTML), and without this it would keep it
@@ -154,7 +161,7 @@ export async function reloadReviewsAction(input: {
     // the site's own budget (lib/api/visitor.ts).
     result = await getReviews(
       input.slug,
-      { limit: DETAIL_REVIEWS_LIMIT },
+      { limit: DETAIL_REVIEWS_LIMIT, with_text: true },
       { visitor: await currentVisitor() },
     );
   } catch {
@@ -163,11 +170,7 @@ export async function reloadReviewsAction(input: {
   if (isDetailPathOf(input.detailPath, input.slug) && await mayDropCachedPage()) {
     revalidatePath(input.detailPath);
   }
-  return {
-    ok: true,
-    reviews: result.reviews,
-    total: result.pagination.total,
-  };
+  return { ok: true, reviews: result.reviews };
 }
 
 /**

@@ -22,6 +22,11 @@ import { WriteReviewCta } from './WriteReviewCta';
  * horizontal scroll-snap row on mobile (CSS-only). Every card also gets the
  * OwnReviewControls island in its footer slot (Slice 2) — it renders edit/delete
  * only on the session user's own review, nothing otherwise.
+ *
+ * `reviews` are the first reviews WITH TEXT; `totalCount` is the card's
+ * `review_count` — every review, a rating alone included (В1 = А). A card
+ * whose reviews are all ratings without text says «Пока только оценки», and
+ * the header's «Все N отзывов →» leads to them.
  */
 
 export function ReviewCarousel({
@@ -90,7 +95,9 @@ export function ReviewCarousel({
 
       {reviews.length === 0 ? (
         <p className='rounded-card bg-figma-bg-warm p-l text-body-m text-muted-foreground'>
-          Пока нет отзывов. Будьте первым, кто оставит отзыв!
+          {totalCount > 0
+            ? 'Пока только оценки'
+            : 'Пока нет отзывов. Будьте первым, кто оставит отзыв!'}
         </p>
       ) : (
         <div
