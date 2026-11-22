@@ -17,6 +17,8 @@ jest.mock('@/lib/api/endpoints/reviews', () => ({
   updateReview: jest.fn(),
   deleteReview: jest.fn(),
 }));
+// The display cookie's address, for the В9 words on EMAIL_NOT_VERIFIED.
+jest.mock('@/lib/auth/session', () => ({ getSessionUser: jest.fn() }));
 
 import { revalidatePath } from 'next/cache';
 
@@ -29,6 +31,7 @@ import {
   updateReview,
 } from '@/lib/api/endpoints/reviews';
 import { ApiError } from '@/lib/api/types';
+import { getSessionUser } from '@/lib/auth/session';
 import {
   createReviewAction,
   deleteReviewAction,
@@ -178,6 +181,53 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
 
     expect(result).toMatchObject({ ok: false, code: 'NETWORK' });
     expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+});
+
+// A new review only with a confirmed address (thread «Отзыв без текста», В9):
+// the server's 422 EMAIL_NOT_VERIFIED carries a sentence written for the
+// older app builds; the site shows its own, with the address the code goes to.
+describe('createReviewAction — an address not confirmed (EMAIL_NOT_VERIFIED)', () => {
+  const getSessionUserMock = getSessionUser as jest.Mock;
+  const refusal = () =>
+    new ApiError(
+      422,
+      'Чтобы оставить отзыв, подтвердите почту: «Профиль» → «Подтвердить email»',
+      'EMAIL_NOT_VERIFIED',
+    );
+
+  it('the site\'s own В9 words with the address — not the server\'s text, not «Не удалось…»', async () => {
+    getSessionUserMock.mockResolvedValue({
+      id: 'u-1',
+      email: 'guest@example.com',
+      name: 'Гость',
+      role: 'user',
+      avatarUrl: null,
+    });
+    createReviewMock.mockRejectedValue(refusal());
+
+    const result = await createReviewAction(INPUT);
+
+    expect(result).toStrictEqual({
+      ok: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message:
+        'Чтобы оставить отзыв, подтвердите почту — пришлём код на guest@example.com',
+    });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it('no display cookie: the same words without an address', async () => {
+    getSessionUserMock.mockResolvedValue(null);
+    createReviewMock.mockRejectedValue(refusal());
+
+    const result = await createReviewAction(INPUT);
+
+    expect(result).toStrictEqual({
+      ok: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: 'Чтобы оставить отзыв, подтвердите почту',
+    });
   });
 });
 

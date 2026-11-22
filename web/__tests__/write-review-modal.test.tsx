@@ -18,9 +18,19 @@ import userEvent from '@testing-library/user-event';
 
 const mockCreate = jest.fn();
 const mockUpdate = jest.fn();
+const mockResend = jest.fn();
+const mockPush = jest.fn();
 jest.mock('@/lib/reviews/actions', () => ({
   createReviewAction: (...args: unknown[]) => mockCreate(...args),
   updateReviewAction: (...args: unknown[]) => mockUpdate(...args),
+}));
+// The server's refusal EMAIL_NOT_VERIFIED shows «Отправить код»
+// (VerifyEmailToReview): the resend action and the router are its boundary.
+jest.mock('@/lib/auth/actions', () => ({
+  resendVerificationCodeAction: (...args: unknown[]) => mockResend(...args),
+}));
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush, refresh: jest.fn() }),
 }));
 
 import { WriteReviewModal } from '@/components/establishment/WriteReviewModal';
@@ -185,6 +195,34 @@ it('a refusal of the text shows under the field in place of the hint, the field 
   expect(
     screen.queryByText('Текст можно не писать: достаточно оценки'),
   ).not.toBeInTheDocument();
+  expect(mockOnSuccess).not.toHaveBeenCalled();
+});
+
+// A new review only with a confirmed address (В9): the server's refusal
+// shows the same words as the check before the form, with «Отправить код» —
+// the code is sent, then the code page opens with the way back to the card.
+it('the refusal EMAIL_NOT_VERIFIED: the В9 words and «Отправить код» → the code page with the way back', async () => {
+  const text =
+    'Чтобы оставить отзыв, подтвердите почту — пришлём код на guest@example.com';
+  mockCreate.mockResolvedValue({
+    ok: false,
+    code: 'EMAIL_NOT_VERIFIED',
+    message: text,
+  });
+  mockResend.mockResolvedValue({ ok: true, message: 'Мы отправили новый код на вашу почту.' });
+  renderModal();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Оценка 2 из 5' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
+
+  // Once — as the gate's words, not again as a summary error.
+  expect(await screen.findAllByText(text)).toHaveLength(1);
+  await userEvent.click(screen.getByRole('button', { name: 'Отправить код' }));
+
+  expect(mockResend).toHaveBeenCalledTimes(1);
+  expect(mockPush).toHaveBeenCalledWith(
+    '/verify-email?returnTo=%2Fminsk%2Frestorany%2Fsome-slug',
+  );
   expect(mockOnSuccess).not.toHaveBeenCalled();
 });
 

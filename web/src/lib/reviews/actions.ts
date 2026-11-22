@@ -14,7 +14,9 @@ import {
 } from '@/lib/api/endpoints/reviews';
 import { personText } from '@/lib/api/person-text';
 import { ApiError, type PublicReview } from '@/lib/api/types';
+import { getSessionUser } from '@/lib/auth/session';
 import { DETAIL_REVIEWS_LIMIT } from '@/lib/establishment-helpers';
+import { verifyToReviewText } from '@/lib/reviews/email-gate';
 
 /*
  * Review Server Actions (reviews-write Slice 1 create + Slice 2 edit/delete).
@@ -78,6 +80,8 @@ export async function createReviewAction(input: {
   } catch (err) {
     const daily = dailyLimitRefusal(err);
     if (daily) return daily;
+    const unverified = await emailNotVerifiedRefusal(err);
+    if (unverified) return unverified;
     return mapReviewError(err, messageForCreateCode);
   }
 
@@ -229,6 +233,30 @@ function dailyLimitRefusal(err: unknown): ReviewActionResult | null {
     ok: false,
     code: err.errorCode ?? 'HTTP_429',
     message: personText(err.message) ?? DAILY_LIMIT_FALLBACK_RU,
+  };
+}
+
+/**
+ * A new review only with a confirmed address (thread «Отзыв без текста», В9):
+ * the server refuses it with 422 EMAIL_NOT_VERIFIED. Its own sentence is
+ * written for the older app builds («Профиль» → «Подтвердить email»); the
+ * site says its own, with the address the code goes to (the display cookie —
+ * the address cannot be changed), and the modal puts «Отправить код» under it
+ * (VerifyEmailToReview). Checked before mapReviewError, whose fallback for
+ * an unknown code — «Не удалось отправить отзыв. Попробуйте позже.» — would
+ * not say what to do.
+ */
+async function emailNotVerifiedRefusal(
+  err: unknown,
+): Promise<ReviewActionResult | null> {
+  if (!(err instanceof ApiError) || err.errorCode !== 'EMAIL_NOT_VERIFIED') {
+    return null;
+  }
+  const user = await getSessionUser().catch(() => null);
+  return {
+    ok: false,
+    code: 'EMAIL_NOT_VERIFIED',
+    message: verifyToReviewText(user?.email),
   };
 }
 

@@ -15,6 +15,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { createReviewAction, updateReviewAction } from '@/lib/reviews/actions';
 import { cn } from '@/lib/utils';
 
+import { VerifyEmailToReview } from './VerifyEmailToReview';
+
 /*
  * Write-review modal (reviews-write Slice 1 create + Slice 2 edit). Controlled
  * star + textarea state (never uncontrolled → immune to React 19's post-action
@@ -31,6 +33,10 @@ import { cn } from '@/lib/utils';
  * The text is optional (thread «Отзыв без текста», В6): a rating alone is a
  * review. Create without text sends no `content` key; an edit with the text
  * erased sends `content: ''`, which the server reads as «стереть текст» (В5).
+ *
+ * The server's refusal of a new review from an address not confirmed
+ * (EMAIL_NOT_VERIFIED) shows the В9 words with «Отправить код» in place of
+ * the summary error (VerifyEmailToReview); the form stays as typed.
  */
 
 const MAX_CONTENT = 1000;
@@ -65,6 +71,7 @@ export function WriteReviewModal({
   const [content, setContent] = useState(editTarget?.content ?? '');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<{
+    code?: string;
     message?: string;
     fieldErrors?: Record<string, string>;
   } | null>(null);
@@ -128,13 +135,20 @@ export function WriteReviewModal({
     if (result.ok) {
       onSuccess();
     } else {
-      setError({ message: result.message, fieldErrors: result.fieldErrors });
+      setError({
+        code: result.code,
+        message: result.message,
+        fieldErrors: result.fieldErrors,
+      });
     }
   }
 
   const ratingError = error?.fieldErrors?.rating;
   const contentError = error?.fieldErrors?.content;
-  const summaryError = error?.message && !error.fieldErrors ? error.message : null;
+  const emailGateText =
+    error?.code === 'EMAIL_NOT_VERIFIED' ? (error.message ?? null) : null;
+  const summaryError =
+    error?.message && !error.fieldErrors && !emailGateText ? error.message : null;
   const litUpTo = hover ?? rating;
 
   return (
@@ -221,6 +235,15 @@ export function WriteReviewModal({
             </span>
           </div>
         </div>
+
+        {emailGateText ? (
+          <VerifyEmailToReview
+            text={emailGateText}
+            detailPath={detailPath}
+            // Confirmed elsewhere since: the refusal is stale — send again.
+            onAlreadyVerified={() => setError(null)}
+          />
+        ) : null}
 
         {summaryError ? (
           <p aria-live='polite' className='text-caption-l text-destructive'>
