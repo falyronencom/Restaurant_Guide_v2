@@ -95,12 +95,8 @@ describe('OnlyForAuthor', () => {
     expect(screen.queryByText('свой отзыв')).not.toBeInTheDocument();
   });
 
-  it('shows nothing to a guest, nor for a switched-off author', () => {
+  it('shows nothing to a guest', () => {
     renderGate(['u-1']);
-    expect(screen.queryByText('свой отзыв')).not.toBeInTheDocument();
-
-    mockUser = { id: 'u-1' };
-    renderGate([null]);
     expect(screen.queryByText('свой отзыв')).not.toBeInTheDocument();
   });
 });

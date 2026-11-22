@@ -36,7 +36,9 @@ import { VerifyEmailToReview } from './VerifyEmailToReview';
  *
  * The server's refusal of a new review from an address not confirmed
  * (EMAIL_NOT_VERIFIED) shows the В9 words with «Отправить код» in place of
- * the summary error (VerifyEmailToReview); the form stays as typed.
+ * the summary error (VerifyEmailToReview). The form stays as typed until
+ * «Отправить код» opens the code page — the typed text does not go along. The
+ * path is rare: WriteReviewCta asks about the address before the form opens.
  */
 
 const MAX_CONTENT = 1000;

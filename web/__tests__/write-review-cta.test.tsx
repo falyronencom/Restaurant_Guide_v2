@@ -165,6 +165,10 @@ describe('a new review only with a confirmed address (В9)', () => {
     await tapWrite();
 
     expect(await screen.findByText(GATE_TEXT)).toBeInTheDocument();
+    // The words are the dialog's description: read out on opening.
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      /пришлём код на guest@example\.com/,
+    );
     expect(screen.queryByTestId('modal-open')).not.toBeInTheDocument();
     expect(mockResend).not.toHaveBeenCalled();
 
@@ -209,14 +213,16 @@ describe('a new review only with a confirmed address (В9)', () => {
     expect(screen.queryByText(GATE_TEXT)).not.toBeInTheDocument();
   });
 
-  it('a refused send says why, stays, and opens nothing', async () => {
+  // A refused send: the reason, the button stays, and the code page all the
+  // same («Подтвердить», as in the profile) — after «Слишком много запросов
+  // кода» the last code is most likely in the mail already.
+  it.each([
+    ['EMAIL_NOT_SENT', 'Письмо не отправилось. Попробуйте ещё раз через минуту.'],
+    ['RATE_LIMITED', 'Слишком много запросов кода. Попробуйте позже.'],
+  ])('a refused send (%s) says why, stays, and offers the code page', async (code, message) => {
     signedIn();
     mockLoadProfile.mockResolvedValue(profile(false));
-    mockResend.mockResolvedValue({
-      ok: false,
-      code: 'EMAIL_NOT_SENT',
-      message: 'Письмо не отправилось. Попробуйте ещё раз через минуту.',
-    });
+    mockResend.mockResolvedValue({ ok: false, code, message });
     render(<WriteReviewCta {...PROPS} />);
 
     await tapWrite();
@@ -224,14 +230,35 @@ describe('a new review only with a confirmed address (В9)', () => {
       await screen.findByRole('button', { name: 'Отправить код' }),
     );
 
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
     expect(
-      await screen.findByText('Письмо не отправилось. Попробуйте ещё раз через минуту.'),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Отправить код' })).toBeEnabled();
+      screen.getByRole('link', { name: 'Подтвердить' }),
+    ).toHaveAttribute('href', '/verify-email?returnTo=%2Fminsk%2Frestorany%2Fsome-slug');
+    expect(
+      screen.getByRole('button', { name: 'Отправить код' }),
+    ).not.toHaveAttribute('aria-disabled');
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('«почта уже подтверждена» on the send hands over to the form', async () => {
+  it('the send itself unreachable (network): «Сеть недоступна…» and the code page all the same', async () => {
+    signedIn();
+    mockLoadProfile.mockResolvedValue(profile(false));
+    mockResend.mockRejectedValue(new Error('Failed to fetch'));
+    render(<WriteReviewCta {...PROPS} />);
+
+    await tapWrite();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Отправить код' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Сеть недоступна. Попробуйте позже.',
+    );
+    expect(screen.getByRole('link', { name: 'Подтвердить' })).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('«почта уже подтверждена» on the send closes the words and hands over to the form', async () => {
     signedIn();
     mockLoadProfile.mockResolvedValue(profile(false));
     mockResend.mockResolvedValue({
@@ -247,6 +274,68 @@ describe('a new review only with a confirmed address (В9)', () => {
     );
 
     expect(await screen.findByTestId('modal-open')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText(GATE_TEXT)).not.toBeInTheDocument(),
+    );
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('a second press while the code is on its way sends nothing more: one letter', async () => {
+    signedIn();
+    mockLoadProfile.mockResolvedValue(profile(false));
+    let answer: (value: unknown) => void = () => {};
+    mockResend.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<WriteReviewCta {...PROPS} />);
+
+    await tapWrite();
+    const send = await screen.findByRole('button', { name: 'Отправить код' });
+    await userEvent.click(send);
+    await userEvent.click(screen.getByRole('button', { name: 'Отправляем…' }));
+
+    expect(mockResend).toHaveBeenCalledTimes(1);
+    answer({ ok: true, message: 'Мы отправили новый код на вашу почту.' });
+    await waitFor(() => expect(mockPush).toHaveBeenCalledTimes(1));
+  });
+
+  it('closed before the answer came: nothing follows it — no code page', async () => {
+    signedIn();
+    mockLoadProfile.mockResolvedValue(profile(false));
+    let answer: (value: unknown) => void = () => {};
+    mockResend.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<WriteReviewCta {...PROPS} />);
+
+    await tapWrite();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Отправить код' }),
+    );
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(screen.queryByText(GATE_TEXT)).not.toBeInTheDocument(),
+    );
+
+    answer({ ok: true, message: 'Мы отправили новый код на вашу почту.' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('modal-open')).not.toBeInTheDocument();
+  });
+
+  it('while the address is being checked the button is busy, not disabled (the focus stays on it)', async () => {
+    signedIn();
+    let answer: (value: unknown) => void = () => {};
+    mockLoadProfile.mockReturnValue(new Promise((resolve) => { answer = resolve; }));
+    render(<WriteReviewCta {...PROPS} />);
+
+    await tapWrite();
+    const button = screen.getByRole('button', { name: /Оставить отзыв/ });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).not.toBeDisabled();
+    // A second tap meanwhile asks nothing more.
+    await tapWrite();
+    expect(mockLoadProfile).toHaveBeenCalledTimes(1);
+
+    answer(profile(true));
+    expect(await screen.findByTestId('modal-open')).toBeInTheDocument();
+    expect(button).not.toHaveAttribute('aria-disabled');
   });
 });

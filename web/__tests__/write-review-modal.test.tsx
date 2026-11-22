@@ -13,7 +13,7 @@
  * text erased passes `content: ''` («стереть текст», В5). The two former
  * «text is required» cases are turned around.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const mockCreate = jest.fn();
@@ -215,8 +215,9 @@ it('the refusal EMAIL_NOT_VERIFIED: the В9 words and «Отправить ко�
   await userEvent.click(screen.getByRole('button', { name: 'Оценка 2 из 5' }));
   await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
 
-  // Once — as the gate's words, not again as a summary error.
+  // Once — as the gate's words, not again as a summary error — and announced.
   expect(await screen.findAllByText(text)).toHaveLength(1);
+  expect(screen.getByRole('alert')).toHaveTextContent(text);
   await userEvent.click(screen.getByRole('button', { name: 'Отправить код' }));
 
   expect(mockResend).toHaveBeenCalledTimes(1);
@@ -224,6 +225,33 @@ it('the refusal EMAIL_NOT_VERIFIED: the В9 words and «Отправить ко�
     '/verify-email?returnTo=%2Fminsk%2Frestorany%2Fsome-slug',
   );
   expect(mockOnSuccess).not.toHaveBeenCalled();
+});
+
+it('the refusal EMAIL_NOT_VERIFIED, then «почта уже подтверждена» on the send: the words go, the form is there to send again', async () => {
+  const text =
+    'Чтобы оставить отзыв, подтвердите почту — пришлём код на guest@example.com';
+  mockCreate.mockResolvedValueOnce({
+    ok: false,
+    code: 'EMAIL_NOT_VERIFIED',
+    message: text,
+  });
+  mockResend.mockResolvedValue({
+    ok: false,
+    code: 'EMAIL_ALREADY_VERIFIED',
+    message: 'Почта уже подтверждена.',
+  });
+  renderModal();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Оценка 3 из 5' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: 'Отправить код' }),
+  );
+
+  await waitFor(() => expect(screen.queryByText(text)).not.toBeInTheDocument());
+  expect(screen.queryByText('Почта уже подтверждена.')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Опубликовать' })).toBeEnabled();
+  expect(mockPush).not.toHaveBeenCalled();
 });
 
 describe('edit mode (editTarget)', () => {

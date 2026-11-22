@@ -66,6 +66,7 @@ export function WriteReviewCta({
     : false;
 
   async function startReview() {
+    if (checking) return;
     if (!isAuthenticated) {
       requestLogin({ fallbackToLoginPage: true });
       return;
@@ -74,7 +75,7 @@ export function WriteReviewCta({
     const profile = await loadProfile();
     setChecking(false);
     if (profile.ok && profile.profile.emailVerified !== true) {
-      setUnverifiedEmail(profile.profile.email);
+      setUnverifiedEmail(profile.profile.email ?? '');
       return;
     }
     setOpen(true);
@@ -94,7 +95,9 @@ export function WriteReviewCta({
         type='button'
         size='cta'
         onClick={startReview}
-        disabled={checking}
+        // Not `disabled`: a disabled button drops the focus to the page
+        // (Chrome), and the dialogs could not hand it back on closing.
+        aria-disabled={checking || undefined}
         className='bg-brand text-text-on-primary hover:bg-brand/90'
       >
         <Pencil className='size-4' aria-hidden='true' />
@@ -109,10 +112,16 @@ export function WriteReviewCta({
         <DialogContent className='sm:max-w-md'>
           <DialogHeader>
             <DialogTitle>Ваш отзыв</DialogTitle>
-            <DialogDescription>Заведение: «{establishmentName}»</DialogDescription>
+            {/* The В9 words are the dialog's description, so a screen reader
+                reads them on opening, after the establishment. */}
+            <DialogDescription className='flex flex-col gap-3'>
+              <span>Заведение: «{establishmentName}»</span>
+              <span className='text-body-m text-foreground'>
+                {verifyToReviewText(unverifiedEmail)}
+              </span>
+            </DialogDescription>
           </DialogHeader>
           <VerifyEmailToReview
-            text={verifyToReviewText(unverifiedEmail)}
             detailPath={detailPath}
             onAlreadyVerified={() => {
               setUnverifiedEmail(null);

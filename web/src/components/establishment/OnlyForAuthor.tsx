@@ -12,8 +12,8 @@ import { useAuth } from '@/components/auth/AuthProvider';
  *
  * Ownership resolves client-side — the ISR detail page reads no cookies,
  * mirroring WriteReviewCta / OwnReviewControls — so on the server and for any
- * other visitor this renders nothing. `authorIds`: any of them; a switched-off
- * author (null) matches no one.
+ * other visitor this renders nothing. `authorIds`: any of them (a switched-off
+ * author's null matches no signed-in user).
  */
 export function OnlyForAuthor({
   authorIds,
@@ -23,8 +23,6 @@ export function OnlyForAuthor({
   children: ReactNode;
 }) {
   const { user } = useAuth();
-  if (!user || !authorIds.some((id) => id !== null && id === user.id)) {
-    return null;
-  }
+  if (!user || !authorIds.includes(user.id)) return null;
   return <>{children}</>;
 }

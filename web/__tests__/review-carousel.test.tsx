@@ -185,28 +185,34 @@ describe('ReviewCarousel — the author\'s own review of one rating', () => {
     return { ...makeReview(id), content: null };
   }
 
-  it('is shown first, each card wrapped for its author alone; reviews with text are not wrapped', () => {
+  it('is shown first, each card wrapped for its own author alone; reviews with text are not wrapped', () => {
     render(
       <ReviewCarousel
         reviews={THREE_REVIEWS}
-        authorOnly={[ratingOnly('own')]}
-        totalCount={6}
+        authorOnly={[ratingOnly('own'), ratingOnly('other')]}
+        totalCount={7}
         averageRating={4.1}
         reviewsHref='/minsk/restorany/some-slug/reviews'
         {...EST_PROPS}
       />,
     );
 
+    // One wrapper per card, each naming only that card's author: the author
+    // of one rating never sees another's.
     const gates = screen.getAllByTestId('only-for-author');
-    expect(gates).toHaveLength(1);
+    expect(gates).toHaveLength(2);
     expect(gates[0]).toHaveAttribute('data-authors', 'u-own');
     expect(gates[0]).toHaveTextContent('Автор own');
+    expect(gates[0]).not.toHaveTextContent('Автор other');
+    expect(gates[1]).toHaveAttribute('data-authors', 'u-other');
+    expect(gates[1]).toHaveTextContent('Автор other');
     // First in the row; the three reviews with text follow, unwrapped.
     const names = screen
       .getAllByRole('article')
       .map((a) => a.textContent ?? '');
     expect(names[0]).toContain('Автор own');
-    expect(names.slice(1).map((n) => n.match(/Автор [abc]/)?.[0])).toEqual([
+    expect(names[1]).toContain('Автор other');
+    expect(names.slice(2).map((n) => n.match(/Автор [abc]/)?.[0])).toEqual([
       'Автор a',
       'Автор b',
       'Автор c',
