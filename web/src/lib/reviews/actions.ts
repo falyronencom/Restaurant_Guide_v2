@@ -15,7 +15,10 @@ import {
 import { personText } from '@/lib/api/person-text';
 import { ApiError, type PublicReview } from '@/lib/api/types';
 import { getSessionUser } from '@/lib/auth/session';
-import { DETAIL_REVIEWS_LIMIT } from '@/lib/establishment-helpers';
+import {
+  DETAIL_REVIEWS_LIMIT,
+  authorOnlyReviews,
+} from '@/lib/establishment-helpers';
 import { verifyToReviewText } from '@/lib/reviews/email-gate';
 
 /*
@@ -138,16 +141,18 @@ export async function deleteReviewAction(input: {
 }
 
 export type ReloadReviewsResult =
-  | { ok: true; reviews: PublicReview[] }
+  | { ok: true; reviews: PublicReview[]; authorOnly: PublicReview[] }
   | { ok: false };
 
 /**
  * Re-fetch the detail page's review slice after the page's own fetch failed
  * (ReviewsLoadFailed calls it from the visitor's browser — the public API URL
  * is server-only, hence an action, not a client fetch). The same slice as the
- * page's: the first reviews with text only (В1 = А). No count is returned —
- * the filtered list counts only reviews with text; the island takes the
- * card's `review_count` from the page.
+ * page's: the first reviews with text only (В1 = А), and the author's own
+ * reviews of one rating among the latest (`authorOnly`, authorOnlyReviews —
+ * if that second ask fails, none). No count is returned — the filtered list
+ * counts only reviews with text; the island takes the card's `review_count`
+ * from the page.
  *
  * On success it also busts the literal detail path: the ISR page cached the
  * failed render (no reviews in its HTML), and without this it would keep it
@@ -159,22 +164,33 @@ export async function reloadReviewsAction(input: {
   slug: string;
   detailPath: string;
 }): Promise<ReloadReviewsResult> {
-  let result;
+  let shown;
+  let latest;
   try {
     // Any browser may call this action: it counts against its visitor, not
     // the site's own budget (lib/api/visitor.ts).
-    result = await getReviews(
-      input.slug,
-      { limit: DETAIL_REVIEWS_LIMIT, with_text: true },
-      { visitor: await currentVisitor() },
-    );
+    const visitor = await currentVisitor();
+    [shown, latest] = await Promise.all([
+      getReviews(
+        input.slug,
+        { limit: DETAIL_REVIEWS_LIMIT, with_text: true },
+        { visitor },
+      ),
+      getReviews(input.slug, { limit: DETAIL_REVIEWS_LIMIT }, { visitor }).catch(
+        () => null,
+      ),
+    ]);
   } catch {
     return { ok: false };
   }
   if (isDetailPathOf(input.detailPath, input.slug) && await mayDropCachedPage()) {
     revalidatePath(input.detailPath);
   }
-  return { ok: true, reviews: result.reviews };
+  return {
+    ok: true,
+    reviews: shown.reviews,
+    authorOnly: authorOnlyReviews(shown.reviews, latest?.reviews ?? []),
+  };
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/endpoints/metadata';
 import {
   DETAIL_REVIEWS_LIMIT,
+  authorOnlyReviews,
   formatRating,
   pluralizeReviews,
   ratingColorClass,
@@ -227,14 +228,19 @@ export default async function EstablishmentPage({
   //    counts in the average and in «N отзывов», and is listed on «Все
   //    отзывы»), so every count of reviews on this page is the card's own
   //    `review_count`: the filtered list's `pagination.total` counts only the
-  //    reviews with text.
-  const [menuItemsResult, reviewsResult, meta] = await Promise.all([
-    getMenuItems(slug).catch(() => null),
-    getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT, with_text: true }).catch(
-      () => null,
-    ),
-    getMetadata(),
-  ]);
+  //    reviews with text. The latest reviews without the filter are asked
+  //    too, only for an author's own review of one rating, which the card
+  //    shows to that author alone (authorOnlyReviews); if that ask fails, the
+  //    card simply has none to show.
+  const [menuItemsResult, reviewsResult, latestReviews, meta] =
+    await Promise.all([
+      getMenuItems(slug).catch(() => null),
+      getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT, with_text: true }).catch(
+        () => null,
+      ),
+      getReviews(slug, { limit: DETAIL_REVIEWS_LIMIT }).catch(() => null),
+      getMetadata(),
+    ]);
 
   const { citySlug, categorySlug } = address;
   const cityName =
@@ -411,6 +417,10 @@ export default async function EstablishmentPage({
             {reviewsResult ? (
               <ReviewCarousel
                 reviews={reviewsResult.reviews}
+                authorOnly={authorOnlyReviews(
+                  reviewsResult.reviews,
+                  latestReviews?.reviews ?? [],
+                )}
                 totalCount={establishment.review_count}
                 averageRating={establishment.average_rating}
                 reviewsHref={`${address.path}/reviews`}

@@ -22,12 +22,14 @@ jest.mock('@/lib/reviews/actions', () => ({
 jest.mock('@/components/establishment/ReviewCarousel', () => ({
   ReviewCarousel: ({
     reviews,
+    authorOnly,
     totalCount,
   }: {
     reviews: unknown[];
+    authorOnly?: unknown[];
     totalCount: number;
   }) => (
-    <div data-testid="carousel">
+    <div data-testid="carousel" data-author-only={authorOnly?.length ?? 'none'}>
       {reviews.length}/{totalCount}
     </div>
   ),
@@ -52,12 +54,15 @@ beforeEach(() => {
 });
 
 it('loads the reviews itself and then shows the regular carousel', async () => {
-  // One review with text loaded, nine on the card: '1/9'.
-  mockReload.mockResolvedValue({ ok: true, reviews: [REVIEW] });
+  // One review with text loaded, nine on the card: '1/9'; one author-only
+  // review of one rating passed on (Trunk's decision 22.11.2026).
+  mockReload.mockResolvedValue({ ok: true, reviews: [REVIEW], authorOnly: [{ id: 'r9' }] });
   render(<ReviewsLoadFailed {...PROPS} />);
 
   expect(screen.getByText('Загружаем отзывы…')).toBeInTheDocument();
-  expect(await screen.findByTestId('carousel')).toHaveTextContent('1/9');
+  const carousel = await screen.findByTestId('carousel');
+  expect(carousel).toHaveTextContent('1/9');
+  expect(carousel).toHaveAttribute('data-author-only', '1');
   expect(mockReload).toHaveBeenCalledWith({
     slug: 'kafe-1',
     detailPath: '/minsk/restaurants/kafe-1',
@@ -88,7 +93,7 @@ it('an unreachable action (network) is the same failure, not a crash', async () 
 it('«Повторить» asks again and shows the reviews once they load', async () => {
   mockReload
     .mockResolvedValueOnce({ ok: false })
-    .mockResolvedValueOnce({ ok: true, reviews: [REVIEW, REVIEW] });
+    .mockResolvedValueOnce({ ok: true, reviews: [REVIEW, REVIEW], authorOnly: [] });
   render(<ReviewsLoadFailed {...PROPS} />);
 
   await userEvent.click(await screen.findByRole('button', { name: 'Повторить' }));

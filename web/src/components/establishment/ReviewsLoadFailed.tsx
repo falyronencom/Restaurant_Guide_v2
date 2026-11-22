@@ -30,7 +30,7 @@ import { ReviewCarousel } from './ReviewCarousel';
 type State =
   | { status: 'loading' }
   | { status: 'failed' }
-  | { status: 'loaded'; reviews: PublicReview[] };
+  | { status: 'loaded'; reviews: PublicReview[]; authorOnly: PublicReview[] };
 
 export function ReviewsLoadFailed({
   slug,
@@ -62,7 +62,11 @@ export function ReviewsLoadFailed({
         if (cancelled) return;
         setState(
           result.ok
-            ? { status: 'loaded', reviews: result.reviews }
+            ? {
+                status: 'loaded',
+                reviews: result.reviews,
+                authorOnly: result.authorOnly,
+              }
             : { status: 'failed' },
         );
       });
@@ -75,6 +79,7 @@ export function ReviewsLoadFailed({
     return (
       <ReviewCarousel
         reviews={state.reviews}
+        authorOnly={state.authorOnly}
         totalCount={totalCount}
         averageRating={averageRating}
         reviewsHref={reviewsHref}

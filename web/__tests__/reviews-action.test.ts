@@ -395,24 +395,59 @@ describe('reloadReviewsAction', () => {
     pagination: { page: 1, limit: 5, total: 12, totalPages: 3, hasNext: true, hasPrevious: false },
   };
 
-  it('returns the first five with text and busts the literal detail path', async () => {
-    getReviewsMock.mockResolvedValue(PAGE);
+  // The page's own slice: the first reviews with text (В1 = А), and — from
+  // the latest without the filter — the author's own reviews of one rating
+  // (Trunk's decision 22.11.2026).
+  const WITH_TEXT = { id: 't1', author: { id: 'u-1' }, content: 'Вкусно' };
+  const OWN_RATING = { id: 'r9', author: { id: 'u-9' }, content: null };
+  const pageOf = (reviews: unknown[]) => ({ ...PAGE, reviews });
+
+  it('returns the first five with text, the author-only ones, and busts the literal detail path', async () => {
+    getReviewsMock.mockImplementation(
+      async (_slug: string, params: { with_text?: boolean }) =>
+        params.with_text ? pageOf([WITH_TEXT]) : pageOf([OWN_RATING, WITH_TEXT]),
+    );
 
     const result = await reloadReviewsAction({
       slug: 'some-slug',
       detailPath: '/minsk/restorany/some-slug',
     });
 
-    // The page's own slice: only reviews with text (В1 = А).
+    expect(getReviewsMock).toHaveBeenCalledTimes(2);
     expect(getReviewsMock).toHaveBeenCalledWith(
       'some-slug',
       { limit: 5, with_text: true },
       { visitor: null },
     );
+    expect(getReviewsMock).toHaveBeenCalledWith(
+      'some-slug',
+      { limit: 5 },
+      { visitor: null },
+    );
     // No count: the filtered list's total counts only reviews with text —
     // the island shows the card's review_count instead.
-    expect(result).toStrictEqual({ ok: true, reviews: PAGE.reviews });
+    expect(result).toStrictEqual({
+      ok: true,
+      reviews: [WITH_TEXT],
+      authorOnly: [OWN_RATING],
+    });
     expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
+  });
+
+  it('the unfiltered ask failing still loads the card: no author-only reviews', async () => {
+    getReviewsMock.mockImplementation(
+      async (_slug: string, params: { with_text?: boolean }) => {
+        if (!params.with_text) throw new ApiError(503, 'down');
+        return pageOf([WITH_TEXT]);
+      },
+    );
+
+    const result = await reloadReviewsAction({
+      slug: 'some-slug',
+      detailPath: '/minsk/restorany/some-slug',
+    });
+
+    expect(result).toStrictEqual({ ok: true, reviews: [WITH_TEXT], authorOnly: [] });
   });
 
   it('a failure → {ok:false}, nothing revalidated', async () => {

@@ -5,15 +5,37 @@
  * No DOM, no I/O — safe in both Server and Client components.
  */
 
+import type { PublicReview } from '@/lib/api/types';
 import { parseDayHours } from '@/lib/working-hours';
 
 /**
  * How many reviews the establishment detail page shows (the carousel); the rest
  * are on «Все отзывы». Shared by the page and reloadReviewsAction, which
  * re-fetches the same slice when the page's own fetch failed. Both ask for the
- * first reviews with text only (`with_text`, В1 = А).
+ * first reviews with text only (`with_text`, В1 = А) — and, with the same
+ * limit, for the latest reviews without the filter (authorOnlyReviews).
  */
 export const DETAIL_REVIEWS_LIMIT = 5;
+
+/**
+ * Reviews of one rating that the card shows to their author alone (thread
+ * «Отзыв без текста», Trunk's decision 22.11.2026, bringing В1 and В5
+ * together): of the latest reviews without the filter, those the first-with-
+ * text list does not show. The author sees such a review on the card with
+ * «Редактировать» / «Удалить», and «Ваш отзыв» in place of «Оставить отзыв»;
+ * every other visitor sees the card by В1. An author already switched off
+ * (author.id null) has no one to show it to. Only the latest reviews are
+ * looked at — an older own review stays unseen, as before (R1).
+ */
+export function authorOnlyReviews(
+  shown: PublicReview[],
+  latest: PublicReview[],
+): PublicReview[] {
+  const shownIds = new Set(shown.map((review) => review.id));
+  return latest.filter(
+    (review) => !shownIds.has(review.id) && review.author.id !== null,
+  );
+}
 
 /**
  * Format rating as Russian-locale string with comma decimal separator.
