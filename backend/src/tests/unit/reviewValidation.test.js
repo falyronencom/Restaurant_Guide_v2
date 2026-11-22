@@ -113,6 +113,22 @@ describe('validateCreateReview', () => {
     expect(req.body.content).toBe('');
   });
 
+  // Not a text at all — refused before anything reads it. An array went past
+  // the мат check and the length bound (trim and isLength read it element by
+  // element, the мат check a string only) and was stored as a literal
+  // «{"…"}»; the chain before 22.11.2026 did the same (Phase 3.5 review).
+  test.each([
+    ['an array with мат inside', ['Официант хууууй забил на нас']],
+    ['an empty array', []],
+    ['a number', 5],
+    ['an object', { text: 'Отлично' }],
+  ])('refuses content that is not a text — %s', async (_label, content) => {
+    const req = mockReq({ body: { ...validBody, content } });
+    expect((await runValidation(validateCreateReview, req)).array()).toEqual([
+      expect.objectContaining({ path: 'content', msg: 'Review content must be text' }),
+    ]);
+  });
+
   test('a text is still trimmed and still checked for мат', async () => {
     const trimmed = mockReq({ body: { ...validBody, content: '  Отличное место  ' } });
     expect((await runValidation(validateCreateReview, trimmed)).array()).toEqual([]);
@@ -538,6 +554,20 @@ describe('validateUpdateReview', () => {
       body: { content },
     });
     expect((await runValidation(validateUpdateReview, req)).array()).toEqual([]);
+  });
+
+  test.each([
+    ['an array with мат inside', ['Передумал: хууууй, а не кухня']],
+    ['an empty array', []],
+    ['a number', 5],
+  ])('refuses content that is not a text on update — %s', async (_label, content) => {
+    const req = mockReq({
+      params: { id: validId },
+      body: { rating: 3, content },
+    });
+    expect((await runValidation(validateUpdateReview, req)).array()).toEqual([
+      expect.objectContaining({ path: 'content', msg: 'Review content must be text' }),
+    ]);
   });
 
   test('should reject non-UUID review id', async () => {

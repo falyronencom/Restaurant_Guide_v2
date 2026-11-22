@@ -27,18 +27,26 @@ const withoutProfanity = (value) => {
 };
 
 /**
- * The review's text, when there is one: at most 1000 characters after
- * trimming, without мат. Absent or null passes untouched — a review may be a
- * rating alone (decision of the Coordinator 20.11.2026, thread «Отзыв без
+ * The review's text, when there is one: a string, at most 1000 characters
+ * after trimming, without мат. Absent or null passes untouched — a review may
+ * be a rating alone (decision of the Coordinator 20.11.2026, thread «Отзыв без
  * текста»); an empty string or one of spaces trims to '' and passes too. The
  * service stores every one of them as NULL (reviewService.storedReviewText),
  * and the мат check has nothing to read in them (containsProfanity('') is
  * false). The bound is the validator's isLength — the one that counts an
  * emoji with its selector as one character (tests: «length limits count
  * invisible variation selectors»).
+ *
+ * Anything but a string is refused first: trim and isLength read an array
+ * element by element, the мат check reads a string only, so an array went
+ * past both and was stored as a literal «{"…"}» — the chain before 22.11.2026
+ * did the same (Phase 3.5 review).
  */
 const optionalReviewText = () => body('content')
   .optional({ values: 'null' })
+  .isString()
+  .withMessage('Review content must be text')
+  .bail()
   .trim()
   .isLength({ max: 1000 })
   .withMessage('Review content must be at most 1000 characters')

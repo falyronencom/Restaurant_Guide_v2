@@ -83,9 +83,10 @@ export const ESTABLISHMENT_NOT_ACTIVE_TEXT =
  * A review may be a rating alone (decision of the Coordinator 20.11.2026,
  * thread «Отзыв без текста»), and «has a text» must mean one thing for the
  * lists that keep only reviews with a text (ReviewModel REVIEW_HAS_TEXT_SQL)
- * and for whoever counts them. A value that is not a string is the
- * validator's to refuse or convert (validators/reviewValidation.js); it is
- * passed on as it came.
+ * and for whoever counts them. Over HTTP nothing but a string, null or no
+ * value gets here: the validator refuses the rest (validators/reviewValidation.js,
+ * optionalReviewText); another value from a direct caller is passed on as it
+ * came.
  *
  * @param {*} content - the text as the request brought it
  * @returns {string|null|*} the text to store

@@ -8,7 +8,7 @@
 --     (accountDeletionService) — and SET NOT NULL fails on the first of them;
 --   * check_content_length (length 20..1000) is not on production by the
 --     snapshot (production_schema.sql, the note on migration 007), and it
---     would refuse every review shorter than 20 characters or without text.
+--     would refuse every text shorter than 20 characters (NULL it lets by).
 --
 -- The code that runs before 043 lives with nullable text as well: it reads
 -- COALESCE(r.content, r.text) everywhere, and only the validator decides

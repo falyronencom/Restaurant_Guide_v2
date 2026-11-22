@@ -147,13 +147,15 @@ describe('reviewService', () => {
     // «no text» the request brings, the model receives null — never '' — and
     // a text arrives trimmed. The bodies: the app leaves the key out, the
     // site sends an empty field as ''.
+    const NO_KEY = Symbol('no content key');
     test.each([
-      ['no content key (the app)', undefined],
+      ['no content key (the app)', NO_KEY],
       ['an empty content (the site)', ''],
       ['null', null],
       ['spaces and line breaks', '  \n\t '],
     ])('no text — %s — reaches the model as null', async (_label, content) => {
-      await createReview({ ...validReviewData, content });
+      const { content: _text, ...withoutText } = validReviewData;
+      await createReview(content === NO_KEY ? withoutText : { ...withoutText, content });
 
       expect(ReviewModel.createReview).toHaveBeenCalledWith(
         { user_id: 'user-123', establishment_id: 'estab-123', rating: 5, content: null },
@@ -498,7 +500,12 @@ describe('reviewService', () => {
     test('a rating-only edit leaves the text alone: no content key reaches the model', async () => {
       await updateReview(reviewId, userId, { rating: 2 });
 
-      expect(ReviewModel.updateReview).toHaveBeenCalledWith(reviewId, { rating: 2 }, TX_CLIENT);
+      expect(ReviewModel.updateReview).toHaveBeenCalledTimes(1);
+      const [id, changes, client] = ReviewModel.updateReview.mock.calls[0];
+      expect([id, client]).toEqual([reviewId, TX_CLIENT]);
+      // toStrictEqual: `content: undefined` is not «no key» (toHaveBeenCalledWith
+      // would take the two for one).
+      expect(changes).toStrictEqual({ rating: 2 });
     });
 
     test('recounts the rating even when only the text changed (the trigger counts hidden reviews)', async () => {
