@@ -336,16 +336,26 @@ describe('POST /api/v1/auth/oauth — the answer says whether the e-mail is conf
     expect(await storedFlag('google-user@gmail.com')).toBe(false);
   });
 
-  test('a second login answers the stored flag: Google said «not confirmed» at sign-up — still false', async () => {
-    const unconfirmed = { ...oauthProviderResponses.google, email_verified: false };
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => unconfirmed });
+  // The stored flag, not the provider's word of this login: a second login
+  // does not re-read it (authenticateWithOAuth, the existing-account path) —
+  // Google says «confirmed» now, the account was made «not confirmed», the
+  // answer says what is stored. A login whose provider and store agree could
+  // not tell the two sources apart (Phase 3.5 review).
+  test('a second login answers the stored flag, not this login\'s word of the provider', async () => {
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({ ...oauthProviderResponses.google, email_verified: false }),
+    });
     const first = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
+    expect(first.body.data.user.emailVerified).toBe(false);
 
-    mockVerifyIdToken.mockResolvedValue({ getPayload: () => unconfirmed });
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({ ...oauthProviderResponses.google, email_verified: true }),
+    });
     const second = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
 
     expect(second.body.data.user.id).toBe(first.body.data.user.id);
     expect(second.body.data.user.emailVerified).toBe(false);
+    expect(await storedFlag('google-user@gmail.com')).toBe(false);
   });
 
   test('a second Yandex login: true, as stored at the first one', async () => {
@@ -377,7 +387,7 @@ describe('POST /api/v1/auth/oauth — the answer says whether the e-mail is conf
     expect(await storedFlag(email)).toBe(true);
   });
 
-  test('an e-mail account confirmed by code, linked through Yandex: true', async () => {
+  test('an e-mail account whose address is already confirmed, linked through Yandex: true', async () => {
     const shared = await createTestUser({
       email: 'confirmed@yandex.ru', password: 'Test123!@#', name: 'Confirmed', authMethod: 'email',
     });

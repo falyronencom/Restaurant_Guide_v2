@@ -207,7 +207,7 @@ describe('POST /api/v1/auth/login', () => {
   // (mobile/lib/models/user.dart: no key → false), so without it a person who
   // had confirmed the e-mail by code read «Подтвердить email» after every
   // password login, until the app's next start.
-  test('answers emailVerified as stored: false before the code, true after it', async () => {
+  test('answers emailVerified as stored: false while unconfirmed, true once confirmed', async () => {
     const login = () => request(app)
       .post('/api/v1/auth/login')
       .send({ email: testUsers.regularUser.email, password: testUsers.regularUser.password })

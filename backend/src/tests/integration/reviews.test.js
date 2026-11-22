@@ -1855,6 +1855,14 @@ describe('Reviews System - A New Review Only From a Confirmed E-mail', () => {
     expect(response.body.error.code).toBe('EMAIL_NOT_VERIFIED');
   });
 
+  // Fixture guard for «the owner's reply is not checked»: «Partner Responses»
+  // above answer 200 only because this partner's e-mail is NOT confirmed —
+  // were it made confirmed, those tests would stay green and guard nothing.
+  test('the partner of this file has an unconfirmed e-mail (the owner\'s reply is answered without one)', async () => {
+    const { rows } = await query('SELECT email_verified FROM users WHERE id = $1', [partnerId]);
+    expect(rows).toEqual([{ email_verified: false }]);
+  });
+
   test('a confirmed e-mail: 201', async () => {
     // user (the file's first author) is created with a confirmed e-mail.
     await postAs(userToken, { establishmentId, rating: 5, content: longContent }).expect(201);

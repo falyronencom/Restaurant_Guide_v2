@@ -194,6 +194,17 @@ describe('reviewService', () => {
       expect(ReviewModel.createReview).not.toHaveBeenCalled();
     });
 
+    // A switched-off account says so first, whatever its e-mail: the refusal
+    // the app answers with a sign-out (ACCOUNT_INACTIVE), not «confirm».
+    test('a switched-off account with an unconfirmed e-mail: 403 USER_INACTIVE, not EMAIL_NOT_VERIFIED', async () => {
+      ReviewModel.getUserById.mockResolvedValue({ ...mockUser, is_active: false, email_verified: false });
+
+      await expect(createReview(validReviewData)).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'USER_INACTIVE',
+      });
+    });
+
     test('should throw error if user not found', async () => {
       ReviewModel.getUserById.mockResolvedValue(null);
 

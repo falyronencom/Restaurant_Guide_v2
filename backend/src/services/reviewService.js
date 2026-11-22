@@ -82,12 +82,16 @@ export const ESTABLISHMENT_NOT_ACTIVE_TEXT =
  * the Coordinator 20.11.2026, thread «Отзыв без текста», instead of В4 — the
  * risk is not padded «fives» but «ones» from rivals and spam; switched on at
  * once, 22.11.2026). The text names the way in the builds people have: the
- * app shows the server's Russian text on a 422 (since 17.10.2026), and
- * «Профиль» → «Подтвердить email» is there since 28.04.2026; the new app and
- * the site lead to the code themselves before the form. Who signed in with
- * Google or Yandex never reads it: their address is confirmed by the
- * provider. 422, as the other refusals of a review's content — not 403: a 403
- * gets a general phrase in those builds instead of this text.
+ * app shows the server's Russian text on a 422 (since 17.10.2026; an older
+ * build shows its general «Проверьте правильность заполнения формы»), and
+ * «Профиль» → «Подтвердить email» is there since 28.04.2026. The site and the
+ * new app lead to the code themselves before the form — with their changes of
+ * this thread, which go out before this rule (the site before them answers
+ * this code «Попробуйте позже»). A login through Yandex, or through Google
+ * whose address Google confirmed, confirms the e-mail, and those people never
+ * read the text; a Google account with an unconfirmed address confirms by
+ * code as anyone does. 422, as the other refusals of a review's content — not
+ * 403: a 403 gets a general phrase in those builds instead of this text.
  */
 export const EMAIL_NOT_VERIFIED_TEXT =
   'Чтобы оставить отзыв, подтвердите почту: «Профиль» → «Подтвердить email»';
