@@ -77,6 +77,26 @@ export const ESTABLISHMENT_NOT_ACTIVE_TEXT =
   'Это заведение сейчас не показывается в каталоге — оставить отзыв нельзя';
 
 /**
+ * The one rule for a review's text on its way to the database, for a new
+ * review and for an edit alike: no text — absent, null, empty or nothing but
+ * spaces — is NULL in both text columns, never ''; a text is stored trimmed.
+ * A review may be a rating alone (decision of the Coordinator 20.11.2026,
+ * thread «Отзыв без текста»), and «has a text» must mean one thing for the
+ * lists that keep only reviews with a text (ReviewModel REVIEW_HAS_TEXT_SQL)
+ * and for whoever counts them. A value that is not a string is the
+ * validator's to refuse or convert (validators/reviewValidation.js); it is
+ * passed on as it came.
+ *
+ * @param {*} content - the text as the request brought it
+ * @returns {string|null|*} the text to store
+ */
+export const storedReviewText = (content) => {
+  if (typeof content !== 'string') return content ?? null;
+  const text = content.trim();
+  return text === '' ? null : text;
+};
+
+/**
  * Create a new review for an establishment
  * 
  * This is the core business operation that implements the complete review creation
@@ -87,19 +107,22 @@ export const ESTABLISHMENT_NOT_ACTIVE_TEXT =
  * - Establishment must exist and be shown in the catalogue (status 'active')
  * - User can only have one active review per establishment (enforced by unique constraint)
  * - User cannot exceed rate limit of 10 reviews per day
- * - Review content must meet length requirements (validated at controller level)
+ * - Review content is optional; its length is checked by the validator, and
+ *   no text is stored as NULL (storedReviewText)
  * - Aggregate statistics must be updated synchronously
- * 
+ *
  * @param {Object} reviewData - The review data
  * @param {string} reviewData.user_id - UUID of authenticated user creating the review
  * @param {string} reviewData.establishment_id - UUID of establishment being reviewed
  * @param {number} reviewData.rating - Rating from 1 to 5
- * @param {string} reviewData.content - Review text content
+ * @param {string|null} [reviewData.content] - Review text; absent, null or
+ *   empty — a review of a rating alone
  * @returns {Promise<Object>} Created review with author information
  * @throws {AppError} If validation fails or rate limit exceeded
  */
 export const createReview = async (reviewData) => {
-  const { user_id, establishment_id, rating, content } = reviewData;
+  const { user_id, establishment_id, rating } = reviewData;
+  const content = storedReviewText(reviewData.content);
 
   // Step 1: Verify user exists and is active
   const user = await ReviewModel.getUserById(user_id);
@@ -290,6 +313,10 @@ export const getReviewById = async (reviewId) => {
  * @param {number} options.page - Page number (1-indexed)
  * @param {number} options.limit - Results per page
  * @param {string} options.sort - Sort order: 'newest', 'highest', 'lowest'
+ * @param {boolean} [options.withText=false] - only the reviews that have a
+ *   text (the card's first reviews, decision В1 = А); `pagination.total` then
+ *   counts the same reviews. The number of all reviews is the card's
+ *   review_count.
  * @returns {Promise<Object>} Object with reviews array and pagination metadata
  * @throws {AppError} If establishment not found
  */
@@ -300,6 +327,7 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
     sort = 'newest',
     dateFrom,
     dateTo,
+    withText = false,
   } = options;
 
   // Verify establishment exists
@@ -315,16 +343,17 @@ export const getEstablishmentReviews = async (establishmentId, options = {}) => 
   const validSortOrders = ['newest', 'highest', 'lowest'];
   const sortBy = validSortOrders.includes(sort) ? sort : 'newest';
 
-  // Fetch reviews and total count (with optional date range)
-  const dateOpts = { dateFrom, dateTo };
+  // Fetch reviews and total count: one set of filters for both — the date
+  // range and «with a text only» — so the total counts what the pages show
+  const filters = { dateFrom, dateTo, withText: withText === true };
   const [reviews, totalCount] = await Promise.all([
     ReviewModel.findReviewsByEstablishment(establishmentId, {
       limit,
       offset,
       sortBy,
-      ...dateOpts,
+      ...filters,
     }),
-    ReviewModel.countReviewsByEstablishment(establishmentId, dateOpts),
+    ReviewModel.countReviewsByEstablishment(establishmentId, filters),
   ]);
 
   // Calculate pagination metadata
@@ -472,19 +501,25 @@ export const getUserReviews = async (userId, options = {}) => {
  * @param {string} userId - UUID of authenticated user (for authorization check)
  * @param {Object} updates - Fields to update
  * @param {number} [updates.rating] - New rating (optional)
- * @param {string} [updates.content] - New content (optional)
+ * @param {string|null} [updates.content] - New content (optional); '' or
+ *   null erase the text — the review becomes a rating alone
  * @returns {Promise<Object>} Updated review object
  * @throws {AppError} If review not found, user unauthorized, or no fields provided
  */
 export const updateReview = async (reviewId, userId, updates) => {
-  // Verify at least one field is being updated
-  if (!updates.rating && !updates.content) {
+  // Verify at least one field is being updated. A field is there when its key
+  // is: content '' or null erases the text, it is not «nothing sent» — the
+  // falsy test answered such an edit 400 NO_UPDATE_FIELDS.
+  if (updates.rating === undefined && updates.content === undefined) {
     throw new AppError(
       'At least one field (rating or content) must be provided for update',
       400,
       'NO_UPDATE_FIELDS',
     );
   }
+  const changes = updates.content === undefined
+    ? updates
+    : { ...updates, content: storedReviewText(updates.content) };
 
   // Fetch current review to verify existence and authorization
   const currentReview = await ReviewModel.findReviewById(reviewId);
@@ -521,7 +556,7 @@ export const updateReview = async (reviewId, userId, updates) => {
       // read above (by its author elsewhere, or by a moderator) or between the
       // read and this write — and answers as deleting it again does: 404.
       // Until 2026-11-02 it was 500 «Сбой на сервере» (minor defects П4).
-      const updated = await ReviewModel.updateReview(reviewId, updates, client);
+      const updated = await ReviewModel.updateReview(reviewId, changes, client);
       if (!updated) {
         throw new AppError(REVIEW_REFUSALS.REVIEW_NOT_FOUND, 404, 'REVIEW_NOT_FOUND');
       }
@@ -651,6 +686,15 @@ export const deleteReview = async (reviewId, userId) => {
       message: 'Review deleted successfully',
     };
   } catch (error) {
+    // A refusal of the service itself — the account switched off, the review
+    // gone meanwhile — goes back as it is, and it is not unexpected: no line
+    // in the error journal, as in updateReview (the transaction has already
+    // written its line, an info). Until 22.11.2026 the error line came first,
+    // and every such refusal read as a server failure.
+    if (error instanceof AppError) {
+      throw error;
+    }
+
     // Log unexpected errors
     logger.error('Unexpected error deleting review', {
       error: error.message,
@@ -658,11 +702,6 @@ export const deleteReview = async (reviewId, userId) => {
       reviewId,
       userId,
     });
-
-    // Re-throw if it's already an AppError
-    if (error instanceof AppError) {
-      throw error;
-    }
 
     // Otherwise wrap as generic error
     throw new AppError(

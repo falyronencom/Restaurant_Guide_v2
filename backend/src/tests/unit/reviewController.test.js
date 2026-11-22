@@ -149,16 +149,39 @@ describe('reviewController', () => {
 
     await ReviewController.getEstablishmentReviews(req, res, next);
 
+    // Without with_text the list is as it was: withText false.
     expect(ReviewService.getEstablishmentReviews).toHaveBeenCalledWith('estab-1', {
       page: 2,
       limit: 5,
       sort: 'highest',
+      withText: false,
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       success: true,
       data: { reviews: [], pagination: { page: 2, limit: 5 } },
     });
+  });
+
+  // The card's first reviews (decision В1 = А) ask for the reviews with a
+  // text only; the validator lets through 'true' and 'false'.
+  test.each([
+    ['true', true],
+    ['false', false],
+  ])('getEstablishmentReviews: with_text=%s reaches the service as withText %s', async (value, expected) => {
+    const req = createMockRequest({
+      params: { id: 'estab-1' },
+      query: { with_text: value },
+    });
+    const res = createMockResponse();
+    ReviewService.getEstablishmentReviews.mockResolvedValue({ reviews: [], pagination: {} });
+
+    await ReviewController.getEstablishmentReviews(req, res, jest.fn());
+
+    expect(ReviewService.getEstablishmentReviews).toHaveBeenCalledWith(
+      'estab-1',
+      expect.objectContaining({ withText: expected }),
+    );
   });
 
   test('getUserReviews validates pagination inputs', async () => {

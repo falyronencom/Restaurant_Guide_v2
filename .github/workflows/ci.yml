@@ -82,8 +82,8 @@ jobs:
       - name: Развернуть схему тестовой БД
         # production_schema.sql — снапшот схемы прода (001–029 + 031–042, см.
         # шапку файла; 036 меняет только данные), затем поверх 031–035 и
-        # 037–042. Все одиннадцать повторяемы и на снапшоте, который их уже
-        # несёт, схему не меняют: 037 и 041 добавляют лишь комментарии к
+        # 037–043. Все двенадцать повторяемы; одиннадцать по 042 снапшот уже
+        # несёт, и схему они не меняют: 037 и 041 добавляют лишь комментарии к
         # колонкам, которых снапшот не хранит. Строки остаются ради следующей
         # миграции: на Railway её применяют вручную после мержа, снапшот
         # догоняет позже, а тестовой БД она нужна сразу, чтобы совпадать
@@ -94,6 +94,8 @@ jobs:
         # 040 (avatar_deletions) — так же, тест avatar-deletion.test.js.
         # 036 — миграция данных, не схемы: в рецепт не входит (на пустой таблице
         # она намеренно отказывается), refresh-token-storage.test.js накатывает её сам.
+        # 043 (текст отзыва необязателен) — на снапшоте ничего не меняет: колонки
+        # content и text в нём уже без NOT NULL, check_content_length из 007 нет.
         # 030 НЕ применяется намеренно: он dormant до real-500 (ROADMAP),
         # а canon-check.integration.test.js создаёт собственную scratch-БД и
         # накатывает его туда сам.
@@ -113,6 +115,7 @@ jobs:
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/041_avatar_moderation.sql
 
           psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/042_two_photo_kinds.sql
+          psql -h localhost -U postgres -d restaurant_guide_test -v ON_ERROR_STOP=1 -q -f backend/migrations/043_review_text_optional.sql
 
       - name: Создать backend/.env.test
         # Файл гитигнорен, а setup-env.js и globalSetup.js читают его по пути.

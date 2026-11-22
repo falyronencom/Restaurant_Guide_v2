@@ -18,6 +18,8 @@
 
 import express from 'express';
 import * as publicController from '../../controllers/publicController.js';
+import { validateGetPublicReviews } from '../../validators/reviewValidation.js';
+import { validate } from '../../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -73,10 +75,13 @@ router.get(
  * reviewService (which already filters is_visible + is_deleted) and
  * normalises pagination to `totalPages`.
  *
- * Query params: page (default 1), limit (default 10, max 50).
+ * Query params: page (default 1), limit (default 10, max 50), with_text
+ * ('true' | 'false'; another value — 422, as on /establishments/:id/reviews).
  */
 router.get(
   '/establishments/by-slug/:slug/reviews',
+  validateGetPublicReviews,
+  validate,
   publicController.getPublicReviews,
 );
 

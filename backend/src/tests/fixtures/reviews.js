@@ -90,25 +90,38 @@ export const invalidReviews = {
     content: 'Valid content'
   },
 
-  // Missing content
-  missingContent: {
-    rating: 5
-  },
-
-  // Empty content
-  emptyContent: {
-    rating: 5,
-    content: ''
-  },
-
   // Content too short (if minimum length enforced)
   tooShort: {
     rating: 5,
     content: 'Ok'
   },
 
-  // Missing both
+  // Missing both (the rating is what is required)
   missingBoth: {}
+};
+
+/**
+ * Reviews of a rating alone — valid since 22.11.2026 (thread «Отзыв без
+ * текста»); until then the first two were invalidReviews.missingContent and
+ * .emptyContent. The server stores each without text as NULL.
+ */
+export const ratingOnlyReviews = {
+  // No content key — what the app sends when the field is empty
+  missingContent: {
+    rating: 5
+  },
+
+  // Empty content — what the site's form sends for an empty field
+  emptyContent: {
+    rating: 5,
+    content: ''
+  },
+
+  // Nothing but spaces — trimmed to no text
+  spacesOnly: {
+    rating: 4,
+    content: '   '
+  }
 };
 
 /**
