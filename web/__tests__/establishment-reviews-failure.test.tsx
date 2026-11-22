@@ -145,10 +145,11 @@ it('a failed reviews fetch renders ReviewsLoadFailed — not an empty carousel (
 
 /*
  * «Отзыв без текста» (11.2026, В1 = А): the card shows only reviews with
- * text, asked with with_text=true; every count of reviews on the page is the
- * card's review_count (all reviews, a rating alone included) — the filtered
- * list's pagination.total counts only the reviews with text. Fixture: 7
- * reviews on the card, 2 of them with text.
+ * text, asked with with_text=true; the counts of the reviews block and of the
+ * anchor nav are the card's review_count (all reviews, a rating alone
+ * included) — the filtered list's pagination.total counts only the reviews
+ * with text. (The title block's «N отзывов» read review_count before this
+ * change too.) Fixture: 7 reviews on the card, 2 of them with text.
  */
 function textReview(id: string) {
   return {

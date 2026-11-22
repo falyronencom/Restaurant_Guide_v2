@@ -31,7 +31,9 @@ it('the first reviews with text: ?limit=5&with_text=true', async () => {
   );
 });
 
-it('the full list asks without the filter: no with_text in the address', async () => {
+// The encoder adds nothing of its own: params without with_text (the full
+// list's — pinned in reviews-page.test.tsx) give an address without it.
+it('params without with_text give an address without it', async () => {
   await getReviews('kafe-1', { page: 2, limit: 10 });
 
   expect(mockServerFetch.mock.calls[0][0]).toBe(

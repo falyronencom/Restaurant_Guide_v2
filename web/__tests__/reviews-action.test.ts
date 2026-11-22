@@ -133,8 +133,8 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
     // Real wire: the backend `validate` middleware emits `details` as an ARRAY
     // [{field, message, value}] (errorHandler.js:198), NOT a {field:[msgs]}
     // object. Pinning the true shape so the mock cannot re-green the old bug.
-    // The text is optional now, so the only refusal of the field the server
-    // has left is its length (the English message never reaches the screen).
+    // The text is optional now: an English refusal of the field (the length)
+    // gets the site's text; the Russian мат refusal passes as is (below).
     createReviewMock.mockRejectedValue(
       new ApiError(422, 'Validation', 'VALIDATION_ERROR', [
         {

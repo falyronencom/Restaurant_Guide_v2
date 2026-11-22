@@ -159,6 +159,35 @@ it('renders a mapped summary error and keeps the modal open on failure', async (
   expect(mockOnSuccess).not.toHaveBeenCalled();
 });
 
+// The server's refusal of the text itself (мат — reviewValidation, 17.10.2026;
+// the length) comes as a field error: it takes the hint's place under the
+// field, marks the field invalid, and is what the field's description says.
+it('a refusal of the text shows under the field in place of the hint, the field marked invalid', async () => {
+  const refusal = 'Текст содержит нецензурные выражения — уберите их, пожалуйста';
+  mockCreate.mockResolvedValue({
+    ok: false,
+    code: 'VALIDATION_ERROR',
+    message: 'Проверьте правильность заполнения полей.',
+    fieldErrors: { content: refusal },
+  });
+  renderModal();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Оценка 1 из 5' }));
+  await userEvent.type(screen.getByLabelText('Отзыв (необязательно)'), 'текст');
+  await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }));
+
+  const field = screen.getByLabelText('Отзыв (необязательно)');
+  expect(await screen.findByText(refusal)).toBeInTheDocument();
+  expect(field).toHaveAttribute('aria-invalid', 'true');
+  expect(
+    document.getElementById(field.getAttribute('aria-describedby') as string),
+  ).toHaveTextContent(refusal);
+  expect(
+    screen.queryByText('Текст можно не писать: достаточно оценки'),
+  ).not.toBeInTheDocument();
+  expect(mockOnSuccess).not.toHaveBeenCalled();
+});
+
 describe('edit mode (editTarget)', () => {
   it('pre-fills the stars + content and retitles to «Редактировать отзыв» / «Сохранить»', () => {
     renderEditModal();
