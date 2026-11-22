@@ -87,7 +87,8 @@ describe('reviewService', () => {
       content: 'Great place! Excellent food and service.',
     };
 
-    const mockUser = createMockUser({ id: 'user-123', is_active: true });
+    // A new review is taken only from a confirmed e-mail.
+    const mockUser = createMockUser({ id: 'user-123', is_active: true, email_verified: true });
     const mockReview = createMockReview(validReviewData);
 
     beforeEach(() => {
@@ -170,6 +171,27 @@ describe('reviewService', () => {
         expect.objectContaining({ content: 'Вкусно и быстро' }),
         TX_CLIENT,
       );
+    });
+
+    // A new review only from a confirmed e-mail — refused before the card is
+    // read and before the day's quota is reserved: the refusal costs nothing.
+    // The text — a literal: the guest reads it in the app's builds as is.
+    test.each([
+      ['false', false],
+      ['null (never written)', null],
+      ['missing', undefined],
+    ])('an e-mail not confirmed (email_verified %s): 422 EMAIL_NOT_VERIFIED before the card and the quota', async (_label, flag) => {
+      ReviewModel.getUserById.mockResolvedValue({ ...mockUser, email_verified: flag });
+
+      await expect(createReview(validReviewData)).rejects.toMatchObject({
+        statusCode: 422,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Чтобы оставить отзыв, подтвердите почту: «Профиль» → «Подтвердить email»',
+      });
+
+      expect(ReviewModel.getEstablishmentStatus).not.toHaveBeenCalled();
+      expect(incrementWithExpiry).not.toHaveBeenCalled();
+      expect(ReviewModel.createReview).not.toHaveBeenCalled();
     });
 
     test('should throw error if user not found', async () => {

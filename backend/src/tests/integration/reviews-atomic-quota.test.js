@@ -46,11 +46,13 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await clearAllData();
+  // A new review is taken only from a confirmed e-mail.
   const author = await createUserAndGetTokens({
     email: `quota-${Date.now()}@test.com`,
     password: 'User123!@#',
     name: 'Автор Отзывов',
     role: 'user',
+    emailVerified: true,
   });
   user = author.user;
   userToken = author.accessToken;

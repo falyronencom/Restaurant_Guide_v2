@@ -91,6 +91,33 @@ export async function registerUser(userData) {
 }
 
 /**
+ * Confirm the e-mail the way a guest does: the code the registration wrote
+ * (POST /auth/register issues it before answering; the mail itself is not sent
+ * in tests) entered through POST /auth/verify-email-code. A new review is
+ * taken only from a confirmed e-mail (reviewService.createReview,
+ * EMAIL_NOT_VERIFIED).
+ *
+ * @param {Object} registered - what registerUser returned ({ user, accessToken })
+ * @returns {Promise<Object>} the verify response
+ */
+export async function confirmEmail(registered) {
+  const { rows } = await query(
+    `SELECT code FROM email_verification_codes
+      WHERE user_id = $1 AND used_at IS NULL
+      ORDER BY created_at DESC LIMIT 1`,
+    [registered.user.id]
+  );
+  if (!rows[0]) {
+    throw new Error('confirmEmail: the registration left no active code');
+  }
+  return request(app)
+    .post('/api/v1/auth/verify-email-code')
+    .set('Authorization', `Bearer ${registered.accessToken}`)
+    .send({ code: rows[0].code })
+    .expect(200);
+}
+
+/**
  * Login existing user
  */
 export async function loginUser(credentials) {

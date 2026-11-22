@@ -390,3 +390,46 @@ describe('POST /api/v1/auth/oauth — the answer says whether the e-mail is conf
     expect(res.body.data.user.emailVerified).toBe(true);
   });
 });
+
+describe('a review right after a login through Google or Yandex — no code asked', () => {
+  // The provider has proven the address: the login confirms the e-mail
+  // (authenticateWithOAuth), and the first review goes through without the
+  // code a registration by e-mail needs — a new review is taken only from a
+  // confirmed e-mail (reviewService.createReview, EMAIL_NOT_VERIFIED).
+  let establishmentId;
+
+  beforeEach(async () => {
+    const { rows: [partner] } = await query(
+      `INSERT INTO users (id, email, password_hash, name, role, auth_method)
+       VALUES (gen_random_uuid(), 'oauth-review-partner@test.com', 'hash', 'Партнёр', 'partner', 'email')
+       RETURNING id`
+    );
+    const { rows: [card] } = await query(
+      `INSERT INTO establishments (
+         id, partner_id, name, slug, description, city, address, latitude, longitude,
+         categories, cuisines, status, review_count, working_hours, price_range, created_at, updated_at
+       ) VALUES (
+         gen_random_uuid(), $1, 'Васильки', gen_random_uuid()::text, 'Кафе', 'Минск', 'ул. Ленина, 1',
+         53.9, 27.5, ARRAY['Кафе'], ARRAY['Европейская'], 'active', 0, '{}'::jsonb, '$$', NOW(), NOW()
+       ) RETURNING id`,
+      [partner.id]
+    );
+    establishmentId = card.id;
+  });
+
+  test.each([
+    ['Yandex', 'yandex', () => mockYandexInfo(yandexBody())],
+    ['Google', 'google', () => mockVerifyIdToken.mockResolvedValue({ getPayload: () => oauthProviderResponses.google })],
+  ])('%s: the token of the login writes a review at once — 201', async (_name, provider, arrange) => {
+    arrange();
+    const login = await postOAuth({ provider, token: DUMMY_TOKEN }).expect(200);
+
+    const res = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${login.body.data.accessToken}`)
+      .send({ establishmentId, rating: 5, content: 'Вкусно и быстро, приду ещё' })
+      .expect(201);
+
+    expect(res.body.data.review.user_id).toBe(login.body.data.user.id);
+  });
+});

@@ -48,9 +48,11 @@ const defaultWorkingHours = JSON.stringify({
 const longContent = 'Достаточно длинный и содержательный отзыв длиной более двадцати символов.';
 
 beforeAll(async () => {
-  // Create test users
-  const user = await createUserAndGetTokens(testUsers.regularUser);
-  const user2 = await createUserAndGetTokens(testUsers.regularUser2);
+  // Create test users. The authors have a confirmed e-mail: a new review is
+  // taken only from one (reviewService.createReview, EMAIL_NOT_VERIFIED). The
+  // partner's stays unconfirmed — the owner's reply does not ask for it.
+  const user = await createUserAndGetTokens({ ...testUsers.regularUser, emailVerified: true });
+  const user2 = await createUserAndGetTokens({ ...testUsers.regularUser2, emailVerified: true });
   const partner = await createUserAndGetTokens(testUsers.partner);
 
   userToken = user.accessToken;
@@ -507,7 +509,8 @@ describe('Reviews System - Establishment Metrics Update', () => {
     const user3 = await createUserAndGetTokens({
       ...testUsers.regularUser,
       email: 'user3@test.com',
-      phone: '+375295555555'
+      phone: '+375295555555',
+      emailVerified: true
     });
 
     await request(app)
@@ -569,7 +572,8 @@ describe('Reviews System - Read Reviews', () => {
       const user = await createUserAndGetTokens({
         ...testUsers.regularUser,
         email: `user${i}-${Date.now()}@test.com`,
-        phone: `+37529${String(i + 1000000).padStart(7, '0')}`
+        phone: `+37529${String(i + 1000000).padStart(7, '0')}`,
+        emailVerified: true
       });
 
       await request(app)
@@ -1777,5 +1781,101 @@ describe('Reviews System - Only Reviews With a Text (with_text)', () => {
     expect(response.body.error.details).toEqual([
       { field: 'with_text', message: 'with_text must be true or false' },
     ]);
+  });
+});
+
+describe('Reviews System - A New Review Only From a Confirmed E-mail', () => {
+  // A new review is taken only from a confirmed e-mail (decision of the
+  // Coordinator 20.11.2026, instead of В4; switched on at once 22.11.2026):
+  // 422 EMAIL_NOT_VERIFIED, the Russian text — the app's builds show the
+  // server's Russian text on a 422. Checked before the card and the daily
+  // quota: the refusal costs the guest nothing and says nothing about the
+  // card. Editing and deleting one's own review are not touched (В8); the
+  // owner's reply neither — the partner of this file has an unconfirmed
+  // e-mail, and «Partner Responses» above answer 200.
+  const NOT_VERIFIED_TEXT = 'Чтобы оставить отзыв, подтвердите почту: «Профиль» → «Подтвердить email»';
+  let unconfirmed;
+
+  beforeAll(async () => {
+    // The quota is a Redis counter: without Redis it answers 0 always and
+    // «untouched» would hold whatever the code did — required, as in «Daily
+    // Quota» above.
+    if (!redisClient.isReady && !(await connectRedis())) {
+      throw new Error('Redis connection is required for the quota assertions');
+    }
+    // createTestUser leaves the e-mail unconfirmed unless asked — a
+    // registration whose code was never entered.
+    unconfirmed = await createUserAndGetTokens({
+      ...testUsers.regularUser,
+      email: 'unconfirmed-author@test.com',
+      phone: '+375291110099',
+    });
+  });
+
+  beforeEach(async () => {
+    await deleteKey(rateLimitKeyFor(unconfirmed.user.id));
+  });
+
+  const quotaUsed = async (token) => (await request(app)
+    .get('/api/v1/reviews/quota')
+    .set('Authorization', `Bearer ${token}`)
+    .expect(200)).body.data.quota.used;
+
+  const postAs = (token, body) => request(app)
+    .post('/api/v1/reviews')
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+
+  test('an unconfirmed e-mail: 422 EMAIL_NOT_VERIFIED with the text, no review, the day\'s quota untouched', async () => {
+    const before = await quotaUsed(unconfirmed.accessToken);
+
+    const response = await postAs(unconfirmed.accessToken, { establishmentId, rating: 1, content: 'Ужасно' })
+      .expect(422);
+
+    expect(response.body.error.code).toBe('EMAIL_NOT_VERIFIED');
+    expect(response.body.message).toBe(NOT_VERIFIED_TEXT);
+    const { rows } = await query('SELECT count(*)::int AS n FROM reviews WHERE user_id = $1', [unconfirmed.user.id]);
+    expect(rows[0].n).toBe(0);
+    expect(await quotaUsed(unconfirmed.accessToken)).toBe(before);
+
+    // Fixture guard: the counter does move in this environment — the same
+    // person, once the e-mail is confirmed, spends one review of the day.
+    await query('UPDATE users SET email_verified = true WHERE id = $1', [unconfirmed.user.id]);
+    await postAs(unconfirmed.accessToken, { establishmentId, rating: 1, content: 'Ужасно' }).expect(201);
+    expect(await quotaUsed(unconfirmed.accessToken)).toBe(before + 1);
+    await query('UPDATE users SET email_verified = false WHERE id = $1', [unconfirmed.user.id]);
+  });
+
+  test('on a card that does not exist an unconfirmed e-mail still gets 422, not 404 — the e-mail is checked first', async () => {
+    const response = await postAs(unconfirmed.accessToken, {
+      establishmentId: '00000000-0000-4000-8000-000000000000',
+      rating: 5,
+    }).expect(422);
+
+    expect(response.body.error.code).toBe('EMAIL_NOT_VERIFIED');
+  });
+
+  test('a confirmed e-mail: 201', async () => {
+    // user (the file's first author) is created with a confirmed e-mail.
+    await postAs(userToken, { establishmentId, rating: 5, content: longContent }).expect(201);
+  });
+
+  test('an unconfirmed author edits and deletes an old review: 200 both', async () => {
+    const { rows: [old] } = await query(
+      `INSERT INTO reviews (user_id, establishment_id, rating, content, text)
+       VALUES ($1, $2, 2, $3, $3) RETURNING id`,
+      [unconfirmed.user.id, establishmentId, `${longContent} written before the rule`]
+    );
+
+    await request(app)
+      .put(`/api/v1/reviews/${old.id}`)
+      .set('Authorization', `Bearer ${unconfirmed.accessToken}`)
+      .send({ rating: 3, content: `${longContent} edited after the rule` })
+      .expect(200);
+
+    await request(app)
+      .delete(`/api/v1/reviews/${old.id}`)
+      .set('Authorization', `Bearer ${unconfirmed.accessToken}`)
+      .expect(200);
   });
 });
