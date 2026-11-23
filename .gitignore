@@ -118,3 +118,17 @@ web/node_modules/
 
 # Photo sizes backfill rollback files (scripts/photo-sizes)
 backend/photo-sizes-backup-*.json
+
+# Private keys and signing material (Apple, Android, Google/Firebase service accounts)
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+key.properties
+*.pem
+*.key
+*firebase-adminsdk*.json
+*service-account*.json
+*service_account*.json
+serviceAccountKey*.json
