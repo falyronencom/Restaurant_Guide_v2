@@ -104,7 +104,9 @@ export const getReview = asyncHandler(async (req, res) => {
  * - page: Page number (default 1)
  * - limit: Results per page (default 10, max 50)
  * - sort: Sort order - 'newest', 'highest', 'lowest' (default 'newest')
- * 
+ * - with_text: 'true' — only the reviews that have a text, and the total
+ *   counts them (the card's first reviews); 'false' or absent — all
+ *
  * The response includes both the reviews array and pagination metadata that clients
  * need to implement pagination UI (page numbers, next/previous buttons, etc).
  */
@@ -118,6 +120,8 @@ export const getEstablishmentReviews = asyncHandler(async (req, res) => {
   const sort = req.query.sort || 'newest';
   const dateFrom = req.query.date_from || undefined;
   const dateTo = req.query.date_to || undefined;
+  // The validator lets through 'true', 'false' or nothing (withTextQuery)
+  const withText = req.query.with_text === 'true';
 
   // Validate page and limit are positive integers
   if (page < 1 || limit < 1) {
@@ -134,6 +138,7 @@ export const getEstablishmentReviews = asyncHandler(async (req, res) => {
     sort,
     dateFrom,
     dateTo,
+    withText,
   });
 
   // Apply public projection: strips partner_responder_id (leaks partner UUID)

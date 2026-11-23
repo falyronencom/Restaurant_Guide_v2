@@ -26,13 +26,27 @@ import { publicAvatarSql } from './avatarModerationModel.js';
 const AUTHOR_AVATAR_SQL = `CASE WHEN e.status = 'active' THEN ${publicAvatarSql('u')} END`;
 
 /**
+ * A review that has a text — what «только с текстом» of the lists keeps
+ * (`with_text=true`, the card's first reviews, decision В1 = А). The text the
+ * lists show is COALESCE(content, text); it counts as a text when it holds
+ * one character that is not a space. NULL — a review of a rating alone, or
+ * one whose text the deletion of the account erased — and a text of nothing
+ * but spaces left by older writers are both out. The same condition filters
+ * the page and its count: `pagination.total` is the number of reviews the
+ * pages show. `r` is the alias of reviews in both queries.
+ */
+const REVIEW_HAS_TEXT_SQL = "COALESCE(r.content, r.text) ~ '[^[:space:]]'";
+
+/**
  * Create a new review in the database
  * 
  * @param {Object} reviewData - The review data to insert
  * @param {string} reviewData.user_id - UUID of the user creating the review
  * @param {string} reviewData.establishment_id - UUID of the establishment being reviewed
  * @param {number} reviewData.rating - Rating from 1 to 5
- * @param {string} reviewData.content - Review text content (1-1000 characters)
+ * @param {string|null} reviewData.content - Review text (up to 1000
+ *   characters), or null for a review of a rating alone — written to both
+ *   text columns (reviewService.storedReviewText)
  * @returns {Promise<Object>} The created review object with all database fields
  * @throws {Error} If database operation fails
  */
@@ -128,6 +142,8 @@ export const findReviewById = async (reviewId, _includeDeleted = false) => {
  * @param {number} options.offset - Number of reviews to skip for pagination (default: 0)
  * @param {string} options.sortBy - Sort order: 'newest', 'highest', 'lowest' (default: 'newest')
  * @param {boolean} options.includeDeleted - Whether to include soft-deleted reviews (default: false)
+ * @param {boolean} [options.withText=false] - only reviews that have a text
+ *   (REVIEW_HAS_TEXT_SQL); countReviewsByEstablishment takes the same option
  * @returns {Promise<Array>} Array of review objects with author information
  */
 export const findReviewsByEstablishment = async (establishmentId, options = {}) => {
@@ -138,6 +154,7 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
     includeDeleted = false,
     dateFrom,
     dateTo,
+    withText = false,
   } = options;
 
   // Determine sort order based on sortBy parameter. r.id is the last key of
@@ -171,6 +188,9 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
     conditions.push(`r.created_at <= $${paramIdx}`);
     values.push(dateTo);
     paramIdx++;
+  }
+  if (withText) {
+    conditions.push(REVIEW_HAS_TEXT_SQL);
   }
 
   values.push(limit, offset);
@@ -219,11 +239,15 @@ export const findReviewsByEstablishment = async (establishmentId, options = {}) 
  * Used for pagination metadata
  * 
  * @param {string} establishmentId - UUID of the establishment
- * @param {boolean} includeDeleted - Whether to include soft-deleted reviews (default: false)
+ * @param {Object|boolean} options - { includeDeleted, dateFrom, dateTo,
+ *   withText } as findReviewsByEstablishment takes them; a boolean is
+ *   includeDeleted alone (older callers)
  * @returns {Promise<number>} Total count of reviews
  */
 export const countReviewsByEstablishment = async (establishmentId, options = {}) => {
-  const { includeDeleted = false, dateFrom, dateTo } = typeof options === 'boolean'
+  const {
+    includeDeleted = false, dateFrom, dateTo, withText = false,
+  } = typeof options === 'boolean'
     ? { includeDeleted: options }   // backwards-compat: old callers pass boolean
     : options;
 
@@ -245,10 +269,15 @@ export const countReviewsByEstablishment = async (establishmentId, options = {})
     values.push(dateTo);
     paramIdx++;
   }
+  if (withText) {
+    conditions.push(REVIEW_HAS_TEXT_SQL);
+  }
 
+  // `r` — the alias REVIEW_HAS_TEXT_SQL reads; the other conditions name
+  // the columns of the one table without it
   const query = `
     SELECT COUNT(*) as count
-    FROM reviews
+    FROM reviews r
     WHERE ${conditions.join(' AND ')}
   `;
 
@@ -391,7 +420,8 @@ export const findExistingReview = async (userId, establishmentId) => {
  * @param {string} reviewId - UUID of the review to update
  * @param {Object} updates - Fields to update
  * @param {number} [updates.rating] - New rating (optional)
- * @param {string} [updates.content] - New content (optional)
+ * @param {string|null} [updates.content] - New content (optional); null
+ *   erases the text of both columns
  * @param {Object} [client=pool] - a client inside the caller's transaction
  *   (reviewService.updateReview holds the author's account there)
  * @returns {Promise<Object|null>} The updated review object, or null if the

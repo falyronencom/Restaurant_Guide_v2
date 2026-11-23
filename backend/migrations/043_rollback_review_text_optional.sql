@@ -1,0 +1,18 @@
+-- Rollback 043: deliberately does nothing.
+--
+-- 043 only lets the review text be empty: it drops NOT NULL on reviews.content
+-- and reviews.text and the CHECK check_content_length, where a database still
+-- had them. Putting them back is not a rollback anyone can run:
+--   * rows with NULL text exist on production before 043 — deleting an
+--     account erases the text of the person's hidden and deleted reviews
+--     (accountDeletionService) — and SET NOT NULL fails on the first of them;
+--   * check_content_length (length 20..1000) is not on production by the
+--     snapshot (production_schema.sql, the note on migration 007), and it
+--     would refuse every text shorter than 20 characters (NULL it lets by).
+--
+-- The code that runs before 043 lives with nullable text as well: it reads
+-- COALESCE(r.content, r.text) everywhere, and only the validator decides
+-- whether a review may come without one. To stop taking reviews without text,
+-- revert the code (validators/reviewValidation.js), not the schema.
+--
+-- The file holds no statement, so running it changes nothing.

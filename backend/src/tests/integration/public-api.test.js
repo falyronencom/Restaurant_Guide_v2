@@ -1384,4 +1384,55 @@ describe('Public API — GET /api/v1/public/establishments/by-slug/:slug/reviews
     expect(r.author).toHaveProperty('id');
     expect(r.author).toHaveProperty('name');
   });
+
+  // The site's card asks for its first reviews with a text only
+  // (with_text=true, decision В1 = А). Next to the one visible review with a
+  // text: a review of a rating alone (NULL) and one of spaces, each by its own
+  // author; the hidden and the deleted ones stay out either way.
+  describe('with_text', () => {
+    beforeEach(async () => {
+      for (const [email, content] of [['rating-only@test.com', null], ['spaces@test.com', '   ']]) {
+        const { rows } = await query(
+          `INSERT INTO users (id, email, password_hash, name, role, auth_method)
+           VALUES (gen_random_uuid(), $1, 'hash', 'Гость', 'user', 'email')
+           RETURNING id`,
+          [email]
+        );
+        await query(
+          `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, is_visible, is_deleted, created_at, updated_at)
+           VALUES (gen_random_uuid(), $1, $2, 3, $3, $3, true, false, NOW(), NOW())`,
+          [rows[0].id, activeEstId, content]
+        );
+      }
+    });
+
+    const reviewsOf = (qs) => request(app)
+      .get(`/api/v1/public/establishments/by-slug/${activeSlug}/reviews${qs}`);
+
+    test('without it — the three visible reviews, as before; no text comes as content: null', async () => {
+      const response = await reviewsOf('').expect(200);
+
+      const { reviews, pagination } = response.body.data;
+      expect(reviews.map((r) => r.content).sort()).toEqual(['   ', 'Visible review', null].sort());
+      expect(reviews.find((r) => r.content === null)).toHaveProperty('content', null);
+      expect(pagination.total).toBe(3);
+    });
+
+    test('with_text=true — only the review with a text, and the total counts it', async () => {
+      const response = await reviewsOf('?with_text=true').expect(200);
+
+      const { reviews, pagination } = response.body.data;
+      expect(reviews.map((r) => r.content)).toEqual(['Visible review']);
+      expect(pagination).toMatchObject({ total: 1, totalPages: 1 });
+    });
+
+    test('another value is refused, as on /establishments/:id/reviews: 422 VALIDATION_ERROR', async () => {
+      const response = await reviewsOf('?with_text=1').expect(422);
+
+      expect(response.body.error.code).toBe('VALIDATION_ERROR');
+      expect(response.body.error.details).toEqual([
+        { field: 'with_text', message: 'with_text must be true or false' },
+      ]);
+    });
+  });
 });

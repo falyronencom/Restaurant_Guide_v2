@@ -327,7 +327,9 @@ export const getPublicMenuItems = asyncHandler(async (req, res) => {
  * GET /api/v1/public/establishments/by-slug/:slug/reviews
  *
  * Paginated public reviews for an establishment by slug.
- * Query params: page (default 1), limit (default 10, max 50).
+ * Query params: page (default 1), limit (default 10, max 50), with_text
+ * ('true' — only the reviews that have a text, the card's first ones; checked
+ * by the route's validator, reviewValidation.validateGetPublicReviews).
  */
 export const getPublicReviews = asyncHandler(async (req, res) => {
   const { slug } = req.params;
@@ -339,8 +341,9 @@ export const getPublicReviews = asyncHandler(async (req, res) => {
 
   const page = Math.max(parseInt(pageRaw, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(limitRaw, 10) || 10, 1), 50);
+  const withText = req.query.with_text === 'true';
 
-  const result = await publicService.getPublicReviews(slug, { page, limit });
+  const result = await publicService.getPublicReviews(slug, { page, limit, withText });
 
   res.status(200).json({
     success: true,

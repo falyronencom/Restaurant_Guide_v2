@@ -143,6 +143,35 @@ describe('reviewService', () => {
       );
     });
 
+    // A review may be a rating alone (thread «Отзыв без текста»): whatever
+    // «no text» the request brings, the model receives null — never '' — and
+    // a text arrives trimmed. The bodies: the app leaves the key out, the
+    // site sends an empty field as ''.
+    const NO_KEY = Symbol('no content key');
+    test.each([
+      ['no content key (the app)', NO_KEY],
+      ['an empty content (the site)', ''],
+      ['null', null],
+      ['spaces and line breaks', '  \n\t '],
+    ])('no text — %s — reaches the model as null', async (_label, content) => {
+      const { content: _text, ...withoutText } = validReviewData;
+      await createReview(content === NO_KEY ? withoutText : { ...withoutText, content });
+
+      expect(ReviewModel.createReview).toHaveBeenCalledWith(
+        { user_id: 'user-123', establishment_id: 'estab-123', rating: 5, content: null },
+        TX_CLIENT,
+      );
+    });
+
+    test('a text reaches the model trimmed', async () => {
+      await createReview({ ...validReviewData, content: '  Вкусно и быстро  ' });
+
+      expect(ReviewModel.createReview).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'Вкусно и быстро' }),
+        TX_CLIENT,
+      );
+    });
+
     test('should throw error if user not found', async () => {
       ReviewModel.getUserById.mockResolvedValue(null);
 
@@ -445,6 +474,40 @@ describe('reviewService', () => {
       expect(ReviewModel.updateReview).not.toHaveBeenCalled();
     });
 
+    // Erasing the text is a change, not «nothing sent». The falsy test
+    // (`!updates.rating && !updates.content`) answered both of these 400
+    // NO_UPDATE_FIELDS before 22.11.2026.
+    test.each([
+      ['""', ''],
+      ['null', null],
+      ['spaces', '   '],
+    ])('an edit that only erases the text (%s) goes through: the model receives content null', async (_label, content) => {
+      await updateReview(reviewId, userId, { content });
+
+      expect(ReviewModel.updateReview).toHaveBeenCalledWith(reviewId, { content: null }, TX_CLIENT);
+    });
+
+    test('an erased text with the rating, as the site sends an edit', async () => {
+      await updateReview(reviewId, userId, { rating: 4, content: '' });
+
+      expect(ReviewModel.updateReview).toHaveBeenCalledWith(
+        reviewId,
+        { rating: 4, content: null },
+        TX_CLIENT,
+      );
+    });
+
+    test('a rating-only edit leaves the text alone: no content key reaches the model', async () => {
+      await updateReview(reviewId, userId, { rating: 2 });
+
+      expect(ReviewModel.updateReview).toHaveBeenCalledTimes(1);
+      const [id, changes, client] = ReviewModel.updateReview.mock.calls[0];
+      expect([id, client]).toEqual([reviewId, TX_CLIENT]);
+      // toStrictEqual: `content: undefined` is not «no key» (toHaveBeenCalledWith
+      // would take the two for one).
+      expect(changes).toStrictEqual({ rating: 2 });
+    });
+
     test('recounts the rating even when only the text changed (the trigger counts hidden reviews)', async () => {
       ReviewModel.findReviewById
         .mockReset()
@@ -554,6 +617,40 @@ describe('reviewService', () => {
         code: 'REVIEW_NOT_FOUND',
       });
     });
+
+    // The error journal holds failures of the server, not the service's own
+    // refusals. Until 22.11.2026 the catch of deleteReview wrote «Unexpected
+    // error deleting review» before it looked whether the error was such a
+    // refusal, so both of these went to the journal as server failures.
+    test.each([
+      ['the account switched off meanwhile (403)', () => {
+        TX_CLIENT.query.mockResolvedValue({ rows: [{ is_active: false }] });
+      }, 403, 'USER_INACTIVE'],
+      ['the review deleted meanwhile (404)', () => {
+        ReviewModel.softDeleteReview.mockResolvedValue(false);
+      }, 404, 'REVIEW_NOT_FOUND'],
+    ])('a refusal inside the transaction — %s — writes no error line', async (_label, arrange, statusCode, code) => {
+      arrange();
+
+      await expect(deleteReview(reviewId, userId)).rejects.toMatchObject({ statusCode, code });
+
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+
+    test('an unexpected failure of the database is written to the error journal and answered 500', async () => {
+      ReviewModel.softDeleteReview.mockRejectedValue(new Error('Connection terminated unexpectedly'));
+
+      await expect(deleteReview(reviewId, userId)).rejects.toMatchObject({
+        statusCode: 500,
+        code: 'REVIEW_DELETION_FAILED',
+      });
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.error).toHaveBeenCalledWith(
+        'Unexpected error deleting review',
+        expect.objectContaining({ error: 'Connection terminated unexpectedly', reviewId, userId }),
+      );
+    });
   });
 
   describe('getReviewsByEstablishment', () => {
@@ -629,6 +726,41 @@ describe('reviewService', () => {
       expect(ReviewModel.findReviewsByEstablishment).toHaveBeenCalledWith(
         establishmentId,
         expect.objectContaining({ limit: 200 })
+      );
+    });
+
+    // «Only reviews with a text» (with_text=true, the card's first reviews):
+    // the page and pagination.total must count the same reviews, so the
+    // filter goes to both queries of the model.
+    test('withText reaches both the page and the count', async () => {
+      ReviewModel.findReviewsByEstablishment.mockResolvedValue([]);
+      ReviewModel.countReviewsByEstablishment.mockResolvedValue(0);
+
+      await getEstablishmentReviews(establishmentId, { withText: true });
+
+      expect(ReviewModel.findReviewsByEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.objectContaining({ withText: true })
+      );
+      expect(ReviewModel.countReviewsByEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.objectContaining({ withText: true })
+      );
+    });
+
+    test('without withText neither query filters by text', async () => {
+      ReviewModel.findReviewsByEstablishment.mockResolvedValue([]);
+      ReviewModel.countReviewsByEstablishment.mockResolvedValue(0);
+
+      await getEstablishmentReviews(establishmentId, {});
+
+      expect(ReviewModel.findReviewsByEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.objectContaining({ withText: false })
+      );
+      expect(ReviewModel.countReviewsByEstablishment).toHaveBeenCalledWith(
+        establishmentId,
+        expect.objectContaining({ withText: false })
       );
     });
 
