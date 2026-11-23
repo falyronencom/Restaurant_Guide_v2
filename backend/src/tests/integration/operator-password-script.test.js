@@ -34,7 +34,7 @@
 
 import request from 'supertest';
 import argon2 from 'argon2';
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
@@ -58,12 +58,11 @@ const PASSWORD = 'OldPass123';
 const NEW_PASSWORD = 'NewPass456';
 
 /**
- * Запуск скрипта на базе теста. spawnSync держит цикл событий jest, но
- * соединений пула в это время никто не ждёт.
+ * Запуск скрипта на базе теста. runScript (spawnSync с пределом) держит цикл
+ * событий jest, но соединений пула в это время никто не ждёт.
  */
-const run = (script, args, env) => spawnSync(process.execPath, [join(SCRIPTS, script), ...args], {
+const run = (script, args, env) => runScript(join(SCRIPTS, script), args, {
   env: { ...process.env, ...env },
-  encoding: 'utf8',
 });
 
 /** Аккаунт с ролью role и сеансом, открытым старым паролем. */

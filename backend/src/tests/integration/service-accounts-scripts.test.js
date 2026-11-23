@@ -20,7 +20,7 @@
  *       не удаляет учётку с карточкой.
  */
 import request from 'supertest';
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { randomUUID } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -38,9 +38,8 @@ const MAILBOX = 'owner.box@gmail.com';
 const PASSWORD = 'Script-Pass-123';
 const NEW_PASSWORD = 'Script-New-456';
 
-const run = (script, args = [], env = {}) => spawnSync(process.execPath, [join(SCRIPTS, script), ...args], {
+const run = (script, args = [], env = {}) => runScript(join(SCRIPTS, script), args, {
   env: { ...process.env, SERVICE_ACCOUNT_MAILBOXES: MAILBOX, ...env },
-  encoding: 'utf8',
 });
 
 const user = async ({ email, role = 'user', service = false, active = true, provider = null }) => {
