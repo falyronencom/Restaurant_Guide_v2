@@ -284,8 +284,11 @@ router.post(
  *
  * Middleware chain:
  *   1. Authentication: verify access token
- *   2. Rate limiter: 30 per hour per IP (each code allows 5 attempts; user
- *      may resend up to ~5 codes/hour, so 30 covers normal flows)
+ *   2. Rate limiter: 30 per hour per account — it runs after authenticate,
+ *      so it counts req.user, not the address (each code allows 5 attempts;
+ *      user may resend up to ~5 codes/hour, so 30 covers normal flows). The 5
+ *      per code are held by the database itself (spendCodeAttempt), with or
+ *      without Redis.
  *   3. Controller: validate format then call service
  */
 router.post(

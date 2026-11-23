@@ -46,7 +46,8 @@ import {
   reserveCodeWithinLimit,
   activateReservedCode,
   deleteReservedCode,
-  incrementAttempts,
+  spendCodeAttempt,
+  MAX_CODE_ATTEMPTS,
   markAsUsed,
 } from '../models/emailVerificationModel.js';
 import {
@@ -1918,9 +1919,16 @@ export async function issueEmailVerificationCode(userId) {
 /**
  * Verify a 6-digit email verification code submitted by the user.
  *
- * On success: marks code as used, sets users.email_verified=true, returns user.
- * On wrong code: increments attempts; after 5 failed attempts the code is
- * invalidated and TOO_MANY_ATTEMPTS is returned on subsequent calls.
+ * One attempt is spent and the guess compared in one statement
+ * (spendCodeAttempt): a code is compared at most MAX_CODE_ATTEMPTS times
+ * however many requests arrive together, and the account is confirmed only
+ * by the request whose statement consumed the code.
+ *
+ * Answers: a wrong code — INVALID_CODE (the attempt that runs the code out
+ * retires it); no active code — INVALID_OR_EXPIRED_CODE, so also after the
+ * last attempt and for the second of two right codes sent together;
+ * TOO_MANY_ATTEMPTS — an active code with no attempts left, which only the
+ * counting before spendCodeAttempt could leave (it is retired then).
  *
  * @param {string} userId
  * @param {string} code - 6-digit string
@@ -1928,28 +1936,24 @@ export async function issueEmailVerificationCode(userId) {
  * @throws {Error} 'INVALID_OR_EXPIRED_CODE' | 'TOO_MANY_ATTEMPTS' | 'INVALID_CODE' | 'USER_NOT_FOUND'
  */
 export async function verifyEmailCode(userId, code) {
-  const activeCode = await findActiveCodeForUser(userId);
+  const attempt = await spendCodeAttempt(userId, code);
 
-  if (!activeCode) {
+  if (!attempt) {
+    // No attempt spent, nothing compared. A code left active with no attempts
+    // (only the counting before spendCodeAttempt could leave one) is retired.
+    const activeCode = await findActiveCodeForUser(userId);
+    if (activeCode && activeCode.attempts >= MAX_CODE_ATTEMPTS) {
+      await markAsUsed(activeCode.id);
+      throw new Error('TOO_MANY_ATTEMPTS');
+    }
     throw new Error('INVALID_OR_EXPIRED_CODE');
   }
 
-  if (activeCode.attempts >= 5) {
-    await markAsUsed(activeCode.id);
-    throw new Error('TOO_MANY_ATTEMPTS');
-  }
-
-  if (activeCode.code !== code) {
-    const newAttempts = await incrementAttempts(activeCode.id);
-    if (newAttempts >= 5) {
-      await markAsUsed(activeCode.id);
-    }
+  if (!attempt.matched) {
     throw new Error('INVALID_CODE');
   }
 
-  // Code matches — finalize verification
-  await markAsUsed(activeCode.id);
-
+  // The right code, consumed by this request's statement: confirm the e-mail.
   const updateResult = await pool.query(
     `UPDATE users
      SET email_verified = true, updated_at = $1

@@ -123,24 +123,29 @@ describe('emailVerificationModel', () => {
     });
   });
 
-  describe('incrementAttempts', () => {
-    test('increments attempts and returns new value', async () => {
-      mockQuery.mockResolvedValue({ rows: [{ attempts: 3 }] });
+  // What the statement does under concurrent requests is proven against the
+  // database (integration/auth-email-verification.test.js); here — its shape.
+  describe('spendCodeAttempt', () => {
+    test('one statement: the guess, the account and the limit of 5 go to the UPDATE; its row comes back', async () => {
+      const row = { id: uuidv4(), attempts: 2, matched: false };
+      mockQuery.mockResolvedValue({ rows: [row] });
+      const userId = uuidv4();
 
-      const result = await Model.incrementAttempts(uuidv4());
+      const result = await Model.spendCodeAttempt(userId, '123456');
 
-      expect(result).toBe(3);
-      const sql = mockQuery.mock.calls[0][0];
+      expect(result).toEqual(row);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(params).toEqual([userId, '123456', 5]);
+      expect(sql).toContain('UPDATE email_verification_codes');
       expect(sql).toContain('SET attempts = attempts + 1');
-      expect(sql).toContain('RETURNING attempts');
+      expect(sql).toContain('RETURNING id, attempts, code = $2 AS matched');
     });
 
-    test('returns 0 when row not found', async () => {
+    test('null when the UPDATE returns no row', async () => {
       mockQuery.mockResolvedValue({ rows: [] });
 
-      const result = await Model.incrementAttempts(uuidv4());
-
-      expect(result).toBe(0);
+      expect(await Model.spendCodeAttempt(uuidv4(), '123456')).toBeNull();
     });
   });
 

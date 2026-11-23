@@ -66,10 +66,11 @@ const positiveWholeNumber = (env, name, fallback, max = Number.MAX_SAFE_INTEGER)
  * - The site's own requests — proven by the shared secret, made for no
  *   visitor (pre-rendering, sitemap, background revalidation): 6000 per hour,
  *   one budget for the site. Until 25.10.2026 they shared one address budget
- *   with every visitor of the site; the background alone is about 1500 an
- *   hour at 500 cards (a detail page is revalidated hourly, about 3 calls),
- *   so 6000 is four times that and more than the site had before for all of
- *   its traffic together.
+ *   with every visitor of the site; the background alone is about 2000 an
+ *   hour at 500 cards (a detail page is revalidated hourly, about 4 calls —
+ *   one more since the site's PR #222: the five latest reviews without the
+ *   text filter), so 6000 is three times that and more than the site had
+ *   before for all of its traffic together.
  *
  * The asymmetric limits reflect different trust levels. Authenticated users have
  * proven identity and can be individually throttled or banned if abusive.
