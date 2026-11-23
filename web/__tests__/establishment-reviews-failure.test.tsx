@@ -19,6 +19,7 @@
 import type { ReactElement, ReactNode } from 'react';
 
 import EstablishmentPage from '@/app/(public)/[city]/[category]/[slug]/page';
+import { AnchorNav } from '@/components/establishment/AnchorNav';
 import { ReviewCarousel } from '@/components/establishment/ReviewCarousel';
 import { ReviewsLoadFailed } from '@/components/establishment/ReviewsLoadFailed';
 import {
@@ -137,23 +138,121 @@ it('a failed reviews fetch renders ReviewsLoadFailed — not an empty carousel (
     slug: 'rf-1',
     detailPath: '/minsk/restaurants/rf-1',
     reviewsHref: '/minsk/restaurants/rf-1/reviews',
+    // The card's own count — the island's reload brings only reviews with text.
+    totalCount: 7,
   });
 });
 
-it('a successful fetch renders the carousel with the real count', async () => {
+/*
+ * «Отзыв без текста» (11.2026, В1 = А): the card shows only reviews with
+ * text, asked with with_text=true; the counts of the reviews block and of the
+ * anchor nav are the card's review_count (all reviews, a rating alone
+ * included) — the filtered list's pagination.total counts only the reviews
+ * with text. (The title block's «N отзывов» read review_count before this
+ * change too.) Fixture: 7 reviews on the card, 2 of them with text.
+ */
+function textReview(id: string) {
+  return {
+    id,
+    establishment_id: 'id-rf-2',
+    rating: 5,
+    content: `Отзыв ${id}`,
+    partner_response: null,
+    partner_response_at: null,
+    is_edited: false,
+    created_at: '2026-05-12T10:00:00.000Z',
+    updated_at: '2026-05-12T10:00:00.000Z',
+    author: { id: `u-${id}`, name: `Автор ${id}`, avatar_url: null },
+  };
+}
+
+it('the first reviews are asked with text only; the counts come from review_count, not the filtered total', async () => {
   (getBySlug as jest.Mock).mockResolvedValue({ establishment: card('rf-2') });
+  const withText = [textReview('a'), textReview('b')];
   (getReviews as jest.Mock).mockResolvedValue({
-    reviews: [],
-    pagination: { page: 1, limit: 5, total: 7, totalPages: 2, hasNext: true, hasPrevious: false },
+    reviews: withText,
+    pagination: { page: 1, limit: 5, total: 2, totalPages: 1, hasNext: false, hasPrevious: false },
   });
 
   const tree = await renderPage('rf-2');
 
+  expect(getReviews).toHaveBeenCalledWith('rf-2', { limit: 5, with_text: true });
   expect(findAll(tree, ReviewsLoadFailed)).toHaveLength(0);
   const carousel = findAll(tree, ReviewCarousel);
   expect(carousel).toHaveLength(1);
-  expect(carousel[0].props).toMatchObject({ totalCount: 7 });
-  expect(getReviews).toHaveBeenCalledWith('rf-2', { limit: 5 });
+  expect(carousel[0].props).toMatchObject({ reviews: withText, totalCount: 7 });
+
+  const [nav] = findAll(tree, AnchorNav) as ReactElement<{
+    items: { id: string; suffix?: string }[];
+  }>[];
+  expect(nav.props.items.find((i) => i.id === 'reviews')?.suffix).toBe(' (7)');
+});
+
+/*
+ * Trunk's decision 22.11.2026: the page also asks for the latest reviews
+ * without the filter — only so that an author's own review of one rating is
+ * on the card for that author (ReviewCarousel `authorOnly`, kept for its
+ * author by OnlyForAuthor). Fixture: latest = 2 with text + 2 without.
+ */
+function ratingOnlyReview(id: string) {
+  return { ...textReview(id), content: null };
+}
+
+it('the latest reviews without the filter give the author-only ones: those not among the first with text', async () => {
+  (getBySlug as jest.Mock).mockResolvedValue({ establishment: card('rf-5') });
+  const withText = [textReview('a'), textReview('b')];
+  const latest = [ratingOnlyReview('r1'), textReview('a'), ratingOnlyReview('r2'), textReview('b')];
+  (getReviews as jest.Mock).mockImplementation(
+    async (_slug: string, params: { with_text?: boolean }) => ({
+      reviews: params.with_text ? withText : latest,
+      pagination: { page: 1, limit: 5, total: params.with_text ? 2 : 7, totalPages: 1, hasNext: false, hasPrevious: false },
+    }),
+  );
+
+  const tree = await renderPage('rf-5');
+
+  expect(getReviews).toHaveBeenCalledTimes(2);
+  expect(getReviews).toHaveBeenCalledWith('rf-5', { limit: 5, with_text: true });
+  expect(getReviews).toHaveBeenCalledWith('rf-5', { limit: 5 });
+  const [carousel] = findAll(tree, ReviewCarousel);
+  expect(carousel.props).toMatchObject({
+    reviews: withText,
+    authorOnly: [ratingOnlyReview('r1'), ratingOnlyReview('r2')],
+    totalCount: 7,
+  });
+});
+
+it('the unfiltered ask failing leaves the card as for everyone: no author-only reviews', async () => {
+  (getBySlug as jest.Mock).mockResolvedValue({ establishment: card('rf-6') });
+  const withText = [textReview('a')];
+  (getReviews as jest.Mock).mockImplementation(
+    async (_slug: string, params: { with_text?: boolean }) => {
+      if (!params.with_text) throw new ApiError(503, 'down');
+      return {
+        reviews: withText,
+        pagination: { page: 1, limit: 5, total: 1, totalPages: 1, hasNext: false, hasPrevious: false },
+      };
+    },
+  );
+
+  const tree = await renderPage('rf-6');
+
+  expect(findAll(tree, ReviewsLoadFailed)).toHaveLength(0);
+  const [carousel] = findAll(tree, ReviewCarousel);
+  expect(carousel.props).toMatchObject({ reviews: withText, authorOnly: [] });
+});
+
+it('a card with ratings only: an empty list with text, the count still review_count', async () => {
+  (getBySlug as jest.Mock).mockResolvedValue({ establishment: card('rf-4') });
+  (getReviews as jest.Mock).mockResolvedValue({
+    reviews: [],
+    pagination: { page: 1, limit: 5, total: 0, totalPages: 0, hasNext: false, hasPrevious: false },
+  });
+
+  const tree = await renderPage('rf-4');
+
+  const [carousel] = findAll(tree, ReviewCarousel);
+  expect(carousel.props).toMatchObject({ reviews: [], totalCount: 7 });
 });
 
 /*

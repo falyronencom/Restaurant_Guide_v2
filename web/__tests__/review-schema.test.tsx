@@ -140,6 +140,22 @@ describe('ReviewSchema — review[] emission', () => {
     expect(review[1]).not.toHaveProperty('reviewBody');
     expect((review[1].reviewRating as Record<string, unknown>).ratingValue).toBe(4);
   });
+
+  // «Отзыв без текста» (11.2026): the server sends a review of one rating as
+  // content: null (not '') — it keeps its Review entry and rating, no body.
+  it('a review of one rating (content null, as the server sends it) has no reviewBody', () => {
+    const { container } = render(
+      <ReviewSchema
+        {...baseProps}
+        establishment={baseEstablishment}
+        reviews={[makeReview({ id: 'rev-3', rating: 2, content: null })]}
+      />,
+    );
+
+    const [entry] = parseLdJson(container)!.review as Array<Record<string, unknown>>;
+    expect(entry).not.toHaveProperty('reviewBody');
+    expect((entry.reviewRating as Record<string, unknown>).ratingValue).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------

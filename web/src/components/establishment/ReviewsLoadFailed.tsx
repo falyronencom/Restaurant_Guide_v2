@@ -23,14 +23,18 @@ import { ReviewCarousel } from './ReviewCarousel';
  * page), renders the regular carousel once they arrive, and says plainly that
  * the reviews did not load — with «Повторить» — if that fails too. It never
  * says «нет отзывов»: whether there are any is exactly what it does not know.
+ *
+ * `totalCount` is the card's own `review_count` from the page: the action
+ * loads only the first reviews with text (В1 = А), whose list counts only them.
  */
 type State =
   | { status: 'loading' }
   | { status: 'failed' }
-  | { status: 'loaded'; reviews: PublicReview[]; total: number };
+  | { status: 'loaded'; reviews: PublicReview[]; authorOnly: PublicReview[] };
 
 export function ReviewsLoadFailed({
   slug,
+  totalCount,
   averageRating,
   reviewsHref,
   establishmentId,
@@ -38,6 +42,7 @@ export function ReviewsLoadFailed({
   detailPath,
 }: {
   slug: string;
+  totalCount: number;
   averageRating: number | null;
   reviewsHref?: string;
   establishmentId: string;
@@ -57,7 +62,11 @@ export function ReviewsLoadFailed({
         if (cancelled) return;
         setState(
           result.ok
-            ? { status: 'loaded', reviews: result.reviews, total: result.total }
+            ? {
+                status: 'loaded',
+                reviews: result.reviews,
+                authorOnly: result.authorOnly,
+              }
             : { status: 'failed' },
         );
       });
@@ -70,7 +79,8 @@ export function ReviewsLoadFailed({
     return (
       <ReviewCarousel
         reviews={state.reviews}
-        totalCount={state.total}
+        authorOnly={state.authorOnly}
+        totalCount={totalCount}
         averageRating={averageRating}
         reviewsHref={reviewsHref}
         establishmentId={establishmentId}
