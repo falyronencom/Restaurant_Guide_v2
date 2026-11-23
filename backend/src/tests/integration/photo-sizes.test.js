@@ -23,7 +23,7 @@
  * (облако test из setup-env.js).
  */
 
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
@@ -449,7 +449,7 @@ describe('Скрипт photo-sizes: пересчёт старых строк', (
     beforeEach(() => { backupDir = mkdtempSync(join(tmpdir(), 'photo-sizes-')); });
     afterEach(() => { rmSync(backupDir, { recursive: true, force: true }); });
 
-    const run = (...args) => spawnSync(process.execPath, [CLI, ...args], { env: process.env, encoding: 'utf8' });
+    const run = (...args) => runScript(CLI, args, { env: process.env });
 
     test('ошибки в команде — код 2, база не тронута', async () => {
       const before = await snapshot();

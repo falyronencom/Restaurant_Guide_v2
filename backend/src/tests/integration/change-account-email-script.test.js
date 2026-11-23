@@ -29,7 +29,8 @@
 
 import request from 'supertest';
 import argon2 from 'argon2';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -51,10 +52,7 @@ const NEW_PASSWORD = 'Operator9!New';
 
 const scriptEnv = (env) => ({ ...process.env, SERVICE_ACCOUNT_MAILBOXES: MAILBOX, ...env });
 
-const run = (args, env = {}) => spawnSync(process.execPath, [SCRIPT, ...args], {
-  env: scriptEnv(env),
-  encoding: 'utf8',
-});
+const run = (args, env = {}) => runScript(SCRIPT, args, { env: scriptEnv(env) });
 
 const move = (from, to, extra = []) => run([`--email=${from}`, `--new-email=${to}`, `--confirm-old=${from}`, '--yes', ...extra]);
 
@@ -315,8 +313,8 @@ describe('scripts/change-account-email.js', () => {
       await query('UPDATE users SET email_verified = false WHERE id = $1', [id]);
       const result = move('admin2@test.com', 'panel@nirivio.by', []);
       expect(result.status).toBe(1);
-      const listed = spawnSync(process.execPath, [SCRIPT, '--email=admin2@test.com', '--new-email=panel@nirivio.by',
-        '--confirm-old=admin2@test.com', '--yes'], { env: scriptEnv({ SERVICE_ACCOUNT_MAILBOXES: `${MAILBOX},panel@nirivio.by` }), encoding: 'utf8' });
+      const listed = runScript(SCRIPT, ['--email=admin2@test.com', '--new-email=panel@nirivio.by',
+        '--confirm-old=admin2@test.com', '--yes'], { env: scriptEnv({ SERVICE_ACCOUNT_MAILBOXES: `${MAILBOX},panel@nirivio.by` }) });
       expect(listed.status).toBe(0);
       expect(await row(id)).toMatchObject({ email: 'panel@nirivio.by', email_verified: true });
     });

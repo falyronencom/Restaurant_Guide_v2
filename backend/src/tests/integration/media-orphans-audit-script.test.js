@@ -33,7 +33,7 @@
  * значения — литералы этого файла, не вывод кода.
  */
 
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { randomUUID } from 'crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -67,7 +67,7 @@ const card = (cardId, kind, id) => `establishments/${cardId}/${kind}/${id}`;
 /** secure_url загрузки: версия и расширение — так их возвращает Cloudinary. */
 const secureUrl = (publicId, ext) => `https://res.cloudinary.com/${CLOUD}/image/upload/v1700000000/${publicId}.${ext}`;
 
-const run = (args) => spawnSync(process.execPath, [SCRIPT, ...args], { env: { ...process.env }, encoding: 'utf8' });
+const run = (args) => runScript(SCRIPT, args, { env: { ...process.env } });
 
 const addUser = async ({ role = 'user', service = false, avatarUrl = null }) => {
   const id = randomUUID();

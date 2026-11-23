@@ -24,7 +24,8 @@
  * На старом коде (до В1) каждый тест здесь красный: скрипта не было.
  */
 
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { randomUUID } from 'crypto';
 import { jest } from '@jest/globals';
 import { readFileSync } from 'fs';
@@ -52,9 +53,8 @@ const ACTOR = 'operator_script:delete-account';
 jest.setTimeout(30000);
 
 /** Скрипт до конца, с ответом на вопрос «yes» в input, если он задан. */
-const run = (args, { input } = {}) => spawnSync(process.execPath, [SCRIPT, ...args], {
+const run = (args, { input } = {}) => runScript(SCRIPT, args, {
   env: { ...process.env },
-  encoding: 'utf8',
   input,
 });
 
