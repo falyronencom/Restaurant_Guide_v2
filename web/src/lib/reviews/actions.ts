@@ -14,7 +14,12 @@ import {
 } from '@/lib/api/endpoints/reviews';
 import { personText } from '@/lib/api/person-text';
 import { ApiError, type PublicReview } from '@/lib/api/types';
-import { DETAIL_REVIEWS_LIMIT } from '@/lib/establishment-helpers';
+import { getSessionUser } from '@/lib/auth/session';
+import {
+  DETAIL_REVIEWS_LIMIT,
+  authorOnlyReviews,
+} from '@/lib/establishment-helpers';
+import { verifyToReviewText } from '@/lib/reviews/email-gate';
 
 /*
  * Review Server Actions (reviews-write Slice 1 create + Slice 2 edit/delete).
@@ -48,7 +53,9 @@ export type CreateReviewResult = ReviewActionResult;
  * in the UI — mirror of auth/actions.ts FIELD_TEXTS_RU for the review fields.
  */
 const FIELD_TEXTS_RU: Record<string, string> = {
-  content: 'Текст отзыва: от 1 до 1000 символов.',
+  // The text is optional (a review of one rating), so the only rule left on
+  // the field is its length.
+  content: 'Текст отзыва: не больше 1000 символов.',
   rating: 'Поставьте оценку от 1 до 5.',
 };
 
@@ -58,23 +65,26 @@ const VALIDATION_SUMMARY_RU = 'Проверьте правильность за�
  * Create a review. On success busts the ISR detail page so the new review is
  * visible on next render; returns a mapped `{ok:false, code, message,
  * fieldErrors?}` on any rejection (the modal renders per-field 422 + a summary
- * banner for 409/429/network).
+ * banner for 409/429/network). No `content` — a review of one rating: the
+ * endpoint then gets no `content` key at all.
  */
 export async function createReviewAction(input: {
   establishmentId: string;
   rating: number;
-  content: string;
+  content?: string;
   detailPath: string;
 }): Promise<CreateReviewResult> {
   try {
     await createReview({
       establishmentId: input.establishmentId,
       rating: input.rating,
-      content: input.content,
+      ...(input.content !== undefined ? { content: input.content } : {}),
     });
   } catch (err) {
     const daily = dailyLimitRefusal(err);
     if (daily) return daily;
+    const unverified = await emailNotVerifiedRefusal(err);
+    if (unverified) return unverified;
     return mapReviewError(err, messageForCreateCode);
   }
 
@@ -88,7 +98,8 @@ export async function createReviewAction(input: {
 
 /**
  * Update the user's own review (rating + content — the form always submits
- * both). Mirrors createReviewAction: literal revalidatePath on success only.
+ * both; content '' erases the text, the review keeps only its rating — В5).
+ * Mirrors createReviewAction: literal revalidatePath on success only.
  * Ownership is authoritative server-side (403 UNAUTHORIZED_REVIEW_MODIFICATION);
  * the client check on the card is a UX affordance.
  */
@@ -130,13 +141,18 @@ export async function deleteReviewAction(input: {
 }
 
 export type ReloadReviewsResult =
-  | { ok: true; reviews: PublicReview[]; total: number }
+  | { ok: true; reviews: PublicReview[]; authorOnly: PublicReview[] }
   | { ok: false };
 
 /**
  * Re-fetch the detail page's review slice after the page's own fetch failed
  * (ReviewsLoadFailed calls it from the visitor's browser — the public API URL
- * is server-only, hence an action, not a client fetch).
+ * is server-only, hence an action, not a client fetch). The same slice as the
+ * page's: the first reviews with text only (В1 = А), and the author's own
+ * reviews of one rating among the latest (`authorOnly`, authorOnlyReviews —
+ * if that second ask fails, none). No count is returned — the filtered list
+ * counts only reviews with text; the island takes the card's `review_count`
+ * from the page.
  *
  * On success it also busts the literal detail path: the ISR page cached the
  * failed render (no reviews in its HTML), and without this it would keep it
@@ -148,15 +164,22 @@ export async function reloadReviewsAction(input: {
   slug: string;
   detailPath: string;
 }): Promise<ReloadReviewsResult> {
-  let result;
+  let shown;
+  let latest;
   try {
     // Any browser may call this action: it counts against its visitor, not
     // the site's own budget (lib/api/visitor.ts).
-    result = await getReviews(
-      input.slug,
-      { limit: DETAIL_REVIEWS_LIMIT },
-      { visitor: await currentVisitor() },
-    );
+    const visitor = await currentVisitor();
+    [shown, latest] = await Promise.all([
+      getReviews(
+        input.slug,
+        { limit: DETAIL_REVIEWS_LIMIT, with_text: true },
+        { visitor },
+      ),
+      getReviews(input.slug, { limit: DETAIL_REVIEWS_LIMIT }, { visitor }).catch(
+        () => null,
+      ),
+    ]);
   } catch {
     return { ok: false };
   }
@@ -165,8 +188,8 @@ export async function reloadReviewsAction(input: {
   }
   return {
     ok: true,
-    reviews: result.reviews,
-    total: result.pagination.total,
+    reviews: shown.reviews,
+    authorOnly: authorOnlyReviews(shown.reviews, latest?.reviews ?? []),
   };
 }
 
@@ -226,6 +249,30 @@ function dailyLimitRefusal(err: unknown): ReviewActionResult | null {
     ok: false,
     code: err.errorCode ?? 'HTTP_429',
     message: personText(err.message) ?? DAILY_LIMIT_FALLBACK_RU,
+  };
+}
+
+/**
+ * A new review only with a confirmed address (thread «Отзыв без текста», В9):
+ * the server refuses it with 422 EMAIL_NOT_VERIFIED. Its own sentence is
+ * written for the older app builds («Профиль» → «Подтвердить email»); the
+ * site says its own, with the address the code goes to (the display cookie —
+ * the address cannot be changed), and the modal puts «Отправить код» under it
+ * (VerifyEmailToReview). Checked before mapReviewError, whose fallback for
+ * an unknown code — «Не удалось отправить отзыв. Попробуйте позже.» — would
+ * not say what to do.
+ */
+async function emailNotVerifiedRefusal(
+  err: unknown,
+): Promise<ReviewActionResult | null> {
+  if (!(err instanceof ApiError) || err.errorCode !== 'EMAIL_NOT_VERIFIED') {
+    return null;
+  }
+  const user = await getSessionUser().catch(() => null);
+  return {
+    ok: false,
+    code: 'EMAIL_NOT_VERIFIED',
+    message: verifyToReviewText(user?.email),
   };
 }
 

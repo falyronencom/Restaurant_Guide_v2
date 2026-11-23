@@ -17,6 +17,8 @@ jest.mock('@/lib/api/endpoints/reviews', () => ({
   updateReview: jest.fn(),
   deleteReview: jest.fn(),
 }));
+// The display cookie's address, for the В9 words on EMAIL_NOT_VERIFIED.
+jest.mock('@/lib/auth/session', () => ({ getSessionUser: jest.fn() }));
 
 import { revalidatePath } from 'next/cache';
 
@@ -29,6 +31,7 @@ import {
   updateReview,
 } from '@/lib/api/endpoints/reviews';
 import { ApiError } from '@/lib/api/types';
+import { getSessionUser } from '@/lib/auth/session';
 import {
   createReviewAction,
   deleteReviewAction,
@@ -82,6 +85,25 @@ describe('createReviewAction — success', () => {
     expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
     expect(result).toEqual({ ok: true });
   });
+
+  it('a review of one rating (no content) reaches the endpoint with no `content` key', async () => {
+    createReviewMock.mockResolvedValue(undefined);
+
+    const result = await createReviewAction({
+      establishmentId: INPUT.establishmentId,
+      rating: 3,
+      detailPath: INPUT.detailPath,
+    });
+
+    expect(createReviewMock).toHaveBeenCalledTimes(1);
+    const sent = createReviewMock.mock.calls[0][0];
+    expect(sent).toStrictEqual({
+      establishmentId: INPUT.establishmentId,
+      rating: 3,
+    });
+    expect(sent).not.toHaveProperty('content');
+    expect(result).toEqual({ ok: true });
+  });
 });
 
 describe('createReviewAction — error mapping (never revalidates)', () => {
@@ -114,9 +136,15 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
     // Real wire: the backend `validate` middleware emits `details` as an ARRAY
     // [{field, message, value}] (errorHandler.js:198), NOT a {field:[msgs]}
     // object. Pinning the true shape so the mock cannot re-green the old bug.
+    // The text is optional now: an English refusal of the field (the length)
+    // gets the site's text; the Russian мат refusal passes as is (below).
     createReviewMock.mockRejectedValue(
       new ApiError(422, 'Validation', 'VALIDATION_ERROR', [
-        { field: 'content', message: 'Review content is required', value: '' },
+        {
+          field: 'content',
+          message: 'Review content must not exceed 1000 characters',
+          value: '…',
+        },
       ]),
     );
 
@@ -125,7 +153,7 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
     expect(result).toMatchObject({
       ok: false,
       code: 'VALIDATION_ERROR',
-      fieldErrors: { content: expect.stringMatching(/от 1 до 1000/) },
+      fieldErrors: { content: 'Текст отзыва: не больше 1000 символов.' },
     });
   });
 
@@ -156,6 +184,53 @@ describe('createReviewAction — error mapping (never revalidates)', () => {
   });
 });
 
+// A new review only with a confirmed address (thread «Отзыв без текста», В9):
+// the server's 422 EMAIL_NOT_VERIFIED carries a sentence written for the
+// older app builds; the site shows its own, with the address the code goes to.
+describe('createReviewAction — an address not confirmed (EMAIL_NOT_VERIFIED)', () => {
+  const getSessionUserMock = getSessionUser as jest.Mock;
+  const refusal = () =>
+    new ApiError(
+      422,
+      'Чтобы оставить отзыв, подтвердите почту: «Профиль» → «Подтвердить email»',
+      'EMAIL_NOT_VERIFIED',
+    );
+
+  it('the site\'s own В9 words with the address — not the server\'s text, not «Не удалось…»', async () => {
+    getSessionUserMock.mockResolvedValue({
+      id: 'u-1',
+      email: 'guest@example.com',
+      name: 'Гость',
+      role: 'user',
+      avatarUrl: null,
+    });
+    createReviewMock.mockRejectedValue(refusal());
+
+    const result = await createReviewAction(INPUT);
+
+    expect(result).toStrictEqual({
+      ok: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message:
+        'Чтобы оставить отзыв, подтвердите почту — пришлём код на guest@example.com',
+    });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it('no display cookie: the same words without an address', async () => {
+    getSessionUserMock.mockResolvedValue(null);
+    createReviewMock.mockRejectedValue(refusal());
+
+    const result = await createReviewAction(INPUT);
+
+    expect(result).toStrictEqual({
+      ok: false,
+      code: 'EMAIL_NOT_VERIFIED',
+      message: 'Чтобы оставить отзыв, подтвердите почту',
+    });
+  });
+});
+
 describe('updateReviewAction — success', () => {
   it('forwards id + both fields, busts the literal detail path, returns {ok:true}', async () => {
     updateReviewMock.mockResolvedValue(undefined);
@@ -170,6 +245,17 @@ describe('updateReviewAction — success', () => {
       '/minsk/restorany/some-slug',
     );
     expect(result).toEqual({ ok: true });
+  });
+
+  it('forwards an erased text as content "" — «стереть текст» (В5)', async () => {
+    updateReviewMock.mockResolvedValue(undefined);
+
+    await updateReviewAction({ ...UPDATE_INPUT, content: '' });
+
+    expect(updateReviewMock).toHaveBeenCalledWith(UPDATE_INPUT.reviewId, {
+      rating: 4,
+      content: '',
+    });
   });
 });
 
@@ -309,17 +395,59 @@ describe('reloadReviewsAction', () => {
     pagination: { page: 1, limit: 5, total: 12, totalPages: 3, hasNext: true, hasPrevious: false },
   };
 
-  it('returns the first five and busts the literal detail path', async () => {
-    getReviewsMock.mockResolvedValue(PAGE);
+  // The page's own slice: the first reviews with text (В1 = А), and — from
+  // the latest without the filter — the author's own reviews of one rating
+  // (Trunk's decision 22.11.2026).
+  const WITH_TEXT = { id: 't1', author: { id: 'u-1' }, content: 'Вкусно' };
+  const OWN_RATING = { id: 'r9', author: { id: 'u-9' }, content: null };
+  const pageOf = (reviews: unknown[]) => ({ ...PAGE, reviews });
+
+  it('returns the first five with text, the author-only ones, and busts the literal detail path', async () => {
+    getReviewsMock.mockImplementation(
+      async (_slug: string, params: { with_text?: boolean }) =>
+        params.with_text ? pageOf([WITH_TEXT]) : pageOf([OWN_RATING, WITH_TEXT]),
+    );
 
     const result = await reloadReviewsAction({
       slug: 'some-slug',
       detailPath: '/minsk/restorany/some-slug',
     });
 
-    expect(getReviewsMock).toHaveBeenCalledWith('some-slug', { limit: 5 }, { visitor: null });
-    expect(result).toEqual({ ok: true, reviews: PAGE.reviews, total: 12 });
+    expect(getReviewsMock).toHaveBeenCalledTimes(2);
+    expect(getReviewsMock).toHaveBeenCalledWith(
+      'some-slug',
+      { limit: 5, with_text: true },
+      { visitor: null },
+    );
+    expect(getReviewsMock).toHaveBeenCalledWith(
+      'some-slug',
+      { limit: 5 },
+      { visitor: null },
+    );
+    // No count: the filtered list's total counts only reviews with text —
+    // the island shows the card's review_count instead.
+    expect(result).toStrictEqual({
+      ok: true,
+      reviews: [WITH_TEXT],
+      authorOnly: [OWN_RATING],
+    });
     expect(revalidatePathMock).toHaveBeenCalledWith('/minsk/restorany/some-slug');
+  });
+
+  it('the unfiltered ask failing still loads the card: no author-only reviews', async () => {
+    getReviewsMock.mockImplementation(
+      async (_slug: string, params: { with_text?: boolean }) => {
+        if (!params.with_text) throw new ApiError(503, 'down');
+        return pageOf([WITH_TEXT]);
+      },
+    );
+
+    const result = await reloadReviewsAction({
+      slug: 'some-slug',
+      detailPath: '/minsk/restorany/some-slug',
+    });
+
+    expect(result).toStrictEqual({ ok: true, reviews: [WITH_TEXT], authorOnly: [] });
   });
 
   it('a failure → {ok:false}, nothing revalidated', async () => {

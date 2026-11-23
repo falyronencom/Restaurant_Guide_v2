@@ -49,3 +49,24 @@ describe('review write encoders — the request the backend parses', () => {
     expect(JSON.parse(init.body)).toEqual({ rating: 2 });
   });
 });
+
+// «Отзыв без текста» (11.2026). The server contract: a review of one rating
+// is created with no `content` key (the server also takes '' and null); an
+// edit erases the text with content ''.
+describe('review without text — the body on the wire', () => {
+  it('a review of one rating: the body carries no `content` key at all', async () => {
+    await createReview({ establishmentId: 'e-7', rating: 5 });
+
+    const [, init] = mockAuthedFetch.mock.calls[0] as [string, Init];
+    const body = JSON.parse(init.body);
+    expect(body).toEqual({ establishmentId: 'e-7', rating: 5 });
+    expect(body).not.toHaveProperty('content');
+  });
+
+  it('an edit that erases the text sends content "" — not dropped, not null', async () => {
+    await updateReview('r-1', { rating: 3, content: '' });
+
+    const [, init] = mockAuthedFetch.mock.calls[0] as [string, Init];
+    expect(init.body).toBe('{"rating":3,"content":""}');
+  });
+});
