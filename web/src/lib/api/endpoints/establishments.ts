@@ -148,6 +148,14 @@ export async function getMenuItems(
 export type ReviewsParams = {
   page?: number;
   limit?: number;
+  /**
+   * true — only reviews with text (`?with_text=true`); `pagination.total` then
+   * counts only them, so the card's «N отзывов» comes from the
+   * establishment's `review_count`, not from this list. The detail page's
+   * first reviews ask for it; the full «Все отзывы» list does not — it shows
+   * every review, with text or without (В1 = А, В2).
+   */
+  with_text?: boolean;
 };
 
 export type ReviewsResponse = {

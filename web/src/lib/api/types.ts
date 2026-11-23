@@ -137,7 +137,13 @@ export type PublicReview = {
   id: string;
   establishment_id: string;
   rating: number;
-  content: string;
+  /**
+   * null — a review of one rating, without text (the text is optional since
+   * «Отзыв без текста», 11.2026; such rows also come from account deletion,
+   * which wipes the text of hidden reviews). Never '': the server stores and
+   * returns a missing text as NULL.
+   */
+  content: string | null;
   partner_response: string | null;
   partner_response_at: string | null;
   is_edited: boolean;
