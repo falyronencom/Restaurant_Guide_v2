@@ -27,10 +27,11 @@ import logger from '../utils/logger.js';
  * The active (pending/processing) job of a media file, the newest one, or null.
  *
  * @param {string} mediaId - UUID of establishment_media row
+ * @param {Object} [client] - A client inside BEGIN (enqueue), or the pool
  * @returns {Promise<Object|null>}
  */
-export const findActiveJob = async (mediaId) => {
-  const result = await pool.query(
+export const findActiveJob = async (mediaId, client = pool) => {
+  const result = await client.query(
     `SELECT * FROM ocr_jobs
      WHERE media_id = $1 AND status IN ('pending', 'processing')
      ORDER BY created_at DESC
@@ -48,6 +49,21 @@ export const findActiveJob = async (mediaId) => {
  * safe against repeated calls (e.g., partner clicking "re-run OCR" twice).
  * A 'processing' row orphaned by a dead process would satisfy this check forever;
  * the poller's stale sweep (reapStaleProcessingJobs) settles it within about an hour.
+ *
+ * One file at a time (thread Н8, finding 1, 23.11.2026): the look for an
+ * active job and the insert are one transaction under a lock of the file
+ * (pg_advisory_xact_lock), so two calls at the same instant — two quick
+ * presses of «Перезапустить распознавание», a restart meeting the card's
+ * save — queue the file once, and the second gets the first's job. Until then
+ * both could find none and both insert: the file was read twice, the second
+ * read replacing the first's dishes with the partner's corrections made in
+ * between, and the day's pages were spent twice. The table holds no rule «one
+ * active job per file» — a partial unique index would be a migration on
+ * production — so the lock holds among the callers of enqueue only: the
+ * operator's scripts that insert rows themselves (scripts/reocr-menus.js,
+ * scripts/requeue-menu-ocr.js) do not take it. A caller that reserved the
+ * day's allowance before (services/ocrAllowance.js) and lost the race keeps
+ * its reservation spent: one job of the day's hundred.
  *
  * Called directly only by the allowance (services/ocrAllowance.js — every
  * job a partner's request queues) and by the moderator's approval
@@ -68,31 +84,48 @@ export const findActiveJob = async (mediaId) => {
  * @returns {Promise<Object>} Job row (either newly created or pre-existing active)
  */
 export const enqueue = async ({ establishmentId, mediaId, countedFor = null }) => {
-  const existing = await findActiveJob(mediaId);
+  const client = await pool.connect();
+  let broken = null;
+  try {
+    await client.query('BEGIN');
+    // Held to the end of the transaction: a second call for the file waits
+    // here and then finds the job this one inserts.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ocr_jobs:${mediaId}`]);
 
-  if (existing) {
-    logger.debug('OCR job already active for media, returning existing', {
-      jobId: existing.id,
+    const existing = await findActiveJob(mediaId, client);
+    if (existing) {
+      await client.query('COMMIT');
+      logger.debug('OCR job already active for media, returning existing', {
+        jobId: existing.id,
+        mediaId,
+        status: existing.status,
+      });
+      return existing;
+    }
+
+    const result = await client.query(
+      `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, result_summary)
+       VALUES ($1, $2, 'pending', 0, $3)
+       RETURNING *`,
+      [establishmentId, mediaId, countedFor ? { pages_counted_for: countedFor } : null],
+    );
+    await client.query('COMMIT');
+
+    logger.info('OCR job enqueued', {
+      jobId: result.rows[0].id,
+      establishmentId,
       mediaId,
-      status: existing.status,
     });
-    return existing;
+
+    return result.rows[0];
+  } catch (error) {
+    // The ROLLBACK's own failure does not stand in for the error, and such a
+    // client is not given back to the pool as healthy (menuItemModel inTransaction).
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+    throw error;
+  } finally {
+    client.release(broken ?? undefined);
   }
-
-  const result = await pool.query(
-    `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, result_summary)
-     VALUES ($1, $2, 'pending', 0, $3)
-     RETURNING *`,
-    [establishmentId, mediaId, countedFor ? { pages_counted_for: countedFor } : null],
-  );
-
-  logger.info('OCR job enqueued', {
-    jobId: result.rows[0].id,
-    establishmentId,
-    mediaId,
-  });
-
-  return result.rows[0];
 };
 
 /**

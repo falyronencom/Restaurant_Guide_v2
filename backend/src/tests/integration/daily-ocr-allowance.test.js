@@ -46,6 +46,7 @@ process.env.RATE_LIMIT_WINDOW_AUTHENTICATED = '60';
 const { default: app } = await import('../../server.js');
 const { dailyOcrCeilingKey, dailyOcrJobKey, dailyOcrPagesKey } = await import('../../services/ocrAllowance.js');
 const adminService = await import('../../services/adminService.js');
+const partnerMenuItemService = await import('../../services/partnerMenuItemService.js');
 
 const REFUSAL_LOG = 'Daily recognition allowance spent: job not queued';
 const PAGES_LOG = 'Recognition pages of the day spent: job not queued';
@@ -527,6 +528,29 @@ describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', ()
     // перезапуски нашли его задание в очереди.
     expect(await jobsOf(partner.establishmentId)).toEqual([{ media_id: recognised }]);
     expect(await jobsOf(otherCard.establishmentId)).toEqual([{ media_id: waiting }]);
+  });
+
+  // Нитка Н8, находка 1: поиск идущего задания и вставка нового были двумя
+  // запросами без замка — два почти одновременных нажатия «Перезапустить
+  // распознавание» ставили файл дважды: он читался два раза подряд, второе
+  // чтение заменяло блюда первого вместе с правками между ними, страницы дня
+  // уходили дважды. Ниже HTTP нарочно: два запроса supertest идут друг за
+  // другом и ничего не гоняют. Место дня каждый перезапуск резервирует до
+  // постановки — у проигравшего гонку оно остаётся потраченным (одно из ста;
+  // известный остаток, отчёт нитки).
+  test('два перезапуска в одно мгновение — файл поставлен один раз, оба ответа «1 из 1»', async () => {
+    for (let round = 0; round < 3; round += 1) {
+      const partner = await newPartnerWithCard();
+      const mediaId = await insertMenuFile(partner, `a${round}`);
+
+      const answers = await Promise.all([
+        partnerMenuItemService.retryOcr(partner.id, partner.establishmentId),
+        partnerMenuItemService.retryOcr(partner.id, partner.establishmentId),
+      ]);
+
+      expect(answers).toEqual([{ enqueuedJobs: 1, totalPdfs: 1 }, { enqueuedJobs: 1, totalPdfs: 1 }]);
+      expect(await jobsOf(partner.establishmentId)).toEqual([{ media_id: mediaId }]);
+    }
   });
 
   test('файл, чьё задание уже в очереди, места не тратит: на пределе — 202, счётчик прежний', async () => {

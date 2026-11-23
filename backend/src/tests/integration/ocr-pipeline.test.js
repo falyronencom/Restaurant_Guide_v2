@@ -814,6 +814,63 @@ describe('OCR pipeline integration', () => {
     expect(parseInt(rows.rows[0].count, 10)).toBe(1);
   });
 
+  // Thread Н8, finding 1: the look for an active job and the insert were two
+  // statements, so two calls at the same instant (two quick presses of the
+  // restart) could both find none and both insert — the file read twice.
+  // Called at once, on two connections of the pool: the test above runs them
+  // one after the other.
+  test('two enqueues of one file at the same instant → one job, both get it (thread Н8, finding 1)', async () => {
+    for (let round = 0; round < 5; round += 1) {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+
+      const [first, second] = await Promise.all([
+        ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId }),
+        ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId }),
+      ]);
+
+      expect(second.id).toBe(first.id);
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM ocr_jobs WHERE media_id = $1', [mediaId]);
+      expect(rows[0].n).toBe(1);
+    }
+  });
+
+  test('an enqueue of a file waits while another holds the file\'s lock, then gets that one\'s job (thread Н8, finding 1)', async () => {
+    const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+    const holder = await pool.connect();
+    try {
+      // Another enqueue of the same file, halfway: lock taken, its row written, not committed.
+      await holder.query('BEGIN');
+      await holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ocr_jobs:${mediaId}`]);
+      const { rows: [held] } = await holder.query(
+        `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts)
+         VALUES ($1, $2, 'pending', 0) RETURNING id`,
+        [establishment.id, mediaId],
+      );
+
+      const second = ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+
+      // Precondition of the scene: the second enqueue waits for the lock.
+      let waiting = 0;
+      for (let i = 0; i < 100 && waiting === 0; i += 1) {
+        const activity = await pool.query(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event = 'advisory'`,
+        );
+        waiting = activity.rows[0].n;
+        if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(1);
+
+      await holder.query('COMMIT');
+      expect((await second).id).toBe(held.id);
+      const { rows } = await pool.query('SELECT count(*)::int AS n FROM ocr_jobs WHERE media_id = $1', [mediaId]);
+      expect(rows[0].n).toBe(1);
+    } finally {
+      await holder.query('ROLLBACK').catch(() => {});
+      holder.release();
+    }
+  });
+
   test('replaceForMedia: previous items fully replaced, delta detected for price change', async () => {
     const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
 

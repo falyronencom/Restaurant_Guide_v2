@@ -14,9 +14,10 @@ import { jest } from '@jest/globals';
 import { v4 as uuidv4 } from 'uuid';
 
 const mockQuery = jest.fn();
+const mockConnect = jest.fn();
 
 jest.unstable_mockModule('../../config/database.js', () => ({
-  default: { query: mockQuery },
+  default: { query: mockQuery, connect: mockConnect },
 }));
 
 jest.unstable_mockModule('../../utils/logger.js', () => ({
@@ -39,7 +40,31 @@ beforeEach(() => {
 });
 
 describe('enqueue', () => {
-  test('returns existing active job instead of creating duplicate', async () => {
+  /**
+   * The client enqueue takes from the pool for its transaction: the look for
+   * an active job answers `active`, the insert `created`, the insert throws
+   * `failure`; anything else (BEGIN, the lock, COMMIT, ROLLBACK) answers empty.
+   */
+  const transactionClient = ({ active = null, created = null, failure = null } = {}) => {
+    const client = {
+      query: jest.fn(async (sql) => {
+        if (sql.includes('SELECT * FROM ocr_jobs')) return { rows: active ? [active] : [] };
+        if (sql.includes('INSERT INTO ocr_jobs')) {
+          if (failure) throw failure;
+          return { rows: [created] };
+        }
+        return { rows: [] };
+      }),
+      release: jest.fn(),
+    };
+    mockConnect.mockResolvedValueOnce(client);
+    return client;
+  };
+
+  /** The client's statements, in order, each on one line. */
+  const statements = (client) => client.query.mock.calls.map(([sql]) => sql.replace(/\s+/g, ' ').trim());
+
+  test('returns existing active job instead of creating duplicate — looked for under the file\'s lock', async () => {
     const existing = {
       id: JOB_ID,
       establishment_id: ESTABLISHMENT_ID,
@@ -47,7 +72,7 @@ describe('enqueue', () => {
       status: 'pending',
       attempts: 0,
     };
-    mockQuery.mockResolvedValueOnce({ rows: [existing] });
+    const client = transactionClient({ active: existing });
 
     const result = await Model.enqueue({
       establishmentId: ESTABLISHMENT_ID,
@@ -55,14 +80,20 @@ describe('enqueue', () => {
     });
 
     expect(result).toEqual(existing);
-    expect(mockQuery).toHaveBeenCalledTimes(1);
-    const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql).toContain('SELECT * FROM ocr_jobs');
-    expect(sql).toContain("status IN ('pending', 'processing')");
-    expect(params).toEqual([MEDIA_ID]);
+    expect(statements(client)).toEqual([
+      'BEGIN',
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      "SELECT * FROM ocr_jobs WHERE media_id = $1 AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1",
+      'COMMIT',
+    ]);
+    // The lock is the file's (thread Н8, finding 1); the look is for that file.
+    expect(client.query.mock.calls[1][1]).toEqual([`ocr_jobs:${MEDIA_ID}`]);
+    expect(client.query.mock.calls[2][1]).toEqual([MEDIA_ID]);
+    expect(client.release).toHaveBeenCalledTimes(1);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
-  test('creates new job when no active job exists', async () => {
+  test('creates new job when no active job exists — the look and the insert in one transaction', async () => {
     const created = {
       id: JOB_ID,
       establishment_id: ESTABLISHMENT_ID,
@@ -70,9 +101,7 @@ describe('enqueue', () => {
       status: 'pending',
       attempts: 0,
     };
-    mockQuery
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [created] });
+    const client = transactionClient({ created });
 
     const result = await Model.enqueue({
       establishmentId: ESTABLISHMENT_ID,
@@ -80,10 +109,15 @@ describe('enqueue', () => {
     });
 
     expect(result).toEqual(created);
-    expect(mockQuery).toHaveBeenCalledTimes(2);
-    const [insertSql, insertParams] = mockQuery.mock.calls[1];
-    expect(insertSql).toContain('INSERT INTO ocr_jobs');
-    expect(insertParams).toEqual([ESTABLISHMENT_ID, MEDIA_ID, null]);
+    const done = statements(client);
+    expect(done[0]).toBe('BEGIN');
+    expect(done[1]).toBe('SELECT pg_advisory_xact_lock(hashtext($1))');
+    expect(done[2]).toContain('SELECT * FROM ocr_jobs');
+    expect(done[3]).toContain('INSERT INTO ocr_jobs');
+    expect(done[4]).toBe('COMMIT');
+    expect(done).toHaveLength(5);
+    expect(client.query.mock.calls[3][1]).toEqual([ESTABLISHMENT_ID, MEDIA_ID, null]);
+    expect(client.release).toHaveBeenCalledTimes(1);
   });
 
   test('treats processing status as active (idempotent even when mid-processing)', async () => {
@@ -94,7 +128,7 @@ describe('enqueue', () => {
       status: 'processing',
       attempts: 1,
     };
-    mockQuery.mockResolvedValueOnce({ rows: [processing] });
+    const client = transactionClient({ active: processing });
 
     const result = await Model.enqueue({
       establishmentId: ESTABLISHMENT_ID,
@@ -102,7 +136,18 @@ describe('enqueue', () => {
     });
 
     expect(result).toEqual(processing);
-    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(statements(client).some((sql) => sql.includes('INSERT'))).toBe(false);
+  });
+
+  test('a failed insert is rolled back and told as it was; the client goes back to the pool', async () => {
+    const failure = new Error('insert refused');
+    const client = transactionClient({ failure });
+
+    await expect(Model.enqueue({ establishmentId: ESTABLISHMENT_ID, mediaId: MEDIA_ID })).rejects.toBe(failure);
+
+    expect(statements(client).at(-1)).toBe('ROLLBACK');
+    expect(statements(client)).not.toContain('COMMIT');
+    expect(client.release).toHaveBeenCalledWith(undefined);
   });
 });
 
