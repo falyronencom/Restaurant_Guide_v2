@@ -525,6 +525,19 @@ describe('С3 — приостановленную партнёром карто
     expect(onResumed).toHaveBeenCalledTimes(1);
   });
 
+  it('возобновление, чей сброс страницы отложил интервал карточки, отдаёт его планировщику', async () => {
+    const { followPageRefresh } = jest.requireMock('@/lib/partner/page-refresh-client') as {
+      followPageRefresh: jest.Mock;
+    };
+    resumeMock.mockResolvedValue({ ok: true, status: 'active', page: { refreshed: false, retryInMs: 9_000 } });
+    renderEdit({ readOnly: true, onResumed: jest.fn() });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Возобновить показ' }));
+    await tick();
+
+    expect(followPageRefresh).toHaveBeenCalledWith('e1', { refreshed: false, retryInMs: 9_000 });
+  });
+
   it('отказ сервера показан его русским текстом', async () => {
     // A text unlike the site's own for the code — proves the server's is shown.
     resumeMock.mockResolvedValue({
