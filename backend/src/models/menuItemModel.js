@@ -449,10 +449,18 @@ const readHiddenElsewhere = async (client, establishmentId, mediaId) => {
  * establishment's lock (lockEstablishmentMenu) does the same for a «Скрыть»
  * on another file.
  *
+ * `settle` — (client) → written in the same transaction before it commits:
+ * the outcome of the recognition job that read the file (ocrService.processJob
+ * → ocrJobModel.markDone; thread Н8, finding 2, 23.11.2026). The dishes and the
+ * mark «recognised» land together or not at all: a failure there — thrown,
+ * the job no longer the attempt's among them — undoes the write, and the
+ * file's rows stay as they were.
+ *
  * @param {Object} params
  * @param {string} params.establishmentId - UUID
  * @param {string} params.mediaId - UUID
  * @param {Object[]} params.newItems - New items to insert
+ * @param {Function} [params.settle] - (client) → written before the COMMIT
  * @returns {Promise<{previousItems: Object[], newItems: Object[], carriedHidden: number,
  *                    hiddenFromElsewhere: Object[]}>}
  *          previousItems for sanity check delta comparison; newItems with generated IDs;
@@ -460,8 +468,9 @@ const readHiddenElsewhere = async (client, establishmentId, mediaId) => {
  *          those of them hidden for a decision this file did not hold (another file,
  *          the establishment's memory): the dish arrived with a new file
  */
-export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) => {
+export const replaceForMedia = async ({ establishmentId, mediaId, newItems, settle = null }) => {
   const client = await pool.connect();
+  let broken = null;
 
   try {
     await client.query('BEGIN');
@@ -514,6 +523,7 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
       );
     }
 
+    if (settle) await settle(client);
     await client.query('COMMIT');
 
     logger.info('Menu items replaced for media', {
@@ -532,14 +542,17 @@ export const replaceForMedia = async ({ establishmentId, mediaId, newItems }) =>
       hiddenFromElsewhere,
     };
   } catch (error) {
-    await client.query('ROLLBACK');
+    // As inTransaction below: the ROLLBACK's own failure (the connection gone
+    // with the database) does not stand in for the error, and such a client is
+    // not given back to the pool as healthy.
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
     logger.error('Failed to replace menu items for media', {
       mediaId,
       error: error.message,
     });
     throw error;
   } finally {
-    client.release();
+    client.release(broken ?? undefined);
   }
 };
 

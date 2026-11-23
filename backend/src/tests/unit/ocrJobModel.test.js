@@ -148,25 +148,36 @@ describe('pickNextPending', () => {
 });
 
 describe('markDone', () => {
-  test('sets status, result_summary, completed_at; clears error_message', async () => {
+  test('sets status, result_summary, completed_at; clears error_message — on the attempt\'s own row only', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ id: JOB_ID, status: 'done' }] });
 
     const summary = { items_count: 10, confidence_avg: 0.9 };
-    await Model.markDone(JOB_ID, summary);
+    await Model.markDone(JOB_ID, summary, { attempts: 2 });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain("status = 'done'");
     expect(sql).toContain('result_summary = $2');
     expect(sql).toContain('completed_at = NOW()');
     expect(sql).toContain('error_message = NULL');
-    expect(params).toEqual([JOB_ID, summary]);
+    // The fence (thread Н8, finding 2): a row still 'processing' with this attempt's number.
+    expect(sql).toContain("WHERE id = $1 AND status = 'processing' AND attempts = $3");
+    expect(params).toEqual([JOB_ID, summary, 2]);
+  });
+
+  test('runs on the client it is given — inside the transaction of the dishes', async () => {
+    const clientQuery = jest.fn().mockResolvedValueOnce({ rows: [] });
+
+    expect(await Model.markDone(JOB_ID, {}, { attempts: 1, client: { query: clientQuery } })).toBeNull();
+
+    expect(clientQuery).toHaveBeenCalledTimes(1);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 
 describe('markFailed — retry logic', () => {
   test('uses CASE to retry when attempts < max_attempts', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    await Model.markFailed(JOB_ID, 'network timeout');
+    await Model.markFailed(JOB_ID, 'network timeout', { attempts: 1 });
 
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain('CASE');
@@ -174,12 +185,13 @@ describe('markFailed — retry logic', () => {
     expect(sql).toContain("THEN 'failed'");
     expect(sql).toContain("ELSE 'pending'");
     expect(sql).toContain('error_message = $2');
-    expect(params).toEqual([JOB_ID, 'network timeout']);
+    expect(sql).toContain("WHERE id = $1 AND status = 'processing' AND attempts = $3");
+    expect(params).toEqual([JOB_ID, 'network timeout', 1]);
   });
 
   test('resets started_at only on retry, preserves on permanent failure', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    await Model.markFailed(JOB_ID, 'error');
+    await Model.markFailed(JOB_ID, 'error', { attempts: 1 });
 
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).toContain('started_at = CASE');
@@ -189,7 +201,7 @@ describe('markFailed — retry logic', () => {
 
   test('sets completed_at only on permanent failure', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
-    await Model.markFailed(JOB_ID, 'error');
+    await Model.markFailed(JOB_ID, 'error', { attempts: 1 });
 
     const [sql] = mockQuery.mock.calls[0];
     expect(sql).toContain('completed_at = CASE');
@@ -331,19 +343,32 @@ describe('reapStaleProcessingJobs — stale sweep', () => {
 });
 
 describe('markFailedPermanently — no retry, whatever attempts remain', () => {
-  test('sets failed and completed_at unconditionally; attempts and started_at untouched', async () => {
+  test('sets failed and completed_at on the attempt\'s own row; attempts and started_at untouched', async () => {
     const row = { id: JOB_ID, status: 'failed', attempts: 1 };
     mockQuery.mockResolvedValueOnce({ rows: [row] });
 
-    expect(await Model.markFailedPermanently(JOB_ID, 'PDF parse exceeded its time limit (20 s)')).toEqual(row);
+    expect(await Model.markFailedPermanently(JOB_ID, 'PDF parse exceeded its time limit (20 s)', { attempts: 1 })).toEqual(row);
 
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(sql.replace(/\s+/g, ' ')).toContain(
-      "SET status = 'failed', error_message = $2, completed_at = NOW() WHERE id = $1",
+    const flat = sql.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "SET status = 'failed', error_message = $2, completed_at = NOW() WHERE id = $1 AND status = 'processing' AND attempts = $3",
     );
-    expect(sql).not.toContain('attempts');
+    // attempts is the fence, never written; started_at is not touched at all.
+    expect(flat.slice(0, flat.indexOf(' WHERE '))).not.toContain('attempts');
     expect(sql).not.toContain('started_at');
-    expect(params).toEqual([JOB_ID, 'PDF parse exceeded its time limit (20 s)']);
+    expect(params).toEqual([JOB_ID, 'PDF parse exceeded its time limit (20 s)', 1]);
+  });
+});
+
+describe('the outcome of an attempt needs the attempt\'s number', () => {
+  test.each([
+    ['markDone', () => Model.markDone(JOB_ID, {})],
+    ['markFailed', () => Model.markFailed(JOB_ID, 'x')],
+    ['markFailedPermanently', () => Model.markFailedPermanently(JOB_ID, 'x')],
+  ])('%s without it — refused before any query', async (name, write) => {
+    await expect(write()).rejects.toThrow(`${name}: the attempt's number is required`);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 

@@ -856,6 +856,219 @@ describe('OCR pipeline integration', () => {
     expect(items.find((it) => it.item_name === 'Old item removed')).toBeUndefined();
   });
 
+  // ── The dishes and the mark «recognised» — one write (thread Н8, finding 2) ──
+  // Until 23.11.2026 the file's dishes were committed first and the job was
+  // marked done by a statement of its own after them. A failure between the
+  // two left a file with dishes — the partner sees and corrects them — and no
+  // job done: the partner's restart, the moderator's approval and the retry of
+  // the job itself all took it for a file never recognised and read it again,
+  // the corrections with it (decision of the Coordinator 13.11.2026, SDL
+  // CAT-C-2.14 п. 2г: a restart does not erase them, from the pilot's first
+  // establishment). Now both are one transaction, and an attempt writes its
+  // outcome only while the job is still its own.
+  describe('the dishes and the mark «recognised» — one write (thread Н8, finding 2)', () => {
+    const BORSHCH = [{ item_name: 'Борщ', price_byn: 12, category_raw: 'Супы', confidence: 0.95 }];
+
+    const dishesOf = async (mediaId) => (await pool.query(
+      'SELECT item_name FROM menu_items WHERE media_id = $1 ORDER BY item_name',
+      [mediaId],
+    )).rows.map((row) => row.item_name);
+
+    /** A menu file queued and picked: the attempt holds its job, and the read gives `items`. */
+    const pickedRead = async (items) => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      pdfParseModule.default.mockResolvedValue({ text: 'Меню', numpages: 1 });
+      global.fetch = buildFetchMock(items);
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      expect(picked.media_id).toBe(mediaId);
+      return { mediaId, picked };
+    };
+
+    /** The model's calls run `scene` first — what happens to the job while the file is being read. */
+    const whileReading = (scene) => {
+      const answer = global.fetch;
+      global.fetch = jest.fn(async (url, options) => {
+        if (url.includes('/chat/completions')) await scene();
+        return answer(url, options);
+      });
+    };
+
+    /**
+     * The database refuses the mark «recognised» of one file, for real: a
+     * trigger on the write of 'done'. Returns the removal.
+     */
+    const refuseDone = async (mediaId) => {
+      const name = `test_refuse_done_${mediaId.replace(/-/g, '')}`;
+      const restore = async () => {
+        await pool.query(`DROP TRIGGER IF EXISTS ${name} ON ocr_jobs`);
+        await pool.query(`DROP FUNCTION IF EXISTS ${name}()`);
+      };
+      try {
+        await pool.query(`CREATE FUNCTION ${name}() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RAISE EXCEPTION 'the mark refused by the test'; END $$`);
+        await pool.query(`CREATE TRIGGER ${name} BEFORE UPDATE ON ocr_jobs FOR EACH ROW
+          WHEN (NEW.status = 'done' AND NEW.media_id = '${mediaId}'::uuid) EXECUTE FUNCTION ${name}()`);
+      } catch (error) {
+        await restore();
+        throw error;
+      }
+      return restore;
+    };
+
+    test('the database refuses the mark → no dish of the file is written; the retry writes both', async () => {
+      const { mediaId, picked } = await pickedRead(BORSHCH);
+
+      const restore = await refuseDone(mediaId);
+      let result;
+      try {
+        result = await ocrService.processJob(picked.id);
+      } finally {
+        await restore();
+      }
+
+      expect(result.success).toBe(false);
+      // No dish stands without the mark: nothing for the partner to correct yet…
+      expect(await dishesOf(mediaId)).toEqual([]);
+      // …and the attempt went the retry rule's way.
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({ status: 'pending', attempts: 1 });
+      expect(await ocrJobModel.hasCompletedJobForMedia(mediaId)).toBe(false);
+
+      // The scene: without the refusal the retry writes the dishes and the mark.
+      const again = await ocrJobModel.pickNextPending();
+      expect(again.id).toBe(picked.id);
+      expect((await ocrService.processJob(again.id)).success).toBe(true);
+      expect(await dishesOf(mediaId)).toEqual(['Борщ']);
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({ status: 'done', attempts: 2 });
+    });
+
+    test('the stale sweep failed the job while it was being read → its dishes are not written; the sweep\'s outcome stands, no notice from the attempt', async () => {
+      const { mediaId, picked } = await pickedRead(BORSHCH);
+      whileReading(() => pool.query(
+        `UPDATE ocr_jobs SET status = 'failed', error_message = $2, completed_at = NOW()
+         WHERE id = $1`,
+        [picked.id, ocrJobModel.STALE_REAP_ERROR_MESSAGE],
+      ));
+
+      const result = await ocrService.processJob(picked.id);
+
+      expect(result.success).toBe(false);
+      expect(await dishesOf(mediaId)).toEqual([]);
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({
+        status: 'failed',
+        attempts: 1,
+        error_message: ocrJobModel.STALE_REAP_ERROR_MESSAGE,
+      });
+      expect(await partnerNotifications()).toEqual([]);
+      expect(await failureNotices()).toEqual([]);
+    });
+
+    test('a newer attempt picked the job while the old one was reading → the old one writes neither dishes nor an outcome', async () => {
+      const { mediaId, picked } = await pickedRead(BORSHCH);
+      // The sweep sent the job back to the queue and the next process picked it.
+      whileReading(() => pool.query(
+        'UPDATE ocr_jobs SET attempts = $2, started_at = NOW() WHERE id = $1 AND attempts = $3',
+        [picked.id, picked.attempts + 1, picked.attempts],
+      ));
+
+      const result = await ocrService.processJob(picked.id);
+
+      expect(result.success).toBe(false);
+      expect(await dishesOf(mediaId)).toEqual([]);
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({
+        status: 'processing',
+        attempts: 2,
+        error_message: null,
+      });
+    });
+
+    /**
+     * Run processJob with the connection «breaking» at the COMMIT of the
+     * write — the write goes on a client of the transaction's own
+     * (pool.connect): `executed` — the database ran the COMMIT and only its
+     * answer is lost; otherwise the COMMIT never reached it.
+     */
+    const processWithCommitBroken = async (jobId, { executed }) => {
+      const connect = pool.connect.bind(pool);
+      // The pool keeps its clients: each one touched is given its own query back.
+      const clientSpies = [];
+      const connectSpy = jest.spyOn(pool, 'connect').mockImplementation(async (...args) => {
+        // pool.query takes its client with a callback: left as it is.
+        if (typeof args[args.length - 1] === 'function') return connect(...args);
+        const client = await connect(...args);
+        const query = client.query.bind(client);
+        clientSpies.push(jest.spyOn(client, 'query').mockImplementation(async (text, ...rest) => {
+          if (typeof text === 'string' && /^\s*COMMIT\s*$/.test(text)) {
+            if (executed) await query(text, ...rest);
+            throw new Error('Connection terminated unexpectedly');
+          }
+          return query(text, ...rest);
+        }));
+        return client;
+      });
+      try {
+        return await ocrService.processJob(jobId);
+      } finally {
+        connectSpy.mockRestore();
+        clientSpies.forEach((spy) => spy.mockRestore());
+        // The scene: the write went on a client of its own, and its COMMIT was met.
+        expect(clientSpies).toHaveLength(1);
+      }
+    };
+
+    test('the COMMIT never reached the database → neither the dishes nor the mark: the job goes back under the retry rule', async () => {
+      const { mediaId, picked } = await pickedRead(BORSHCH);
+
+      const result = await processWithCommitBroken(picked.id, { executed: false });
+
+      expect(result.success).toBe(false);
+      expect(await dishesOf(mediaId)).toEqual([]);
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({ status: 'pending', attempts: 1 });
+    });
+
+    test('the COMMIT done but its answer lost → the attempt\'s failure does not undo it: the dishes and the job done stand, nothing reads the file again', async () => {
+      const { mediaId, picked } = await pickedRead(BORSHCH);
+
+      const result = await processWithCommitBroken(picked.id, { executed: true });
+
+      expect(result.success).toBe(false);
+      expect(await dishesOf(mediaId)).toEqual(['Борщ']);
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({ status: 'done', error_message: null });
+      // Not back in the queue, and recognised for every reader of «recognised».
+      expect(await ocrJobModel.pickNextPending()).toBeNull();
+      expect(await ocrJobModel.hasCompletedJobForMedia(mediaId)).toBe(true);
+    });
+
+    test('an outcome is written only by the attempt that holds the job: another attempt\'s number writes nothing, and a job done stays done', async () => {
+      const { mediaId } = await insertTestMedia(establishment.id, 'pdf');
+      await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
+      const picked = await ocrJobModel.pickNextPending();
+      const own = { attempts: picked.attempts };
+      const other = { attempts: picked.attempts + 1 };
+
+      expect(await ocrJobModel.markDone(picked.id, { items_count: 1 }, other)).toBeNull();
+      expect(await ocrJobModel.markFailed(picked.id, 'another attempt', other)).toBeNull();
+      expect(await ocrJobModel.markFailedPermanently(picked.id, 'another attempt', other)).toBeNull();
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({ status: 'processing', attempts: 1, error_message: null });
+
+      expect(await ocrJobModel.markDone(picked.id, { items_count: 1 }, own)).toMatchObject({ status: 'done' });
+      expect(await ocrJobModel.markFailed(picked.id, 'late failure', own)).toBeNull();
+      expect(await ocrJobModel.markFailedPermanently(picked.id, 'late failure', own)).toBeNull();
+      expect(await ocrJobModel.markDone(picked.id, { items_count: 9 }, own)).toBeNull();
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({
+        status: 'done',
+        error_message: null,
+        result_summary: { items_count: 1 },
+      });
+
+      // Without the attempt's number a write would match nothing and say
+      // nothing — a mistake of the caller, told at once.
+      await expect(ocrJobModel.markDone(picked.id, {})).rejects.toThrow("markDone: the attempt's number is required");
+      await expect(ocrJobModel.markFailed(picked.id, 'x')).rejects.toThrow("markFailed: the attempt's number is required");
+      await expect(ocrJobModel.markFailedPermanently(picked.id, 'x')).rejects.toThrow("markFailedPermanently: the attempt's number is required");
+    });
+  });
+
   // ── Re-reading a file keeps the moderator's decisions ───────────────────
   // A re-read («повторить распознавание», reocr-menus) replaces every row of
   // the file. Until 2026-10-07 the moderator's «Скрыть» went with the old
@@ -2241,7 +2454,7 @@ describe('OCR pipeline integration', () => {
       const marked = await ocrJobModel.markInterruptedByShutdown(picked.id, picked.attempts);
       expect(marked).toMatchObject({ id: picked.id, status: 'processing', error_message: ocrJobModel.SHUTDOWN_INTERRUPT_MARK });
 
-      await ocrJobModel.markDone(picked.id, { strategy: 'vision_pdf', items_count: 0 });
+      await ocrJobModel.markDone(picked.id, { strategy: 'vision_pdf', items_count: 0 }, { attempts: picked.attempts });
       const done = await ocrJobModel.getJobStatus(picked.id);
       expect(done.status).toBe('done');
       expect(done.error_message).toBeNull();
@@ -2308,7 +2521,7 @@ describe('OCR pipeline integration', () => {
       await ocrJobModel.enqueue({ establishmentId: establishment.id, mediaId });
       const first = await ocrJobModel.pickNextPending();
       // The old process's attempt settles under the retry rule (its parse was cut)…
-      await ocrJobModel.markFailed(first.id, 'PDF parse cut short by shutdown');
+      await ocrJobModel.markFailed(first.id, 'PDF parse cut short by shutdown', { attempts: first.attempts });
       // …and the next process picks the job before the old one writes its mark.
       const second = await ocrJobModel.pickNextPending();
       expect(second.id).toBe(first.id);
