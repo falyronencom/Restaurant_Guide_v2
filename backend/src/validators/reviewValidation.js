@@ -27,15 +27,55 @@ const withoutProfanity = (value) => {
 };
 
 /**
+ * The review's text, when there is one: a string, at most 1000 characters
+ * after trimming, without мат. Absent or null passes untouched — a review may
+ * be a rating alone (decision of the Coordinator 20.11.2026, thread «Отзыв без
+ * текста»); an empty string or one of spaces trims to '' and passes too. The
+ * service stores every one of them as NULL (reviewService.storedReviewText),
+ * and the мат check has nothing to read in them (containsProfanity('') is
+ * false). The bound is the validator's isLength — the one that counts an
+ * emoji with its selector as one character (tests: «length limits count
+ * invisible variation selectors»).
+ *
+ * Anything but a string is refused first: trim and isLength read an array
+ * element by element, the мат check reads a string only, so an array went
+ * past both and was stored as a literal «{"…"}» — the chain before 22.11.2026
+ * did the same (Phase 3.5 review).
+ */
+const optionalReviewText = () => body('content')
+  .optional({ values: 'null' })
+  .isString()
+  .withMessage('Review content must be text')
+  .bail()
+  .trim()
+  .isLength({ max: 1000 })
+  .withMessage('Review content must be at most 1000 characters')
+  .bail()
+  .custom(withoutProfanity);
+
+/**
+ * «Только с текстом» of the review lists (`with_text=true`): the card shows
+ * its first reviews with a text only (decision В1 = А, 20.11.2026). Only the
+ * strings 'true' and 'false' — what the controllers read; anything else, a
+ * repeated parameter included, is refused like the lists' other parameters.
+ * Without it the list is as it was, for the builds that never send it.
+ */
+const withTextQuery = () => query('with_text')
+  .optional()
+  .custom((value) => value === 'true' || value === 'false')
+  .withMessage('with_text must be true or false');
+
+/**
  * Validation for creating a new review
- * 
+ *
  * POST /api/v1/reviews
- * 
+ *
  * These rules enforce the directive's specifications:
  * - establishment_id must be a valid UUID
  * - rating must be an integer between 1 and 5 inclusive
- * - content must be between 1 and 1000 characters after trimming
- * 
+ * - content is optional; when given, at most 1000 characters after trimming
+ *   (optionalReviewText above)
+ *
  * The user_id comes from authenticated context, not request body, so we don't validate it here.
  */
 export const validateCreateReview = [
@@ -52,14 +92,7 @@ export const validateCreateReview = [
     .isInt({ min: 1, max: 5 })
     .withMessage('Rating must be an integer between 1 and 5'),
 
-  body('content')
-    .trim()
-    .notEmpty()
-    .withMessage('Review content is required')
-    .isLength({ min: 1, max: 1000 })
-    .withMessage('Review content must be between 1 and 1000 characters')
-    .bail()
-    .custom(withoutProfanity),
+  optionalReviewText(),
 ];
 
 /**
@@ -85,8 +118,9 @@ export const validateGetReview = [
  * GET /api/v1/establishments/:id/reviews
  * 
  * Path parameter: establishment ID (UUID)
- * Query parameters: page, limit, sort (all optional with defaults)
- * 
+ * Query parameters: page, limit, sort, date_from, date_to, with_text (all
+ * optional with defaults)
+ *
  * We validate ranges and enums to prevent malicious or nonsensical values.
  * For example, page 0 or limit 9999 should be rejected before reaching business logic.
  */
@@ -122,6 +156,21 @@ export const validateGetEstablishmentReviews = [
     .optional()
     .isISO8601()
     .withMessage('date_to must be a valid ISO 8601 date'),
+
+  withTextQuery(),
+];
+
+/**
+ * Validation for the site's review list
+ *
+ * GET /api/v1/public/establishments/by-slug/:slug/reviews
+ *
+ * `page` and `limit` of this path are clamped by its controller, not refused
+ * (publicController.getPublicReviews); `with_text` is checked as on
+ * GET /establishments/:id/reviews, so the two lists answer one value alike.
+ */
+export const validateGetPublicReviews = [
+  withTextQuery(),
 ];
 
 /**
@@ -165,7 +214,12 @@ export const validateGetUserReviews = [
  * This is a partial update endpoint - users can update just rating, just content,
  * or both. We validate that at least one field is present and that provided fields
  * meet the same requirements as creation.
- * 
+ *
+ * An empty content or null is a change, not a missing field: it erases the
+ * text, and the review stays a rating alone (the site's edit form sends both
+ * fields, an erased text as ''). Only an absent key means «leave the text as
+ * it is».
+ *
  * The service layer handles authorization (ensuring user is review author).
  */
 export const validateUpdateReview = [
@@ -182,16 +236,12 @@ export const validateUpdateReview = [
     .isInt({ min: 1, max: 5 })
     .withMessage('Rating must be an integer between 1 and 5'),
 
-  // Content is optional but if provided must be valid
-  body('content')
-    .optional()
-    .trim()
-    .isLength({ min: 1, max: 1000 })
-    .withMessage('Review content must be between 1 and 1000 characters')
-    .bail()
-    .custom(withoutProfanity),
+  // Content is optional; when given — the creation's rule, and '' or null
+  // erase the text
+  optionalReviewText(),
 
-  // Custom validation to ensure at least one field is being updated
+  // Custom validation to ensure at least one field is being updated: a key
+  // that is there counts, whatever its value — content '' or null included
   body()
     .custom((value) => {
       const hasRating = value.rating !== undefined;

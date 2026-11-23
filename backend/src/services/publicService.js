@@ -292,12 +292,14 @@ export const getPublicMenuItems = async (slug) => {
  * to the public surface convention (`totalPages` instead of `pages`).
  *
  * @param {string} slug
- * @param {Object} options - { page=1, limit=10 }
+ * @param {Object} options - { page=1, limit=10, withText=false } — withText:
+ *   only the reviews that have a text, and `total` counts them (the card's
+ *   first reviews; all of them are the card's review_count)
  * @returns {Promise<{ reviews, pagination }>}
  * @throws {AppError} 404 if establishment not found OR not active
  */
 export const getPublicReviews = async (slug, options = {}) => {
-  const { page = 1, limit = 10 } = options;
+  const { page = 1, limit = 10, withText = false } = options;
 
   const establishment = await EstablishmentModel.findEstablishmentBySlug(slug, true);
 
@@ -312,6 +314,7 @@ export const getPublicReviews = async (slug, options = {}) => {
     page: safePage,
     limit: safeLimit,
     sort: 'newest',
+    withText,
   });
 
   // Normalise pagination shape: reviewService returns `pages` (existing
