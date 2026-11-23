@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Check, TriangleAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { MENU_TEXTS } from '@/lib/partner/cabinet-texts';
+import { FLAG_TEXTS, MENU_TEXTS } from '@/lib/partner/cabinet-texts';
 import { updateMenuItemAction } from '@/lib/partner/client';
 import { refusalMessage } from '@/lib/partner/errors';
 import type { PartnerMenuItem } from '@/lib/partner/menu';
@@ -17,8 +17,9 @@ import { MenuItemEditor } from './MenuItemEditor';
  * One line of the «Меню» section: name, price as on the public page, the mark
  * «Требует внимания» with its reason in words (never the raw code), «Всё
  * верно» for a marked line (T8: the line sent back as it is — the server
- * clears the mark of the line and its copies), and the note for alcohol and
- * tobacco, which the guest does not see.
+ * clears the mark of the line and its copies), under the reason what the
+ * guest may see while the mark stands (T7), and the note for alcohol and
+ * tobacco, which the guest does not see — nor that line under its mark.
  */
 export function MenuItemRow({
   item,
@@ -70,6 +71,9 @@ export function MenuItemRow({
             <div className="flex flex-col gap-0.5">
               <span className="text-caption-m font-medium text-brand-dark">{MENU_TEXTS.attention}</span>
               <span className="text-body-s text-figma-text-dark">{flagReasonText(item.sanity_flag)}</span>
+              {!item.guest_hidden_reason && (
+                <span className="text-caption-m text-figma-text-grey">{FLAG_TEXTS.guestSeesCaution}</span>
+              )}
             </div>
           </div>
           <Button

@@ -246,6 +246,12 @@ function ownPhrase(r: Refusal): string | undefined {
         ? `Слишком много запросов подряд. Попробуйте через ${wait}.`
         : 'Слишком много запросов подряд. Попробуйте чуть позже.';
     }
+    // The site's own words even when the server's text turns Russian (the
+    // thread Н8 gives the server its texts): the partner reads T4 and T7б.
+    case 'NO_PDF_MENUS':
+      return NO_MENU_FILES;
+    case 'MENU_ITEM_NOT_FOUND':
+      return MENU_TEXTS.itemGone;
     case 'SLUG_COLLISION':
       // Two saves under one name took the same page address at once; the
       // next save picks a free one (backend generateUniqueSlug).

@@ -5,8 +5,10 @@
  *
  * Status of the wording (directive of part 1 of the thread «Кабинет партнёра
  * на сайте», 23.11.2026, section 2):
- *   - T1–T12 and the new refusal texts AWAIT the Coordinator's word — Trunk
- *     asks it; until then they stand as proposed;
+ *   - T1–T12 and the new refusal texts are approved by the Coordinator
+ *     (23.11.2026, 18:27:22Z, in the window of the thread's Trunk
+ *     local_91714511, turn 258d3ec6), T7's line under a mark in the words
+ *     «могут видеть»;
  *   - the recognition states are the app's texts, already approved by the
  *     Coordinator (mobile partner_menu_screen.dart), with the site's section
  *     name «Фотографии и меню» for the app's «Медиа» and without «внизу
@@ -188,12 +190,11 @@ export const FLAG_TEXTS = {
     `Резкое изменение цены: ${grew ? 'выросла' : 'упала'} с ${previous} до ${current} BYN${times ? ` — ${times}` : ''}. Проверьте, верно ли распознано.`,
   generic: 'Проверьте название и цену.',
   /**
-   * NOT SHOWN (decision of the executor under the directive, 23.11.2026): the
-   * guest sees one line of a dish's copies, a clean one when there is one, and
-   * no line of alcohol or tobacco at all (backend menuItemProjections.js
-   * guestMenuRows / shownRowOfLine), so «while the mark stands the guest sees
-   * «уточнить»» is not always true. Kept here so that the Coordinator's other
-   * word is one edit.
+   * Under the reason of a mark (T7, the Coordinator's words of 23.11.2026):
+   * «могут видеть», not «видят» — the guest sees one line of a dish's copies,
+   * a clean one when there is one (backend menuItemProjections.js
+   * guestMenuRows / shownRowOfLine). Not under a line of alcohol or tobacco:
+   * the guest does not see that line at all.
    */
-  guestSeesCaution: 'Пока метка стоит, гости видят у позиции пометку «уточнить».',
+  guestSeesCaution: 'Пока метка стоит, гости могут видеть у позиции пометку «уточнить».',
 } as const;

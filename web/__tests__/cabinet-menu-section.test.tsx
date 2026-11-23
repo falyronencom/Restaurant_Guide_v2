@@ -179,6 +179,33 @@ describe('the list', () => {
   });
 });
 
+describe('the line under a mark (T7, the Coordinator\'s words of 23.11.2026)', () => {
+  const CAUTION = 'Пока метка стоит, гости могут видеть у позиции пометку «уточнить».';
+  const FLAG = { reason: 'low_confidence', details: { confidence: 0.62, threshold: 0.7 } };
+
+  it('under the reason of a marked line; not under a marked line of alcohol, nor under a clean one', async () => {
+    loadMock.mockResolvedValue(
+      menu(
+        [
+          line({ id: 'a', item_name: 'Драники', sanity_flag: FLAG }),
+          line({ id: 'b', item_name: 'Вино белое', sanity_flag: FLAG, guest_hidden_reason: 'alcohol' }),
+          line({ id: 'c', item_name: 'Компот', sanity_flag: null }),
+        ],
+        DONE,
+      ),
+    );
+    render(<MenuSection id="e1" />);
+    await flush();
+
+    const rowOf = (name: string) => screen.getByText(name).closest('li') as HTMLElement;
+    expect(within(rowOf('Драники')).getByText(CAUTION)).toBeInTheDocument();
+    expect(within(rowOf('Вино белое')).getByText('Требует внимания')).toBeInTheDocument();
+    expect(within(rowOf('Вино белое')).queryByText(CAUTION)).not.toBeInTheDocument();
+    expect(within(rowOf('Компот')).queryByText(CAUTION)).not.toBeInTheDocument();
+    expect(screen.getAllByText(CAUTION)).toHaveLength(1);
+  });
+});
+
 describe('the states', () => {
   it('recognised and every line hidden: «Позиции не показываются», no restart', async () => {
     loadMock.mockResolvedValue(menu([], DONE, true));
