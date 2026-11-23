@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { resumeEstablishmentAction } from '@/lib/partner/client';
 import { refusalMessage } from '@/lib/partner/errors';
+import { followPageRefresh } from '@/lib/partner/page-refresh-client';
 
 /*
  * «Возобновить» for a card the partner paused (сверка находок тестировщика с
@@ -29,7 +30,11 @@ export function ResumeEstablishmentButton({
     setError(null);
     const r = await resumeEstablishmentAction(establishmentId);
     setBusy(false);
-    if (r.ok) onResumed(establishmentId, { publicPath: r.publicPath });
+    if (r.ok) {
+      // A resume inside the card's interval drops the page a little later.
+      followPageRefresh(establishmentId, r.page);
+      onResumed(establishmentId, { publicPath: r.publicPath });
+    }
     else setError(refusalMessage(r));
   };
 

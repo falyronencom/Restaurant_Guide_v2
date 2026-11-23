@@ -22,12 +22,7 @@ import {
 } from '@/lib/api/types';
 import { getSessionUser, refreshSession } from '@/lib/auth/session';
 import { personText } from '@/lib/api/person-text';
-import {
-  cardDropDue,
-  cardPagePath,
-  refreshCardPage,
-  type CardAddressSource,
-} from '@/lib/partner/card-page';
+import { cardPagePath, refreshCardPage, type CardAddressSource } from '@/lib/partner/card-page';
 import { ocrLimitOf, uploadLimitOf } from '@/lib/partner/errors';
 import type { FieldRefusal } from '@/lib/partner/errors';
 import type { MenuRecognition } from '@/lib/partner/menu';
@@ -112,10 +107,15 @@ function failureFrom(err: unknown): Failure {
 // The card's public page after the partner's own writes (lib/partner/card-page)
 // ---------------------------------------------------------------------------
 
-/** The fields of the save's echo the address is made of (the backend returns the whole row). */
+/**
+ * The fields of the save's echo the address and the owner are read from (the
+ * backend returns the whole row, partner_id included — establishmentModel
+ * updateEstablishment RETURNING).
+ */
 type CardEcho = EstablishmentWriteResult & {
   city?: string | null;
   categories?: string[] | null;
+  partner_id?: string | null;
 };
 
 /** The form's last accepted city and first category — the address before a save moved it. */
@@ -132,16 +132,22 @@ function pageField(page: PageRefresh | undefined): { page?: PageRefresh } {
 
 /**
  * Drop the card's page after a write. Never fails the write: a failure here
- * leaves the page to renew by itself within the hour.
+ * leaves the page to renew by itself within the hour. The account whose hour
+ * the drop is counted in is the card's owner as the API answered this
+ * partner's token — in the write's echo, or else in the card read for it —
+ * never the session's cookie (rg_user is not signed: Phase 4.5, P1 / HIGH 2).
  */
 async function pageAfterWrite(
   cardId: string,
   card: CardAddressSource,
-  options: Parameters<typeof refreshCardPage>[3] = {},
+  options: Parameters<typeof refreshCardPage>[2] = {},
 ): Promise<PageRefresh | undefined> {
   try {
-    const user = await getSessionUser();
-    return await refreshCardPage(user?.id, cardId, card, options);
+    const owner =
+      typeof card.partner_id === 'string' && card.partner_id !== ''
+        ? card.partner_id
+        : (await getEstablishment(cardId)).partner_id;
+    return await refreshCardPage(cardId, { ...card, partner_id: owner }, options);
   } catch {
     return undefined;
   }
@@ -149,15 +155,12 @@ async function pageAfterWrite(
 
 /**
  * Drop the page of a card the write's answer does not describe (a menu line,
- * a pause): read the card first — unless its interval would defer the drop
- * anyway, then there is nothing to read it for.
+ * a pause): the card is read first — its address and its owner.
  */
 async function pageOfCard(
   cardId: string,
-  options: { force?: boolean; requireActive?: boolean } = {},
+  options: { requireActive?: boolean } = {},
 ): Promise<{ page?: PageRefresh; publicPath?: string }> {
-  const due = cardDropDue(cardId, { force: options.force });
-  if (due) return { page: due };
   try {
     const card = await getEstablishment(cardId);
     const [page, publicPath] = await Promise.all([
@@ -331,7 +334,7 @@ export async function retryOcrAction(id: string): Promise<RetryOcrResult> {
 export async function resumeEstablishmentAction(id: string): Promise<WriteResult> {
   try {
     const result = await resumeEstablishment(id);
-    const { page, publicPath } = await pageOfCard(id, { force: true });
+    const { page, publicPath } = await pageOfCard(id);
     return {
       ok: true,
       status: result.status,
@@ -351,7 +354,7 @@ export async function resumeEstablishmentAction(id: string): Promise<WriteResult
 export async function suspendEstablishmentAction(id: string): Promise<WriteResult> {
   try {
     const result = await suspendEstablishment(id);
-    const { page } = await pageOfCard(id, { force: true, requireActive: false });
+    const { page } = await pageOfCard(id, { requireActive: false });
     return {
       ok: true,
       status: result.status,
@@ -393,21 +396,20 @@ export async function updateMenuItemAction(
 }
 
 /**
- * Drop the card's page now, if it is published: after a re-recognition ended,
- * or when a write's drop was deferred by the card's interval. `final` — the
- * partner leaves the page with a drop still deferred: dropped without the
- * interval, inside the account's hour.
+ * Drop the card's page now, if it is published — and what a write of it had
+ * deferred: after a re-recognition ended, or when a write's drop was deferred
+ * by the card's interval. `final` — the partner leaves the page with a drop
+ * still deferred: taken without the interval if this server deferred one.
+ * The card is read first: the API answers it to its owner only, and nothing
+ * about the card's drops is said before that (Phase 4.5, P3 4 / LOW 5).
  */
 export async function refreshCardPageAction(
   id: string,
   { final = false }: { final?: boolean } = {},
 ): Promise<RefreshPageResult> {
   try {
-    const due = cardDropDue(id, { force: final });
-    if (due) return { ok: true, page: due };
     const card = await getEstablishment(id);
-    const user = await getSessionUser();
-    const page = await refreshCardPage(user?.id, id, card, { force: final });
+    const page = await refreshCardPage(id, card, { final, remember: false });
     return { ok: true, page };
   } catch (err) {
     return failureFrom(err);

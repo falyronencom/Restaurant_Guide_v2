@@ -10,7 +10,7 @@
 jest.mock('@/lib/api/endpoints/establishments', () => ({ getCatalog: jest.fn() }));
 
 import { getCatalog } from '@/lib/api/endpoints/establishments';
-import { MISSES_PER_HOUR, _resetForTests, hasSlugForm, slugVerdict } from '@/lib/known-slugs';
+import { MISSES_PER_HOUR, _resetForTests, hasSlugForm, noteCardAddress, slugVerdict } from '@/lib/known-slugs';
 
 const mockCatalog = getCatalog as jest.Mock;
 
@@ -109,5 +109,37 @@ describe('the catalogue', () => {
       expect(await slugVerdict(`lyuboy-${i}`, own(`lyuboy-${i}`))).toEqual(ASK);
     }
     expect(mockCatalog).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a card moved from the cabinet (Phase 4.5, MEDIUM 3)', () => {
+  const OLD = own('kofe-taym');
+  const NEW = '/minsk/cafes/kofe-taym';
+
+  it('the list learns the new address at once: the new address is asked, the old one redirects to it — no loop, no call', async () => {
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual(ASK); // the list is read
+    await spendAllowance();
+
+    noteCardAddress('kofe-taym', NEW);
+    const reads = mockCatalog.mock.calls.length;
+    expect(await slugVerdict('kofe-taym', NEW)).toEqual(ASK);
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual({ kind: 'redirect', path: NEW });
+    expect(mockCatalog.mock.calls.length).toBe(reads);
+  });
+
+  it('without the note, the list older than the move sends the new address back to the old one', async () => {
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual(ASK);
+    await spendAllowance();
+
+    expect(await slugVerdict('kofe-taym', NEW)).toEqual({ kind: 'redirect', path: OLD });
+  });
+
+  it('no list yet — nothing to correct: the list read later is the catalogue\'s', async () => {
+    noteCardAddress('kofe-taym', NEW);
+    expect(mockCatalog).not.toHaveBeenCalled();
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual(ASK); // the list is read now
+    expect(mockCatalog).toHaveBeenCalledTimes(1);
+    await spendAllowance();
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual(ASK);
   });
 });

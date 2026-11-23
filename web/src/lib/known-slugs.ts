@@ -100,6 +100,19 @@ export async function slugVerdict(slug: string, path: string): Promise<SlugVerdi
   return own ? { kind: 'redirect', path: own } : { kind: 'not-found' };
 }
 
+/**
+ * A card's own address as the API has just answered it to the card's partner
+ * (lib/partner/card-page, after a write from the cabinet): the list learns it
+ * at once. Without this, a card whose save moved it (another city, another
+ * first category) kept its old address here until the list was read anew:
+ * once the hour's asks were spent the new address redirected to the old one,
+ * and the old one — dropped by the save — to the new one. No list yet — no
+ * list to correct: every well-formed slug is asked about.
+ */
+export function noteCardAddress(slug: string, path: string): void {
+  if (list && hasSlugForm(slug)) list.paths.set(slug, path);
+}
+
 /** Test-only: forget the list and the allowance. */
 export function _resetForTests(): void {
   list = null;

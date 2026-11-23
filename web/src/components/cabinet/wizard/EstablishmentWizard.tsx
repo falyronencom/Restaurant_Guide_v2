@@ -474,8 +474,10 @@ export function EstablishmentWizard(props: Props) {
     setResumeError(null);
     const r = await resumeEstablishmentAction(establishmentId);
     setResuming(false);
-    if (r.ok) onResumed?.({ publicPath: r.publicPath });
-    else setResumeError(refusalMessage(r));
+    if (r.ok) {
+      followPageRefresh(establishmentId, r.page);
+      onResumed?.({ publicPath: r.publicPath });
+    } else setResumeError(refusalMessage(r));
   }, [establishmentId, onResumed]);
 
   /** Create: drop the restored form and start a new card (С1). */

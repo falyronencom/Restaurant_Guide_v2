@@ -13,9 +13,11 @@
  * 2. Properties of the fold (probe 6 of the verification trials, 21.11.2026):
  *    for any input the city part is a known slug or the fallback, folding
  *    twice is folding once, and «ё»/«е» never change the answer.
- * 3. The bounds: one drop per card in 30 s (the next one is deferred with its
- *    term), 300 per account in an hour, the pause and a moved address at once,
- *    and the visitors' allowance never touched.
+ * 3. The bounds (Trunk, addendum 1, 1.2–1.3): one drop per card in 30 s for
+ *    every drop (the next one deferred with its term and its addresses), 27 an
+ *    hour per account — the card's owner in the API's answer — and 54 an hour
+ *    for the site, `final` only for a drop this server deferred, and the
+ *    visitors' allowance never touched.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -23,17 +25,20 @@ import path from 'node:path';
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
 jest.mock('@/lib/api/endpoints/metadata', () => ({ getMetadata: jest.fn() }));
 jest.mock('@/lib/cached-page-drops', () => ({ mayDropCachedPage: jest.fn(async () => true) }));
+jest.mock('@/lib/known-slugs', () => ({ noteCardAddress: jest.fn() }));
 
 import { revalidatePath } from 'next/cache';
 
 import { getMetadata } from '@/lib/api/endpoints/metadata';
 import type { PublicMetadata } from '@/lib/api/types';
 import { mayDropCachedPage } from '@/lib/cached-page-drops';
+import { noteCardAddress } from '@/lib/known-slugs';
 import {
   CARD_INTERVAL_MS,
+  DEFERRED_TTL_MS,
   DROPS_PER_ACCOUNT_HOUR,
+  DROPS_PER_SITE_HOUR,
   _resetForTests,
-  cardDropDue,
   cardPagePathFrom,
   dropCardPaths,
   foldYo,
@@ -42,6 +47,8 @@ import {
 
 const revalidateMock = revalidatePath as jest.Mock;
 const metadataMock = getMetadata as jest.Mock;
+const noteMock = noteCardAddress as jest.Mock;
+const warnSpy = () => jest.spyOn(console, 'warn').mockImplementation(() => {});
 
 /** `export const NAME = { 'Ключ': 'slug', … }` of the backend's file, as pairs. */
 function backendMap(source: string, name: string): Array<[string, string]> {
@@ -80,6 +87,7 @@ beforeEach(() => {
   metadataMock.mockResolvedValue({ ...META, cuisines: [] });
   _resetForTests();
   jest.useRealTimers();
+  jest.restoreAllMocks();
 });
 
 describe('the address — the same as the API\'s public projection', () => {
@@ -163,24 +171,23 @@ describe('properties of the fold of «ё» (probe 6)', () => {
 });
 
 describe('the bounds of the drops', () => {
-  it('the first write drops at once; the next inside the interval is deferred with its term', () => {
+  it('the first write drops at once; the next inside the interval is deferred with its term, its address dropped by the next ask after it', () => {
     jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
 
     expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
     expect(revalidateMock).toHaveBeenCalledWith('/minsk/cafes/s');
 
     jest.advanceTimersByTime(10_000);
-    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({
-      refreshed: false,
-      retryInMs: CARD_INTERVAL_MS - 10_000,
-    });
-    expect(cardDropDue('e1')).toEqual({ refreshed: false, retryInMs: CARD_INTERVAL_MS - 10_000 });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: false, retryInMs: 20_000 });
     expect(revalidateMock).toHaveBeenCalledTimes(1);
 
-    jest.advanceTimersByTime(CARD_INTERVAL_MS - 10_000);
-    expect(cardDropDue('e1')).toBeNull();
-    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
+    jest.advanceTimersByTime(19_999);
+    expect(dropCardPaths('u1', 'e1', [], { remember: false })).toEqual({ refreshed: false, retryInMs: 1 });
+    jest.advanceTimersByTime(1);
+    // The ask names no address of its own: the deferred one is dropped.
+    expect(dropCardPaths('u1', 'e1', [], { remember: false })).toEqual({ refreshed: true });
     expect(revalidateMock).toHaveBeenCalledTimes(2);
+    expect(revalidateMock).toHaveBeenLastCalledWith('/minsk/cafes/s');
   });
 
   it('the interval is the card\'s: another card drops at once', () => {
@@ -188,90 +195,206 @@ describe('the bounds of the drops', () => {
     expect(dropCardPaths('u1', 'e2', ['/minsk/cafes/b'])).toEqual({ refreshed: true });
   });
 
-  it('`force` (the pause, a moved address) drops inside the interval', () => {
+  it('a pause or a moved address keeps the interval too (Phase 4.5, P2 2): deferred, both addresses kept for the later drop', () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
     expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
-    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'], { force: true })).toEqual({ refreshed: true });
+
+    jest.advanceTimersByTime(5_000);
+    expect(dropCardPaths('u1', 'e1', ['/minsk/bars/s', '/minsk/cafes/s'])).toEqual({ refreshed: false, retryInMs: 25_000 });
+    expect(revalidateMock).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(25_000);
+    expect(dropCardPaths('u1', 'e1', ['/minsk/bars/s'], { remember: false })).toEqual({ refreshed: true });
+    expect(revalidateMock.mock.calls.slice(1).map((c) => c[0]).sort()).toEqual(['/minsk/bars/s', '/minsk/cafes/s']);
+  });
+
+  it('`final` skips the interval only for a drop of a write this server deferred (Phase 4.5, P1 / P2 2)', () => {
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
+
+    // Nothing deferred: `final` is the browser's word only — the interval holds.
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'], { final: true, remember: false })).toMatchObject({ refreshed: false });
+    // Asked twice, refresh-page has left nothing to remember: still held.
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'], { final: true, remember: false })).toMatchObject({ refreshed: false });
+    expect(revalidateMock).toHaveBeenCalledTimes(1);
+
+    // A write deferred here: the partner leaving takes it without the interval.
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toMatchObject({ refreshed: false });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'], { final: true, remember: false })).toEqual({ refreshed: true });
+    expect(revalidateMock).toHaveBeenCalledTimes(2);
+
+    // Taken: the next `final` finds nothing deferred again.
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'], { final: true, remember: false })).toMatchObject({ refreshed: false });
     expect(revalidateMock).toHaveBeenCalledTimes(2);
   });
 
-  it('300 drops an hour per account: the 301st is refused with a warning, another account is not', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    for (let i = 0; i < DROPS_PER_ACCOUNT_HOUR; i += 1) {
+  it('`final` for a drop another account deferred is not taken', () => {
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toMatchObject({ refreshed: false });
+    expect(dropCardPaths('u2', 'e1', ['/minsk/cafes/s'], { final: true, remember: false })).toMatchObject({ refreshed: false });
+    expect(revalidateMock).toHaveBeenCalledTimes(1);
+  });
+
+  it(`the account: ${DROPS_PER_ACCOUNT_HOUR} drops an hour; the next one refused with a warning; another account is served`, () => {
+    expect(DROPS_PER_ACCOUNT_HOUR).toBe(27);
+    const warn = warnSpy();
+    for (let i = 0; i < 27; i += 1) {
       expect(dropCardPaths('u1', `card-${i}`, [`/minsk/cafes/s${i}`])).toEqual({ refreshed: true });
     }
     expect(dropCardPaths('u1', 'card-last', ['/minsk/cafes/last'])).toEqual({ refreshed: false });
-    expect(revalidateMock).toHaveBeenCalledTimes(DROPS_PER_ACCOUNT_HOUR);
+    expect(revalidateMock).toHaveBeenCalledTimes(27);
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain("the account's hour");
 
     expect(dropCardPaths('u2', 'card-other', ['/minsk/cafes/other'])).toEqual({ refreshed: true });
-    warn.mockRestore();
   });
 
-  it('the account\'s hour renews', () => {
+  it(`the site: ${DROPS_PER_SITE_HOUR} drops an hour for every account together; the next one refused with a warning`, () => {
+    expect(DROPS_PER_SITE_HOUR).toBe(54);
+    const warn = warnSpy();
+    for (let i = 0; i < 27; i += 1) {
+      expect(dropCardPaths('u1', `a-${i}`, [`/minsk/cafes/a${i}`])).toEqual({ refreshed: true });
+      expect(dropCardPaths('u2', `b-${i}`, [`/minsk/cafes/b${i}`])).toEqual({ refreshed: true });
+    }
+    expect(revalidateMock).toHaveBeenCalledTimes(54);
+    // A third account, its own hour untouched — the site's is spent.
+    expect(dropCardPaths('u3', 'c-0', ['/minsk/cafes/c0'])).toEqual({ refreshed: false });
+    expect(revalidateMock).toHaveBeenCalledTimes(54);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain("the site's hour");
+  });
+
+  it('a moved card counts both of its addresses', () => {
+    const warn = warnSpy();
+    for (let i = 0; i < 13; i += 1) {
+      expect(dropCardPaths('u1', `m-${i}`, [`/minsk/cafes/m${i}`, `/minsk/bars/m${i}`])).toEqual({ refreshed: true });
+    }
+    // 26 of 27 spent: two more addresses do not fit, one does.
+    expect(dropCardPaths('u1', 'm-x', ['/minsk/cafes/mx', '/minsk/bars/mx'])).toEqual({ refreshed: false });
+    expect(dropCardPaths('u1', 'm-y', ['/minsk/cafes/my'])).toEqual({ refreshed: true });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('the hours renew', () => {
     jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    for (let i = 0; i < DROPS_PER_ACCOUNT_HOUR; i += 1) dropCardPaths('u1', `c${i}`, [`/minsk/cafes/s${i}`]);
-    expect(dropCardPaths('u1', 'cx', ['/minsk/cafes/x'])).toEqual({ refreshed: false });
+    warnSpy();
+    for (let i = 0; i < 27; i += 1) {
+      dropCardPaths('u1', `a${i}`, [`/minsk/cafes/a${i}`]);
+      dropCardPaths('u2', `b${i}`, [`/minsk/cafes/b${i}`]);
+    }
+    expect(dropCardPaths('u1', 'ax', ['/minsk/cafes/ax'])).toEqual({ refreshed: false });
+    expect(dropCardPaths('u3', 'cx', ['/minsk/cafes/cx'])).toEqual({ refreshed: false });
 
     jest.advanceTimersByTime(60 * 60 * 1000);
-    expect(dropCardPaths('u1', 'cx', ['/minsk/cafes/x'])).toEqual({ refreshed: true });
-    warn.mockRestore();
+    expect(dropCardPaths('u1', 'ax', ['/minsk/cafes/ax'])).toEqual({ refreshed: true });
+    expect(dropCardPaths('u3', 'cx', ['/minsk/cafes/cx'])).toEqual({ refreshed: true });
+  });
+
+  it('a deferred drop is forgotten after its time: nothing of it is dropped later', () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toMatchObject({ refreshed: false });
+
+    jest.advanceTimersByTime(DEFERRED_TTL_MS - 1);
+    expect(dropCardPaths('u1', 'e1', [], { remember: false })).toEqual({ refreshed: true }); // still kept
+    expect(dropCardPaths('u1', 'e2', ['/minsk/cafes/t'])).toEqual({ refreshed: true });
+    expect(dropCardPaths('u1', 'e2', ['/minsk/cafes/t'])).toMatchObject({ refreshed: false });
+
+    jest.advanceTimersByTime(DEFERRED_TTL_MS);
+    revalidateMock.mockClear();
+    expect(dropCardPaths('u1', 'e2', [], { remember: false })).toEqual({ refreshed: false });
+    expect(revalidateMock).not.toHaveBeenCalled();
   });
 
   it('the visitors\' allowance is not spent', async () => {
     dropCardPaths('u1', 'e1', ['/minsk/cafes/s']);
-    await refreshCardPage('u1', 'e2', { slug: 's2', city: 'Минск', categories: ['Кафе'], status: 'active' });
+    await refreshCardPage('e2', { slug: 's2', city: 'Минск', categories: ['Кафе'], status: 'active', partner_id: 'u1' });
     expect(mayDropCachedPage).not.toHaveBeenCalled();
     expect(revalidateMock).toHaveBeenCalledTimes(2);
   });
 });
 
 describe('refreshCardPage — a card the partner just wrote', () => {
-  const card = { slug: 'kafe', city: 'Могилёв', categories: ['Кафе'], status: 'active' } as const;
+  const card = { slug: 'kafe', city: 'Могилёв', categories: ['Кафе'], status: 'active', partner_id: 'u1' } as const;
 
-  it('a published card: its literal address', async () => {
-    await expect(refreshCardPage('u1', 'e1', card)).resolves.toEqual({ refreshed: true });
+  it('a published card: its literal address; the site\'s list of addresses learns it', async () => {
+    await expect(refreshCardPage('e1', card)).resolves.toEqual({ refreshed: true });
     expect(revalidateMock).toHaveBeenCalledWith('/mogilev/cafes/kafe');
+    expect(noteMock).toHaveBeenCalledWith('kafe', '/mogilev/cafes/kafe');
   });
 
-  it('a card no guest sees (draft, pending): nothing', async () => {
-    await expect(refreshCardPage('u1', 'e1', { ...card, status: 'draft' })).resolves.toEqual({ refreshed: false });
-    await expect(refreshCardPage('u1', 'e1', { ...card, status: 'pending' })).resolves.toEqual({ refreshed: false });
+  it('the account is the card\'s owner in the API\'s answer: another owner, another hour (Phase 4.5, P1 / HIGH 2)', async () => {
+    warnSpy();
+    for (let i = 0; i < 27; i += 1) {
+      await expect(refreshCardPage(`c${i}`, { ...card, slug: `k${i}` })).resolves.toEqual({ refreshed: true });
+    }
+    await expect(refreshCardPage('cx', { ...card, slug: 'kx' })).resolves.toEqual({ refreshed: false });
+    await expect(refreshCardPage('cy', { ...card, slug: 'ky', partner_id: 'u2' })).resolves.toEqual({ refreshed: true });
+  });
+
+  it('without the owner in the API\'s answer — nothing', async () => {
+    await expect(refreshCardPage('e1', { ...card, partner_id: undefined })).resolves.toEqual({ refreshed: false });
+    await expect(refreshCardPage('e1', { ...card, partner_id: '' })).resolves.toEqual({ refreshed: false });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 
+  it('a card no guest sees (draft, pending): nothing, and the list is not told', async () => {
+    await expect(refreshCardPage('e1', { ...card, status: 'draft' })).resolves.toEqual({ refreshed: false });
+    await expect(refreshCardPage('e1', { ...card, status: 'pending' })).resolves.toEqual({ refreshed: false });
+    expect(revalidateMock).not.toHaveBeenCalled();
+    expect(noteMock).not.toHaveBeenCalled();
+  });
+
   it('the pause: dropped although the card is no longer active', async () => {
-    await expect(
-      refreshCardPage('u1', 'e1', { ...card, status: 'suspended' }, { force: true, requireActive: false }),
-    ).resolves.toEqual({ refreshed: true });
+    await expect(refreshCardPage('e1', { ...card, status: 'suspended' }, { requireActive: false })).resolves.toEqual({
+      refreshed: true,
+    });
+    expect(revalidateMock).toHaveBeenCalledWith('/mogilev/cafes/kafe');
+    expect(noteMock).not.toHaveBeenCalled();
+  });
+
+  it('a pause inside the interval: deferred, then dropped by refresh-page although the card is not published any more', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
+    await expect(refreshCardPage('e1', card)).resolves.toEqual({ refreshed: true });
+    await expect(refreshCardPage('e1', { ...card, status: 'suspended' }, { requireActive: false })).resolves.toMatchObject({
+      refreshed: false,
+      retryInMs: CARD_INTERVAL_MS,
+    });
+
+    jest.advanceTimersByTime(CARD_INTERVAL_MS);
+    revalidateMock.mockClear();
+    await expect(refreshCardPage('e1', { ...card, status: 'suspended' }, { remember: false })).resolves.toEqual({
+      refreshed: true,
+    });
     expect(revalidateMock).toHaveBeenCalledWith('/mogilev/cafes/kafe');
   });
 
-  it('a save that moved the card: the old address too, at once', async () => {
+  it('a save that moved the card: the old address too; inside the interval both are deferred and dropped together', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
     dropCardPaths('u1', 'e1', ['/mogilev/cafes/kafe']); // a drop a moment ago
     revalidateMock.mockClear();
 
     await expect(
-      refreshCardPage('u1', 'e1', { ...card, categories: ['Бар'] }, { previous: { city: 'Могилёв', categories: ['Кафе'] } }),
-    ).resolves.toEqual({ refreshed: true });
+      refreshCardPage('e1', { ...card, categories: ['Бар'] }, { previous: { city: 'Могилёв', categories: ['Кафе'] } }),
+    ).resolves.toMatchObject({ refreshed: false });
+    expect(revalidateMock).not.toHaveBeenCalled();
+    expect(noteMock).toHaveBeenCalledWith('kafe', '/mogilev/bars/kafe');
+
+    jest.advanceTimersByTime(CARD_INTERVAL_MS);
+    // refresh-page: the card as it is now (its new address) and what was deferred.
+    await expect(refreshCardPage('e1', { ...card, categories: ['Бар'] }, { remember: false })).resolves.toEqual({
+      refreshed: true,
+    });
     expect(revalidateMock.mock.calls.map((c) => c[0]).sort()).toEqual(['/mogilev/bars/kafe', '/mogilev/cafes/kafe']);
   });
 
   it('the previous address is built of this card\'s own slug only', async () => {
-    await refreshCardPage('u1', 'e1', card, {
-      previous: { slug: 'someone-else', city: 'Брест', categories: ['Бар'] },
-    });
+    await refreshCardPage('e1', card, { previous: { slug: 'someone-else', city: 'Брест', categories: ['Бар'] } });
     expect(revalidateMock.mock.calls.map((c) => c[0]).sort()).toEqual(['/brest/bars/kafe', '/mogilev/cafes/kafe']);
   });
 
   it('without the metadata — no drop rather than a wrong one', async () => {
     metadataMock.mockRejectedValue(new Error('metadata down'));
-    await expect(refreshCardPage('u1', 'e1', card)).resolves.toEqual({ refreshed: false });
-    expect(revalidateMock).not.toHaveBeenCalled();
-  });
-
-  it('without a signed-in account — nothing', async () => {
-    await expect(refreshCardPage(null, 'e1', card)).resolves.toEqual({ refreshed: false });
+    await expect(refreshCardPage('e1', card)).resolves.toEqual({ refreshed: false });
     expect(revalidateMock).not.toHaveBeenCalled();
   });
 });

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { PAUSE_TEXTS } from '@/lib/partner/cabinet-texts';
 import { suspendEstablishmentAction } from '@/lib/partner/client';
+import { followPageRefresh } from '@/lib/partner/page-refresh-client';
 import { refusalMessage } from '@/lib/partner/errors';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +45,8 @@ export function SuspendEstablishmentButton({
     const r = await suspendEstablishmentAction(establishmentId);
     setBusy(false);
     if (r.ok) {
+      // A pause inside the card's interval drops the page a little later.
+      followPageRefresh(establishmentId, r.page);
       setOpen(false);
       onSuspended(establishmentId);
     } else {

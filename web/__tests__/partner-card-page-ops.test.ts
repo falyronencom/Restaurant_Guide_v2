@@ -4,8 +4,9 @@
  * lib/partner/card-page, the API mocked at its endpoints, next/cache's
  * revalidatePath recorded. Each write that changes the guest's page drops the
  * card's literal address; a card no guest sees drops nothing; the address
- * comes from the API's answer — for a menu line, the line's own card, not the
- * id of the request. Also here: the restart's limits told apart (T2, T3) and
+ * and the account whose hour the drop is counted in come from the API's
+ * answer — for a menu line, the line's own card, not the id of the request;
+ * the session's cookie names no account here (Phase 4.5, P1 / HIGH 2). Also here: the restart's limits told apart (T2, T3) and
  * the e-mail asked of the account only when it matters (T5).
  */
 jest.mock('next/cache', () => ({ revalidatePath: jest.fn() }));
@@ -60,6 +61,7 @@ import {
 const revalidateMock = revalidatePath as jest.Mock;
 const getMock = getEstablishment as jest.Mock;
 const meMock = getMe as jest.Mock;
+const sessionMock = getSessionUser as jest.Mock;
 
 const META = {
   cities: [
@@ -76,6 +78,7 @@ const META = {
 
 const CARD = {
   id: 'e1',
+  partner_id: 'u1',
   slug: 'kafe-u-mosta',
   city: 'Минск',
   categories: ['Кафе'],
@@ -101,7 +104,10 @@ beforeEach(() => {
   jest.clearAllMocks();
   for (const mock of [getMock, meMock, getMetadata as jest.Mock, updateMenuItem as jest.Mock]) mock.mockReset();
   (getMetadata as jest.Mock).mockResolvedValue(META);
-  (getSessionUser as jest.Mock).mockResolvedValue({ id: 'u1', email: 'p@e.by', name: 'П', role: 'partner', avatarUrl: null });
+  sessionMock.mockReset();
+  sessionMock.mockResolvedValue({ id: 'u1', email: 'p@e.by', name: 'П', role: 'partner', avatarUrl: null });
+  (updateEstablishment as jest.Mock).mockReset();
+  revalidateMock.mockReset();
   getMock.mockResolvedValue(CARD);
   _resetForTests();
   // Nothing here may reach a real network.
@@ -123,6 +129,26 @@ describe('the save of the form (PUT)', () => {
     expect(r).toEqual({ ok: true, status: 'active', base_score: 80, page: { refreshed: true } });
     expect(revalidateMock).toHaveBeenCalledTimes(1);
     expect(revalidateMock).toHaveBeenCalledWith('/minsk/cafes/kafe-u-mosta');
+    expect(getMock).not.toHaveBeenCalled(); // the owner is in the save's answer
+  });
+
+  it('`drop: false` (the form sent nothing new): saved, the page not dropped, no `page`', async () => {
+    (updateEstablishment as jest.Mock).mockResolvedValue({ ...CARD, base_score: 80 });
+
+    await expect(updateEstablishmentAction('e1', {}, null, { drop: false })).resolves.toEqual({
+      ok: true,
+      status: 'active',
+      base_score: 80,
+    });
+    expect(updateEstablishment).toHaveBeenCalledTimes(1);
+    expect(revalidateMock).not.toHaveBeenCalled();
+  });
+
+  it('an answer without the owner: the card is read for it', async () => {
+    (updateEstablishment as jest.Mock).mockResolvedValue({ ...CARD, partner_id: undefined });
+
+    await expect(updateEstablishmentAction('e1', {})).resolves.toMatchObject({ page: { refreshed: true } });
+    expect(getMock).toHaveBeenCalledWith('e1');
   });
 
   it('a draft: nothing, and no `page` in the answer', async () => {
@@ -164,6 +190,41 @@ describe('the save of the form (PUT)', () => {
   });
 });
 
+describe('the account\'s hour is the card\'s owner in the API\'s answer, not the session\'s cookie (Phase 4.5, P1 / HIGH 2)', () => {
+  it('a cookie naming a new account on every write gets no new hour', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let n = 0;
+    // The browser writes rg_user as it likes: another id on every request.
+    sessionMock.mockImplementation(async () => {
+      n += 1;
+      return { id: `forged-${n}`, email: 'p@e.by', name: 'П', role: 'partner', avatarUrl: null };
+    });
+    for (let i = 0; i < 27; i += 1) {
+      (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: `c${i}`, slug: `kafe-${i}` });
+      await expect(updateEstablishmentAction(`c${i}`, {})).resolves.toMatchObject({ page: { refreshed: true } });
+    }
+    (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: 'c-last', slug: 'kafe-last' });
+    const last = await updateEstablishmentAction('c-last', {});
+
+    expect(last).toEqual({ ok: true, status: 'active', base_score: undefined });
+    expect(revalidateMock).toHaveBeenCalledTimes(27);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("the account's hour");
+    warn.mockRestore();
+  });
+
+  it('another owner in the API\'s answer is another account: served', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    for (let i = 0; i < 27; i += 1) {
+      (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: `c${i}`, slug: `kafe-${i}` });
+      await updateEstablishmentAction(`c${i}`, {});
+    }
+    (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: 'z', slug: 'kafe-z', partner_id: 'u2' });
+    await expect(updateEstablishmentAction('z', {})).resolves.toMatchObject({ page: { refreshed: true } });
+    expect(revalidateMock).toHaveBeenCalledTimes(28);
+    warn.mockRestore();
+  });
+});
+
 describe('a menu line (PATCH) and «Всё верно»', () => {
   it('drops the page of the line\'s own card — read by the line\'s establishment_id', async () => {
     (updateMenuItem as jest.Mock).mockResolvedValue({ ...LINE, establishment_id: 'e7' });
@@ -176,14 +237,12 @@ describe('a menu line (PATCH) and «Всё верно»', () => {
     expect(r).toMatchObject({ ok: true, page: { refreshed: true } });
   });
 
-  it('inside the card\'s interval: deferred without reading the card again', async () => {
+  it('inside the card\'s interval: deferred, with its term', async () => {
     (updateMenuItem as jest.Mock).mockResolvedValue(LINE);
     await updateMenuItemAction('i1', { price_byn: 15 });
-    getMock.mockClear();
 
     const r = await updateMenuItemAction('i1', { price_byn: 16 });
 
-    expect(getMock).not.toHaveBeenCalled();
     expect(r.ok && r.page?.retryInMs).toBeGreaterThan(0);
     expect(revalidateMock).toHaveBeenCalledTimes(1);
   });
@@ -205,11 +264,8 @@ describe('a menu line (PATCH) and «Всё верно»', () => {
   });
 });
 
-describe('the pause and the resume — at once', () => {
-  it('suspend drops the page although the card is now suspended, inside the interval too', async () => {
-    (updateEstablishment as jest.Mock).mockResolvedValue(CARD);
-    await updateEstablishmentAction('e1', {}); // a drop a moment ago
-    revalidateMock.mockClear();
+describe('the pause and the resume', () => {
+  it('suspend drops the page although the card is now suspended', async () => {
     (suspendEstablishment as jest.Mock).mockResolvedValue({ id: 'e1', status: 'suspended' });
     getMock.mockResolvedValue({ ...CARD, status: 'suspended' });
 
@@ -217,6 +273,28 @@ describe('the pause and the resume — at once', () => {
 
     expect(r).toMatchObject({ ok: true, status: 'suspended', page: { refreshed: true } });
     expect(revalidateMock).toHaveBeenCalledWith('/minsk/cafes/kafe-u-mosta');
+  });
+
+  it('a pause inside the interval keeps it (Phase 4.5, P2 2): deferred, then dropped by refresh-page of the card no longer published', async () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
+    try {
+      (updateEstablishment as jest.Mock).mockResolvedValue(CARD);
+      await updateEstablishmentAction('e1', {}); // a drop a moment ago
+      revalidateMock.mockClear();
+      (suspendEstablishment as jest.Mock).mockResolvedValue({ id: 'e1', status: 'suspended' });
+      getMock.mockResolvedValue({ ...CARD, status: 'suspended' });
+
+      const r = await suspendEstablishmentAction('e1');
+      expect(r).toMatchObject({ ok: true, status: 'suspended', page: { refreshed: false } });
+      expect(r.ok && r.page?.retryInMs).toBeGreaterThan(0);
+      expect(revalidateMock).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(30_000);
+      await expect(refreshCardPageAction('e1')).resolves.toEqual({ ok: true, page: { refreshed: true } });
+      expect(revalidateMock).toHaveBeenCalledWith('/minsk/cafes/kafe-u-mosta');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('resume drops the page and brings the address back', async () => {
@@ -234,12 +312,24 @@ describe('refresh-page', () => {
     await expect(refreshCardPageAction('e1')).resolves.toEqual({ ok: true, page: { refreshed: true } });
   });
 
-  it('inside the interval: deferred; `final` (the partner leaves): dropped', async () => {
-    await refreshCardPageAction('e1');
+  it('nothing is said about a card before the API answered it to its owner (Phase 4.5, P3 4 / LOW 5)', async () => {
+    await refreshCardPageAction('e1'); // a drop a moment ago: the card's interval runs
+    getMock.mockRejectedValue(new ApiError(404, 'Establishment not found', 'ESTABLISHMENT_NOT_FOUND'));
 
-    const deferred = await refreshCardPageAction('e1');
-    expect(deferred.ok && deferred.page.refreshed).toBe(false);
+    await expect(refreshCardPageAction('e1')).resolves.toEqual({ ok: false, code: 'ESTABLISHMENT_NOT_FOUND' });
+  });
 
+  it('`final` skips the interval only for a write\'s drop deferred here (Phase 4.5, P1 / P2 2)', async () => {
+    (updateEstablishment as jest.Mock).mockResolvedValue(CARD);
+    await refreshCardPageAction('e1'); // dropped
+
+    // The browser's word alone: held, however often it is said.
+    await expect(refreshCardPageAction('e1', { final: true })).resolves.toMatchObject({ ok: true, page: { refreshed: false } });
+    await expect(refreshCardPageAction('e1', { final: true })).resolves.toMatchObject({ ok: true, page: { refreshed: false } });
+    expect(revalidateMock).toHaveBeenCalledTimes(1);
+
+    // A save the interval deferred: the partner leaving takes it.
+    await expect(updateEstablishmentAction('e1', {})).resolves.toMatchObject({ page: { refreshed: false } });
     await expect(refreshCardPageAction('e1', { final: true })).resolves.toEqual({ ok: true, page: { refreshed: true } });
     expect(revalidateMock).toHaveBeenCalledTimes(2);
   });
