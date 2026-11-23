@@ -14,7 +14,7 @@
  */
 
 import https from 'https';
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { randomUUID } from 'crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -277,8 +277,8 @@ describe('список для Координатора: scripts/media-orphans-au
     const file = join(dir, 'listing.json');
     writeFileSync(file, JSON.stringify({ cloud_name: CLOUD, resources: s.assets }));
     try {
-      const out = spawnSync(process.execPath, [SCRIPT, `--listing=${file}`, `--as-of=${AS_OF.toISOString()}`, '--sweep', '--json'], {
-        env: { ...process.env }, encoding: 'utf8',
+      const out = runScript(SCRIPT, [`--listing=${file}`, `--as-of=${AS_OF.toISOString()}`, '--sweep', '--json'], {
+        env: { ...process.env },
       });
       expect(out.status).toBe(0);
       const { sweep } = JSON.parse(out.stdout);
@@ -304,8 +304,8 @@ describe('список для Координатора: scripts/media-orphans-au
       expect(JSON.stringify(sweep)).not.toContain(s.quiet);
       expect(JSON.stringify(sweep)).not.toContain('orphan');
 
-      const text = spawnSync(process.execPath, [SCRIPT, `--listing=${file}`, `--as-of=${AS_OF.toISOString()}`, '--sweep'], {
-        env: { ...process.env }, encoding: 'utf8',
+      const text = runScript(SCRIPT, [`--listing=${file}`, `--as-of=${AS_OF.toISOString()}`, '--sweep'], {
+        env: { ...process.env },
       });
       expect(text.status).toBe(0);
       expect(text.stdout).toContain('УБОРКА ФАЙЛОВ МАСТЕРА');

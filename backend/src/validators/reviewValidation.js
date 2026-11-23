@@ -281,9 +281,21 @@ export const validateDeleteReview = [
 export const validateGetQuota = [];
 
 /**
+ * The refusal of an owner's reply that is not a text. Absent or null keeps
+ * the message it had: «required».
+ */
+export const PARTNER_RESPONSE_NOT_TEXT_MESSAGE = 'Response must be text';
+
+/**
  * Validation for partner response creation/update
- * 
- * POST /api/v1/reviews/:id/response
+ *
+ * POST /api/v1/reviews/:id/response — the first reply and an edit of it alike
+ *
+ * Anything but a string is refused first, as the review's text is
+ * (optionalReviewText above): trim and isLength read an array element by
+ * element and the мат check reads a string only, so an array went past both
+ * and was stored as a literal «{"…"}»; trim turned an object or a number into
+ * a string, and that was stored (Phase 3.5 review, 23.11.2026).
  */
 export const validatePartnerResponse = [
   param('id')
@@ -294,6 +306,11 @@ export const validatePartnerResponse = [
     .withMessage('Review ID must be a valid UUID'),
 
   body('response')
+    .isString()
+    .withMessage((value) => (value === undefined || value === null
+      ? 'Response text is required'
+      : PARTNER_RESPONSE_NOT_TEXT_MESSAGE))
+    .bail()
     .trim()
     .notEmpty()
     .withMessage('Response text is required')

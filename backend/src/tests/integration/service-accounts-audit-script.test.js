@@ -23,7 +23,7 @@
  * Ожидаемые значения — литералы этого файла, не вывод кода.
  */
 
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { randomUUID } from 'crypto';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -35,9 +35,8 @@ const SCRIPT = join(resolve(HERE, '../../../scripts'), 'service-accounts-audit.j
 /** Ящик Координатора в тесте — тот же провайдер, что у настоящего (Gmail). */
 const MAILBOX = 'owner.box@gmail.com';
 
-const run = (args = ['--json'], env = {}) => spawnSync(process.execPath, [SCRIPT, ...args], {
+const run = (args = ['--json'], env = {}) => runScript(SCRIPT, args, {
   env: { ...process.env, SERVICE_ACCOUNT_MAILBOXES: MAILBOX, ...env },
-  encoding: 'utf8',
 });
 
 const addUser = async ({ email, role = 'user', active = true, password = true, provider = null, service = false, phone = null }) => {

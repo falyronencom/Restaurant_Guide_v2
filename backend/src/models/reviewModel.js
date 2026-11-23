@@ -905,14 +905,15 @@ export const establishmentExists = async (establishmentId) => {
 
 /**
  * Get user information by user ID
- * Used to verify user exists and is active before operations
- * 
+ * Used to verify user exists and is active before operations, and — for a
+ * new review — that the e-mail is confirmed (reviewService.createReview)
+ *
  * @param {string} userId - UUID of the user
  * @returns {Promise<Object|null>} User object or null if not found
  */
 export const getUserById = async (userId) => {
   const query = `
-    SELECT id, email, name, role, is_active
+    SELECT id, email, name, role, is_active, email_verified
     FROM users
     WHERE id = $1
   `;
