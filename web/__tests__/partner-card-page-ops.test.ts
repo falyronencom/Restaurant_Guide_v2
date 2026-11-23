@@ -199,7 +199,7 @@ describe('the account\'s hour is the card\'s owner in the API\'s answer, not the
       n += 1;
       return { id: `forged-${n}`, email: 'p@e.by', name: 'П', role: 'partner', avatarUrl: null };
     });
-    for (let i = 0; i < 27; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: `c${i}`, slug: `kafe-${i}` });
       await expect(updateEstablishmentAction(`c${i}`, {})).resolves.toMatchObject({ page: { refreshed: true } });
     }
@@ -207,20 +207,20 @@ describe('the account\'s hour is the card\'s owner in the API\'s answer, not the
     const last = await updateEstablishmentAction('c-last', {});
 
     expect(last).toEqual({ ok: true, status: 'active', base_score: undefined });
-    expect(revalidateMock).toHaveBeenCalledTimes(27);
+    expect(revalidateMock).toHaveBeenCalledTimes(25);
     expect(String(warn.mock.calls[0]?.[0])).toContain("the account's hour");
     warn.mockRestore();
   });
 
   it('another owner in the API\'s answer is another account: served', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    for (let i = 0; i < 27; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: `c${i}`, slug: `kafe-${i}` });
       await updateEstablishmentAction(`c${i}`, {});
     }
     (updateEstablishment as jest.Mock).mockResolvedValueOnce({ ...CARD, id: 'z', slug: 'kafe-z', partner_id: 'u2' });
     await expect(updateEstablishmentAction('z', {})).resolves.toMatchObject({ page: { refreshed: true } });
-    expect(revalidateMock).toHaveBeenCalledTimes(28);
+    expect(revalidateMock).toHaveBeenCalledTimes(26);
     warn.mockRestore();
   });
 });

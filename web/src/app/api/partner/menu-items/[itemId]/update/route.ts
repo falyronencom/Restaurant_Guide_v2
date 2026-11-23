@@ -24,9 +24,16 @@ export const dynamic = 'force-dynamic';
 /** Three short fields: a body this long is not an edit of a menu line. */
 const MAX_BODY_BYTES = 16 * 1024;
 
+/** A text the API takes: no U+0000 (Postgres refuses it, the API answers 500). */
+const hasNul = (text: string): boolean => text.includes(String.fromCharCode(0));
+
 function changesOf(body: unknown): MenuItemChanges | null {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   const raw = body as Record<string, unknown>;
+  // A field sent, but not of its type: not an edit the editor makes (Phase 4.5, regular NIT 5).
+  if (raw.item_name !== undefined && (typeof raw.item_name !== 'string' || hasNul(raw.item_name))) return null;
+  if (raw.price_byn !== undefined && raw.price_byn !== null && typeof raw.price_byn !== 'number') return null;
+  if (raw.category_raw !== undefined && (typeof raw.category_raw !== 'string' || hasNul(raw.category_raw))) return null;
   const changes: MenuItemChanges = {};
   if (typeof raw.item_name === 'string') {
     const name = checkName(raw.item_name);
@@ -35,7 +42,7 @@ function changesOf(body: unknown): MenuItemChanges | null {
   }
   if (raw.price_byn === null) {
     changes.price_byn = null;
-  } else if (typeof raw.price_byn === 'number' && Number.isFinite(raw.price_byn)) {
+  } else if (typeof raw.price_byn === 'number') {
     // The editor's own check, on the number as the editor would print it:
     // 0 … 99 999 999,99, two decimals at most.
     const price = checkPrice(String(raw.price_byn));

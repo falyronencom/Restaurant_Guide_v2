@@ -22,7 +22,7 @@ import type { PageRefresh } from '@/lib/partner/results';
  * out of date (revalidatePath from a Route Handler: «the revalidation is done
  * on the next visit», Next 16 docs). Nothing is rebuilt by the drop itself;
  * the next guest's visit renders the page afresh from the site's own API
- * budget (11 calls, measured — DROPS_PER_SITE_HOUR), so the drops are bounded,
+ * budget (12 calls, measured — DROPS_PER_SITE_HOUR), so the drops are bounded,
  * and every bound is kept by what the API answered, never by what the
  * browser says (Trunk, addendum 1 to the directive, 1.2–1.3):
  *
@@ -62,22 +62,22 @@ export const CARD_INTERVAL_MS = 30_000;
 /**
  * Drops per account (the card's owner as the API answers) in an hour. The
  * addendum's 60 was half of its 120 for the site; with the site's bound set
- * by the measurement (54), half of it — 27 — keeps that share (chosen by the
+ * by the measurement (50), half of it — 25 — keeps that share (chosen by the
  * session; at 60 the account's bound would never be reached before the
  * site's).
  */
-export const DROPS_PER_ACCOUNT_HOUR = 27;
+export const DROPS_PER_ACCOUNT_HOUR = 25;
 /**
  * The cabinet's drops in an hour for the whole site, every account together
  * (Trunk, addendum 1, 1.3): about a tenth of the site's budget at the API
  * (6000 calls an hour, backend middleware/rateLimiter.js), a drop costing one
  * rebuild of the page at the guest's next visit. Measured on the stand
- * 23.11.2026 (`next start`, a counting proxy before the API): 11 calls — the
- * card, its menu, its reviews, the metadata and 7 probes of the cities by the
- * public layout (the dropped path renders with its data cache out of date
- * too). 600 / 11 → 54.
+ * 23.11.2026 (`next start`, a counting proxy before the API): 12 calls — the
+ * card, its menu, its reviews twice (all of them and those with a text), the
+ * metadata and 7 probes of the cities by the public layout (the dropped path
+ * renders with its data cache out of date too). 600 / 12 → 50.
  */
-export const DROPS_PER_SITE_HOUR = 54;
+export const DROPS_PER_SITE_HOUR = 50;
 /** How long a drop the interval deferred is kept for its timer — or `final` — to take. */
 export const DEFERRED_TTL_MS = 10 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -138,10 +138,18 @@ let accountHours = new Map<string, { start: number; count: number }>();
 let siteHour = { start: 0, count: 0 };
 /** The drops the card's interval deferred: whose card, which addresses, since when. */
 let deferred = new Map<string, { owner: string; paths: Set<string>; at: number }>();
+/** When a `final` last took a card's drop past its interval. */
+let lastFinalAt = new Map<string, number>();
 
-/** The hour that runs now: this one, or a new one when it is over. */
+/**
+ * The hour that runs now — the clock hour (UTC), the hour the API counts its
+ * budget in (backend middleware/rateLimiter.js: windows of the epoch): an hour
+ * opened by the first drop could end inside one hour of the API and let the
+ * next begin there, twice the bound in one of its hours (Phase 4.5, lens P3 3).
+ */
 function hourAt(hour: { start: number; count: number } | undefined, now: number) {
-  return hour && now - hour.start < HOUR_MS ? hour : { start: now, count: 0 };
+  const start = now - (now % HOUR_MS);
+  return hour && hour.start === start ? hour : { start, count: 0 };
 }
 
 function forgetOld(now: number): void {
@@ -153,6 +161,9 @@ function forgetOld(now: number): void {
   }
   for (const [card, kept] of deferred) {
     if (now - kept.at >= DEFERRED_TTL_MS) deferred.delete(card);
+  }
+  for (const [card, at] of lastFinalAt) {
+    if (now - at >= CARD_INTERVAL_MS) lastFinalAt.delete(card);
   }
 }
 
@@ -196,7 +207,11 @@ export function dropCardPaths(
   if (ownKept) for (const path of ownKept.paths) unique.add(path);
   if (unique.size === 0) return { refreshed: false };
   const wait = waitFor(cardId, now);
-  if (wait > 0 && !(final && ownKept)) {
+  // `final` skips the interval once in an interval of the card: a write and a
+  // `final` repeated in turn are not a way to drop at the rate one likes
+  // (Phase 4.5: lens P3 4, regular LOW 2).
+  const finalTakes = final && ownKept !== undefined && !lastFinalAt.has(cardId);
+  if (wait > 0 && !finalTakes) {
     if (remember) deferred.set(cardId, { owner, paths: unique, at: now });
     return { refreshed: false, retryInMs: wait };
   }
@@ -214,6 +229,7 @@ export function dropCardPaths(
     return { refreshed: false };
   }
   for (const path of unique) revalidatePath(path);
+  if (wait > 0) lastFinalAt.set(cardId, now);
   account.count += unique.size;
   accountHours.set(owner, account);
   siteHour.count += unique.size;
@@ -278,4 +294,5 @@ export function _resetForTests(): void {
   accountHours = new Map();
   siteHour = { start: 0, count: 0 };
   deferred = new Map();
+  lastFinalAt = new Map();
 }

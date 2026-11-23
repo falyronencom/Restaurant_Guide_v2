@@ -93,3 +93,24 @@ it('nothing waiting: leaving sends nothing', () => {
   window.dispatchEvent(new Event('pagehide'));
   expect(refreshMock).not.toHaveBeenCalled();
 });
+
+describe('a page sent to the background (Phase 4.5, regular LOW 3)', () => {
+  it('a deferred drop is sent as `final` when the page is hidden', () => {
+    jest.useFakeTimers();
+    let visibility: DocumentVisibilityState = 'visible';
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    try {
+      scheduleCardPageRefresh('e1', 20_000);
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(refreshMock).toHaveBeenCalledWith('e1', { final: true });
+
+      // Nothing left to send when the timer would have fired.
+      jest.advanceTimersByTime(30_000);
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (document as unknown as { visibilityState?: unknown }).visibilityState;
+      jest.useRealTimers();
+    }
+  });
+});

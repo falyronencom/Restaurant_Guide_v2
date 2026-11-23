@@ -14,8 +14,8 @@
  *    for any input the city part is a known slug or the fallback, folding
  *    twice is folding once, and «ё»/«е» never change the answer.
  * 3. The bounds (Trunk, addendum 1, 1.2–1.3): one drop per card in 30 s for
- *    every drop (the next one deferred with its term and its addresses), 27 an
- *    hour per account — the card's owner in the API's answer — and 54 an hour
+ *    every drop (the next one deferred with its term and its addresses), 25 an
+ *    hour per account — the card's owner in the API's answer — and 50 an hour
  *    for the site, `final` only for a drop this server deferred, and the
  *    visitors' allowance never touched.
  */
@@ -235,13 +235,13 @@ describe('the bounds of the drops', () => {
   });
 
   it(`the account: ${DROPS_PER_ACCOUNT_HOUR} drops an hour; the next one refused with a warning; another account is served`, () => {
-    expect(DROPS_PER_ACCOUNT_HOUR).toBe(27);
+    expect(DROPS_PER_ACCOUNT_HOUR).toBe(25);
     const warn = warnSpy();
-    for (let i = 0; i < 27; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       expect(dropCardPaths('u1', `card-${i}`, [`/minsk/cafes/s${i}`])).toEqual({ refreshed: true });
     }
     expect(dropCardPaths('u1', 'card-last', ['/minsk/cafes/last'])).toEqual({ refreshed: false });
-    expect(revalidateMock).toHaveBeenCalledTimes(27);
+    expect(revalidateMock).toHaveBeenCalledTimes(25);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain("the account's hour");
 
@@ -249,26 +249,26 @@ describe('the bounds of the drops', () => {
   });
 
   it(`the site: ${DROPS_PER_SITE_HOUR} drops an hour for every account together; the next one refused with a warning`, () => {
-    expect(DROPS_PER_SITE_HOUR).toBe(54);
+    expect(DROPS_PER_SITE_HOUR).toBe(50);
     const warn = warnSpy();
-    for (let i = 0; i < 27; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       expect(dropCardPaths('u1', `a-${i}`, [`/minsk/cafes/a${i}`])).toEqual({ refreshed: true });
       expect(dropCardPaths('u2', `b-${i}`, [`/minsk/cafes/b${i}`])).toEqual({ refreshed: true });
     }
-    expect(revalidateMock).toHaveBeenCalledTimes(54);
+    expect(revalidateMock).toHaveBeenCalledTimes(50);
     // A third account, its own hour untouched — the site's is spent.
     expect(dropCardPaths('u3', 'c-0', ['/minsk/cafes/c0'])).toEqual({ refreshed: false });
-    expect(revalidateMock).toHaveBeenCalledTimes(54);
+    expect(revalidateMock).toHaveBeenCalledTimes(50);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain("the site's hour");
   });
 
   it('a moved card counts both of its addresses', () => {
     const warn = warnSpy();
-    for (let i = 0; i < 13; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       expect(dropCardPaths('u1', `m-${i}`, [`/minsk/cafes/m${i}`, `/minsk/bars/m${i}`])).toEqual({ refreshed: true });
     }
-    // 26 of 27 spent: two more addresses do not fit, one does.
+    // 24 of 25 spent: two more addresses do not fit, one does.
     expect(dropCardPaths('u1', 'm-x', ['/minsk/cafes/mx', '/minsk/bars/mx'])).toEqual({ refreshed: false });
     expect(dropCardPaths('u1', 'm-y', ['/minsk/cafes/my'])).toEqual({ refreshed: true });
     expect(warn).toHaveBeenCalledTimes(1);
@@ -277,7 +277,7 @@ describe('the bounds of the drops', () => {
   it('the hours renew', () => {
     jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
     warnSpy();
-    for (let i = 0; i < 27; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       dropCardPaths('u1', `a${i}`, [`/minsk/cafes/a${i}`]);
       dropCardPaths('u2', `b${i}`, [`/minsk/cafes/b${i}`]);
     }
@@ -324,7 +324,7 @@ describe('refreshCardPage — a card the partner just wrote', () => {
 
   it('the account is the card\'s owner in the API\'s answer: another owner, another hour (Phase 4.5, P1 / HIGH 2)', async () => {
     warnSpy();
-    for (let i = 0; i < 27; i += 1) {
+    for (let i = 0; i < 25; i += 1) {
       await expect(refreshCardPage(`c${i}`, { ...card, slug: `k${i}` })).resolves.toEqual({ refreshed: true });
     }
     await expect(refreshCardPage('cx', { ...card, slug: 'kx' })).resolves.toEqual({ refreshed: false });
@@ -396,5 +396,34 @@ describe('refreshCardPage — a card the partner just wrote', () => {
     metadataMock.mockRejectedValue(new Error('metadata down'));
     await expect(refreshCardPage('e1', card)).resolves.toEqual({ refreshed: false });
     expect(revalidateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('after Phase 4.5 of the final change', () => {
+  it('`final` skips the interval once in an interval of the card: a write and a `final` in turn do not drop at will (lens P3 4, regular LOW 2)', () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:00:00Z') });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toEqual({ refreshed: true });
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toMatchObject({ refreshed: false }); // a write, deferred
+    expect(dropCardPaths('u1', 'e1', [], { final: true, remember: false })).toEqual({ refreshed: true });
+
+    jest.advanceTimersByTime(1_000);
+    expect(dropCardPaths('u1', 'e1', ['/minsk/cafes/s'])).toMatchObject({ refreshed: false, retryInMs: 29_000 });
+    expect(dropCardPaths('u1', 'e1', [], { final: true, remember: false })).toMatchObject({ refreshed: false, retryInMs: 29_000 });
+    expect(revalidateMock).toHaveBeenCalledTimes(2);
+
+    // The interval over: the remembered write is dropped by the next ask.
+    jest.advanceTimersByTime(29_000);
+    expect(dropCardPaths('u1', 'e1', [], { remember: false })).toEqual({ refreshed: true });
+    expect(revalidateMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('the hours are clock hours (UTC), as the API counts its budget (lens P3 3)', () => {
+    jest.useFakeTimers({ now: new Date('2026-11-23T12:59:00Z') });
+    warnSpy();
+    for (let i = 0; i < 25; i += 1) dropCardPaths('u1', `c${i}`, [`/minsk/cafes/c${i}`]);
+    expect(dropCardPaths('u1', 'cx', ['/minsk/cafes/cx'])).toEqual({ refreshed: false });
+
+    jest.advanceTimersByTime(61_000); // 13:00:01 — the API's next hour
+    expect(dropCardPaths('u1', 'cx', ['/minsk/cafes/cx'])).toEqual({ refreshed: true });
   });
 });

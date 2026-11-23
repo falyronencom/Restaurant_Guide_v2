@@ -143,3 +143,42 @@ describe('a card moved from the cabinet (Phase 4.5, MEDIUM 3)', () => {
     expect(await slugVerdict('kofe-taym', OLD)).toEqual(ASK);
   });
 });
+
+describe('one list for the whole process: the page and the cabinet are bundled apart (stand, 23.11.2026)', () => {
+  it('a note made through another copy of the module reaches this one', async () => {
+    const OLD = own('kofe-taym');
+    const NEW = '/minsk/cafes/kofe-taym';
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual(ASK); // this copy (the page) reads the list
+    await spendAllowance();
+
+    // The cabinet's Route Handler: a copy of the module of its own.
+    let cabinetCopy: typeof import('@/lib/known-slugs') | undefined;
+    await jest.isolateModulesAsync(async () => {
+      cabinetCopy = await import('@/lib/known-slugs');
+    });
+    expect(cabinetCopy).toBeDefined();
+    expect(cabinetCopy!.noteCardAddress).not.toBe(noteCardAddress);
+    cabinetCopy!.noteCardAddress('kofe-taym', NEW);
+
+    expect(await slugVerdict('kofe-taym', NEW)).toEqual(ASK);
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual({ kind: 'redirect', path: NEW });
+  });
+});
+
+describe('a note made while the list is being read (Phase 4.5, regular)', () => {
+  it('is laid over what the read brings', async () => {
+    const OLD = own('kofe-taym');
+    const NEW = '/minsk/cafes/kofe-taym';
+    let release!: (v: unknown) => void;
+    mockCatalog.mockImplementationOnce(() => new Promise((r) => { release = r; }));
+    const first = slugVerdict('kofe-taym', OLD); // the read begins
+    await Promise.resolve();
+    noteCardAddress('kofe-taym', NEW); // the cabinet, meanwhile
+    release(page([est('kofe-taym')])); // the read brings the address of before
+    await first;
+    await spendAllowance();
+
+    expect(await slugVerdict('kofe-taym', NEW)).toEqual(ASK);
+    expect(await slugVerdict('kofe-taym', OLD)).toEqual({ kind: 'redirect', path: NEW });
+  });
+});

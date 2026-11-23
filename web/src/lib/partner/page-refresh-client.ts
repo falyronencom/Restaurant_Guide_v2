@@ -32,10 +32,20 @@ function flushAllFinal(): void {
   pending.clear();
 }
 
+/**
+ * A phone that sends the tab to the background may unload it later without
+ * a `pagehide` (Phase 4.5, regular LOW 3): a hidden page flushes as well. The
+ * server takes a `final` only for a drop it deferred itself.
+ */
+function onHidden(): void {
+  if (document.visibilityState === 'hidden') flushAllFinal();
+}
+
 function listenForLeave(): void {
   if (listening || typeof window === 'undefined') return;
   listening = true;
   window.addEventListener('pagehide', flushAllFinal);
+  document.addEventListener('visibilitychange', onHidden);
 }
 
 /** Ask refresh-page for this card in `inMs` — unless an earlier ask already waits. */
@@ -64,6 +74,7 @@ export function _resetForTests(): void {
   pending.clear();
   if (listening && typeof window !== 'undefined') {
     window.removeEventListener('pagehide', flushAllFinal);
+    document.removeEventListener('visibilitychange', onHidden);
   }
   listening = false;
 }

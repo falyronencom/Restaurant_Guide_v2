@@ -353,7 +353,15 @@ describe('happy path — handlers forward to operations and return the envelope'
     );
     expect(updateMenuItemAction).toHaveBeenCalledWith('i9', { item_name: 'Суп', price_byn: null, category_raw: '' });
 
-    await menuItemUpdatePost(makeRequest(SIGNED, { price_byn: '12', item_name: 5, category_raw: 7 }), itemCtx('i9'));
+    // A field of the wrong type is not an edit the editor makes: 400, nothing sent (Phase 4.5, regular NIT 5).
+    (updateMenuItemAction as jest.Mock).mockClear();
+    for (const body of [{ price_byn: '12' }, { item_name: 5 }, { category_raw: 7 }, { item_name: `Суп${String.fromCharCode(0)}` }]) {
+      const res = await menuItemUpdatePost(makeRequest(SIGNED, body), itemCtx('i9'));
+      expect(res.status).toBe(400);
+    }
+    expect(updateMenuItemAction).not.toHaveBeenCalled();
+    // Nothing to change: the API's own refusal (NO_FIELDS_TO_UPDATE) has the partner's words.
+    await menuItemUpdatePost(makeRequest(SIGNED, {}), itemCtx('i9'));
     expect(updateMenuItemAction).toHaveBeenLastCalledWith('i9', {});
   });
 
