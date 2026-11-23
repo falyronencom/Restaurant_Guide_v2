@@ -245,13 +245,26 @@ const UPDATABLE_FIELDS = [
  * file. Two statements that each take several rows of one dish could
  * otherwise wait for each other's rows — a deadlock, and a 500 for one side.
  *
+ * `shownOnly` — only the rows the moderator has not hidden are written: the
+ * statement itself asks is_hidden_by_admin = FALSE, so a row hidden while the
+ * lock was awaited is left as the moderator left it.
+ * `required` — the row the change is for: when it is not among the rows
+ * written — gone with a re-read of its file, or hidden meanwhile (with
+ * `shownOnly`) — nothing is written, not the others either, and null comes
+ * back. The partner's edit passes both (partnerMenuItemService.updateMenuItem;
+ * thread Н8, finding 3, 23.11.2026): it looks at the row before it takes the
+ * lock, and the row may change in between.
+ *
  * @param {string[]} ids - UUIDs
  * @param {Object} updates - Fields to update (UPDATABLE_FIELDS)
  * @param {Object} [options]
  * @param {string} [options.lockMenuOf] - establishment UUID
- * @returns {Promise<Object[]>} The rows changed; a row that is gone is not among them
+ * @param {boolean} [options.shownOnly=false] - Leave the rows hidden by the moderator
+ * @param {string} [options.required] - UUID among `ids` that must be written
+ * @returns {Promise<Object[]|null>} The rows changed (a row that is gone is not among
+ *   them), or null when `required` was not written and nothing was
  */
-export const updateByIds = async (ids, updates, { lockMenuOf = null } = {}) => {
+export const updateByIds = async (ids, updates, { lockMenuOf = null, shownOnly = false, required = null } = {}) => {
   const setClauses = [];
   const values = [];
   let paramIndex = 1;
@@ -269,15 +282,16 @@ export const updateByIds = async (ids, updates, { lockMenuOf = null } = {}) => {
     }
   }
 
+  const where = `id = ANY($${paramIndex}::uuid[])${shownOnly ? ' AND is_hidden_by_admin = FALSE' : ''}`;
   // Nothing to write: the rows as they are, in the same form a write returns.
   const query = setClauses.length === 0
-    ? `SELECT ${WRITTEN_ROW_COLUMNS} FROM menu_items WHERE id = ANY($${paramIndex}::uuid[])`
+    ? `SELECT ${WRITTEN_ROW_COLUMNS} FROM menu_items WHERE ${where}`
     : `UPDATE menu_items
        SET ${[...setClauses, 'updated_at = NOW()'].join(', ')}
-       WHERE id = ANY($${paramIndex}::uuid[])
+       WHERE ${where}
        RETURNING ${WRITTEN_ROW_COLUMNS}`;
 
-  if (!lockMenuOf) {
+  if (!lockMenuOf && !required) {
     const result = await pool.query(query, [...values, ids]);
     return result.rows;
   }
@@ -286,8 +300,12 @@ export const updateByIds = async (ids, updates, { lockMenuOf = null } = {}) => {
   let broken = null;
   try {
     await client.query('BEGIN');
-    await lockEstablishmentMenu(client, lockMenuOf);
+    if (lockMenuOf) await lockEstablishmentMenu(client, lockMenuOf);
     const result = await client.query(query, [...values, ids]);
+    if (required && !result.rows.some((row) => row.id === required)) {
+      await client.query('ROLLBACK');
+      return null;
+    }
     await client.query('COMMIT');
     return result.rows;
   } catch (error) {

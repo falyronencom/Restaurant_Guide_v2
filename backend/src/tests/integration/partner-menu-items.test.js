@@ -14,7 +14,7 @@
 import request from 'supertest';
 import { randomUUID } from 'crypto';
 import app from '../../server.js';
-import { clearAllData, clearTableTree, query } from '../utils/database.js';
+import { clearAllData, clearTableTree, getClient, query } from '../utils/database.js';
 import { createUserAndGetTokens } from '../utils/auth.js';
 
 async function createPartner() {
@@ -670,6 +670,143 @@ describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several 
     )).rows).toEqual([]);
     expect(Number((await rowOf(photoLatte.id)).price_byn)).toBe(7);
     expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
+  });
+
+  // ── The row checked again under the menu's lock (thread Н8, finding 3) ──
+  // The edit looks at the row, then waits for the menu's lock while a re-read
+  // of a file or the moderator's «Скрыть» holds it. Until 23.11.2026 what
+  // happened to the row in between went unseen: its file read again — 200
+  // with no row in the answer, the edit written to the copies in the other
+  // files alone; the dish hidden — the edit written into the hidden row, and
+  // the moderator's reason sent to the partner. Now the write checks the row
+  // under the lock: gone or hidden — nothing is written, 404 with the text of
+  // a row not there.
+  describe('the row checked again under the menu\'s lock (thread Н8, finding 3)', () => {
+    const NOT_FOUND_TEXT = 'Позиция не найдена — возможно, меню распознано заново.';
+    const HIDE_REASON = 'Не блюдо — табачная продукция';
+
+    /**
+     * The edit, sent while the test holds the menu's lock; `scene` runs in
+     * the lock's transaction once the edit waits for it, and commits with it.
+     */
+    const editWhileMenuLocked = async ({ estId, token, rowId, body, scene }) => {
+      const holder = await getClient();
+      try {
+        await holder.query('BEGIN');
+        await holder.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`menu_items:${estId}`]);
+        const editing = request(app)
+          .patch(`/api/v1/partner/menu-items/${rowId}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send(body)
+          .then((res) => res);
+
+        // Precondition of the scene: the edit has looked at the row and waits for the lock.
+        let waiting = 0;
+        for (let i = 0; i < 250 && waiting === 0; i += 1) {
+          const activity = await query(
+            `SELECT count(*)::int AS n FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event = 'advisory'`,
+          );
+          waiting = activity.rows[0].n;
+          if (waiting === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(waiting).toBe(1);
+
+        await scene(holder);
+        await holder.query('COMMIT');
+        return await editing;
+      } finally {
+        await holder.query('ROLLBACK').catch(() => {});
+        holder.release();
+      }
+    };
+
+    test('the row\'s file read again meanwhile → 404 with the text of a row not there; the copy in the other file is not written either', async () => {
+      const partner = await createPartner();
+      const estId = await createEstablishmentFor(partner.user.id);
+      const photoId = await seedPhotoMedia(estId, 'menu');
+      const pdfId = await seedPdfMedia(estId);
+      const [photoLatte] = await seedMenu(estId, photoId, [['Латте', 7]]);
+      const [pdfLatte] = await seedMenu(estId, pdfId, [['Латте', 7]]);
+
+      let reRead;
+      const res = await editWhileMenuLocked({
+        estId,
+        token: partner.accessToken,
+        rowId: photoLatte.id,
+        body: { price_byn: 7.5 },
+        // The re-read of the photo replaces its rows: new ids, the model's price.
+        scene: async (holder) => {
+          await holder.query('DELETE FROM menu_items WHERE media_id = $1', [photoId]);
+          reRead = (await holder.query(
+            `INSERT INTO menu_items (establishment_id, media_id, item_name, price_byn, position)
+             VALUES ($1, $2, 'Латте', 7, 0) RETURNING id`,
+            [estId, photoId],
+          )).rows[0];
+        },
+      });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('MENU_ITEM_NOT_FOUND');
+      expect(res.body.message).toBe(NOT_FOUND_TEXT);
+      expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
+      expect(Number((await rowOf(reRead.id)).price_byn)).toBe(7);
+    });
+
+    test('the moderator hid the dish meanwhile → 404, the hidden row and its copy unchanged, the reason not in the answer', async () => {
+      const partner = await createPartner();
+      const estId = await createEstablishmentFor(partner.user.id);
+      const photoId = await seedPhotoMedia(estId, 'menu');
+      const pdfId = await seedPdfMedia(estId);
+      const [photoLatte] = await seedMenu(estId, photoId, [['Латте', 7]]);
+      const [pdfLatte] = await seedMenu(estId, pdfId, [['Латте', 7]]);
+
+      const res = await editWhileMenuLocked({
+        estId,
+        token: partner.accessToken,
+        rowId: photoLatte.id,
+        body: { item_name: 'Латте большой', price_byn: 7.5 },
+        scene: (holder) => holder.query(
+          'UPDATE menu_items SET is_hidden_by_admin = TRUE, hidden_reason = $2 WHERE id = $1',
+          [photoLatte.id, HIDE_REASON],
+        ),
+      });
+
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('MENU_ITEM_NOT_FOUND');
+      expect(res.body.message).toBe(NOT_FOUND_TEXT);
+      expect(JSON.stringify(res.body)).not.toContain(HIDE_REASON);
+      const hidden = await rowOf(photoLatte.id);
+      expect({ name: hidden.item_name, price: Number(hidden.price_byn), hidden: hidden.is_hidden_by_admin })
+        .toEqual({ name: 'Латте', price: 7, hidden: true });
+      const copy = await rowOf(pdfLatte.id);
+      expect({ name: copy.item_name, price: Number(copy.price_byn) }).toEqual({ name: 'Латте', price: 7 });
+    });
+
+    test('a copy hidden meanwhile → the row is edited, the hidden copy is left to the moderator', async () => {
+      const partner = await createPartner();
+      const estId = await createEstablishmentFor(partner.user.id);
+      const photoId = await seedPhotoMedia(estId, 'menu');
+      const pdfId = await seedPdfMedia(estId);
+      const [photoLatte] = await seedMenu(estId, photoId, [['Латте', 7]]);
+      const [pdfLatte] = await seedMenu(estId, pdfId, [['Латте', 7]]);
+
+      const res = await editWhileMenuLocked({
+        estId,
+        token: partner.accessToken,
+        rowId: photoLatte.id,
+        body: { price_byn: 7.5 },
+        scene: (holder) => holder.query(
+          'UPDATE menu_items SET is_hidden_by_admin = TRUE, hidden_reason = $2 WHERE id = $1',
+          [pdfLatte.id, HIDE_REASON],
+        ),
+      });
+
+      expect(res.status).toBe(200);
+      expect(Number(res.body.data.price_byn)).toBe(7.5);
+      expect(Number((await rowOf(photoLatte.id)).price_byn)).toBe(7.5);
+      expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
+    });
   });
 });
 

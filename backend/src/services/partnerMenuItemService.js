@@ -334,13 +334,24 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
 
   // The row and its copies change together or not at all (updateByIds): one
   // by one, a failure in the middle left the guest's line with two prices.
-  // Under the establishment's lock, in line with the moderator's «Скрыть».
+  // Under the establishment's lock, in line with the moderator's «Скрыть» and
+  // the write of a recognised file — and checked again there (thread Н8,
+  // finding 3, 23.11.2026): since the row was looked at above, a re-read of
+  // its file may have replaced it, or the moderator may have hidden it. Then
+  // nothing is written, the copies neither, and the partner hears what a row
+  // not there is answered. Until then such an edit answered 200 without the
+  // row, written to the copies alone, or wrote into the hidden row and sent
+  // the moderator's reason back. A copy hidden meanwhile is left out, as the
+  // copies hidden before.
   const written = await MenuItemModel.updateByIds(
     [rowId, ...copies.map(copy => copy.id)],
     filteredUpdates,
-    { lockMenuOf: existing.establishment_id },
+    { lockMenuOf: existing.establishment_id, shownOnly: true, required: rowId },
   );
-  const updated = written.find(row => row.id === rowId) ?? null;
+  if (written === null) {
+    throw new AppError(MENU_ITEM_REFUSALS.notFound, 404, 'MENU_ITEM_NOT_FOUND');
+  }
+  const updated = written.find(row => row.id === rowId);
 
   // Снятый флаг уменьшает hanging_flags — ту самую величину, что стоит бейджем
   // в рейле админки, строкой на дашборде и карточкой «Флаги без реакции». Правит
