@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ExternalLink } from 'lucide-react';
 
 import { buttonVariants } from '@/components/ui/button';
@@ -24,12 +24,21 @@ import { SessionExpired } from './SessionExpired';
  * «Посмотреть на сайте», «Приостановить показ» / «Возобновить показ») and the
  * row of its sections (part 1 of «Кабинет партнёра на сайте», directive 1.1).
  *
- * One load of the card per view of a section: the shell loads it through the
- * buffered load route every time the section's address changes, and renders
- * the section only with the load made for that address — so the card's form
- * is never seeded from a copy loaded before the partner went to «Меню» and
- * back. The section reads the card from the context (useCabinetCard); the
- * header keeps showing the card meanwhile.
+ * One load of the card per view of a section: every change of the address is
+ * a new view with its own number, the shell loads the card for it through the
+ * buffered load route, and renders the section only with the load made for
+ * that view. «Карточка» → «Меню» → «Карточка» before the load of «Меню»
+ * landed is a third view: the load of the first «Карточка» — the card as it
+ * was before the partner's saves there — is not fresh for it. Seeded from it,
+ * the form would save itself 800 ms later and put the old card back, the
+ * photos added meanwhile deleted (the PUT is the card's whole desired state).
+ * For the same reason a view's load starts only after the saves begun before
+ * it have landed (the form saves as it closes): a load that overtook one
+ * would read the card as it was before it. The section reads the card from
+ * the context (useCabinetCard); the header keeps showing the card meanwhile.
+ *
+ * A pause or a resume made while a load is under way stays: the load read the
+ * card before it, its status is older than the header's.
  *
  * An expired session shows «Сессия истекла.» with «Войти снова», as the
  * cabinet's list does — no redirect of its own, no markAnonymous() (the
@@ -41,11 +50,15 @@ export type CabinetCardState =
   | { phase: 'error'; code: string }
   | { phase: 'ready'; card: PartnerEstablishmentDetail; publicPath: string | null };
 
+type StatusChange = { publicPath?: string | null; notes?: ModerationNotes };
+
 export type CabinetCard = {
   id: string;
   state: CabinetCardState;
   /** The card's status changed here (a pause or a resume). */
-  setStatus: (status: EstablishmentStatus, change?: { publicPath?: string | null; notes?: ModerationNotes }) => void;
+  setStatus: (status: EstablishmentStatus, change?: StatusChange) => void;
+  /** A save of the section's form began: the next view's load waits for it to land. */
+  trackSave: (save: Promise<unknown>) => void;
 };
 
 const CabinetCardContext = createContext<CabinetCard | null>(null);
@@ -55,61 +68,90 @@ export function useCabinetCard(): CabinetCard | null {
   return useContext(CabinetCardContext);
 }
 
-type Loaded = { pathname: string; state: CabinetCardState };
+type Loaded = { view: number; state: CabinetCardState };
+
+/** The card with a status changed here. */
+function withStatus(state: CabinetCardState, status: EstablishmentStatus, change: StatusChange): CabinetCardState {
+  if (state.phase !== 'ready') return state;
+  const { card } = state;
+  return {
+    phase: 'ready',
+    card: {
+      ...card,
+      status,
+      moderation_notes: change.notes !== undefined ? change.notes : card.moderation_notes,
+    },
+    publicPath: status === 'active' ? (change.publicPath ?? state.publicPath) : null,
+  };
+}
 
 export function CardShell({ id, children }: { id: string; children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
+  // The view of a section: a new number with every change of the address.
+  const viewKey = `${id}\n${pathname}`;
+  const [view, setView] = useState({ key: viewKey, n: 0 });
+  if (view.key !== viewKey) setView({ key: viewKey, n: view.n + 1 });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  // The form's saves not landed yet.
+  const saves = useRef(new Set<Promise<unknown>>());
+  // The pause or resume made here last, and how many were made.
+  const statusChanges = useRef<{ count: number; last: { status: EstablishmentStatus; change: StatusChange } | null }>(
+    { count: 0, last: null },
+  );
+
+  const trackSave = useCallback<CabinetCard['trackSave']>((save) => {
+    saves.current.add(save);
+    const landed = () => {
+      saves.current.delete(save);
+    };
+    save.then(landed, landed);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    void loadEstablishmentForEdit(id)
-      .then((r) => {
-        if (cancelled) return;
-        setLoaded({
-          pathname,
-          state: r.ok
+    const forView = view.n;
+    const changesBefore = statusChanges.current.count;
+    const apply = (state: CabinetCardState) => {
+      if (cancelled) return;
+      // A pause or a resume made while this load was under way is newer than it.
+      const { count, last } = statusChanges.current;
+      setLoaded({
+        view: forView,
+        state: count !== changesBefore && last ? withStatus(state, last.status, last.change) : state,
+      });
+    };
+    const load = () =>
+      loadEstablishmentForEdit(id).then((r) =>
+        apply(
+          r.ok
             ? { phase: 'ready', card: r.establishment, publicPath: r.publicPath ?? null }
             : { phase: 'error', code: r.code },
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setLoaded({ pathname, state: { phase: 'error', code: 'NETWORK' } });
-      });
+        ),
+      );
+    const pending = [...saves.current];
+    void (pending.length
+      ? Promise.allSettled(pending).then(() => (cancelled ? undefined : load()))
+      : load()
+    ).catch(() => apply({ phase: 'error', code: 'NETWORK' }));
     return () => {
       cancelled = true;
     };
-  }, [id, pathname]);
+  }, [id, view.n]);
 
   const setStatus = useCallback<CabinetCard['setStatus']>((status, change = {}) => {
-    setLoaded((prev) => {
-      if (!prev || prev.state.phase !== 'ready') return prev;
-      const { card } = prev.state;
-      const publicPath =
-        status === 'active'
-          ? (change.publicPath ?? prev.state.publicPath)
-          : null;
-      return {
-        ...prev,
-        state: {
-          phase: 'ready',
-          card: {
-            ...card,
-            status,
-            moderation_notes: change.notes !== undefined ? change.notes : card.moderation_notes,
-          },
-          publicPath,
-        },
-      };
-    });
+    statusChanges.current = { count: statusChanges.current.count + 1, last: { status, change } };
+    setLoaded((prev) => (prev ? { ...prev, state: withStatus(prev.state, status, change) } : prev));
   }, []);
 
-  // The section sees only the load made for its own address.
+  // The section sees only the load made for its own view.
   const fresh = useMemo<CabinetCardState>(
-    () => (loaded && loaded.pathname === pathname ? loaded.state : { phase: 'loading' }),
-    [loaded, pathname],
+    () => (loaded && loaded.view === view.n ? loaded.state : { phase: 'loading' }),
+    [loaded, view.n],
   );
-  const value = useMemo<CabinetCard>(() => ({ id, state: fresh, setStatus }), [id, fresh, setStatus]);
+  const value = useMemo<CabinetCard>(
+    () => ({ id, state: fresh, setStatus, trackSave }),
+    [id, fresh, setStatus, trackSave],
+  );
 
   // The header shows the card it has, fresh or not; the first load shows a skeleton.
   const header = loaded?.state.phase === 'ready' ? loaded.state : null;

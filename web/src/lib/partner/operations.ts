@@ -238,12 +238,14 @@ export async function createEstablishmentAction(
  * page is dropped after the save (lib/partner/card-page.ts) — at its address
  * from the save's answer, and at the previous one when the save moved it
  * (`previous`: the form's last accepted city and first category, mapped to an
- * address of this card's own slug only).
+ * address of this card's own slug only). `drop: false` — the form sent only
+ * what the server holds (its autosave as it opens): no drop.
  */
 export async function updateEstablishmentAction(
   id: string,
   payload: UpdateEstablishmentPayload,
   previous?: PreviousAddress | null,
+  { drop = true }: { drop?: boolean } = {},
 ): Promise<WriteResult> {
   try {
     const result = (await updateEstablishment(id, payload)) as CardEcho;
@@ -251,7 +253,7 @@ export async function updateEstablishmentAction(
       previous && (previous.city || previous.category)
         ? { city: previous.city ?? null, categories: previous.category ? [previous.category] : [] }
         : null;
-    const page = await pageAfterWrite(id, result, { previous: before });
+    const page = drop ? await pageAfterWrite(id, result, { previous: before }) : undefined;
     return {
       ok: true,
       status: result.status,

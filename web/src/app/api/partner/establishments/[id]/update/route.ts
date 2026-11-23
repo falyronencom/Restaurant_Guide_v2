@@ -41,10 +41,11 @@ export async function POST(
   const query = searchParamsOf(request);
   const city = query.get('prevCity');
   const category = query.get('prevCategory');
+  // `drop=0` — the form sends only what the server holds (its autosave as it
+  // opens): the page is not dropped. It can only spare a drop, never add one.
+  const drop = query.get('drop') !== '0';
 
   return NextResponse.json(
-    city || category
-      ? await updateEstablishmentAction(id, payload, { city, category })
-      : await updateEstablishmentAction(id, payload),
+    await updateEstablishmentAction(id, payload, city || category ? { city, category } : null, { drop }),
   );
 }

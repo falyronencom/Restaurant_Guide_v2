@@ -22,8 +22,9 @@ import { EstablishmentWizard } from './EstablishmentWizard';
  * suspend_reason) → read-only until the partner resumes it from the wizard.
  *
  * Inside the card's header (CardShell, part 1 of «Кабинет партнёра на сайте»)
- * the card is the header's own load — one load per view of the section — and
- * a pause or a resume in the header switches the form at once.
+ * the card is the header's own load — one load per view of the section, made
+ * after the form's saves of the previous view landed — and a pause or a
+ * resume in the header switches the form at once.
  */
 export function EditWizardLoader({ id }: { id: string }) {
   const shell = useCabinetCard();
@@ -46,6 +47,7 @@ function ShellEditWizard({ id, shell }: { id: string; shell: CabinetCard }) {
       status={card.status}
       readOnly={card.status === 'suspended' && !isAdminSuspended(card.moderation_notes)}
       onResumed={(resumed) => shell.setStatus('active', { publicPath: resumed.publicPath })}
+      onSave={shell.trackSave}
     />
   );
 }

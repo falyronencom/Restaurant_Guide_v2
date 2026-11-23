@@ -68,16 +68,20 @@ export function createEstablishmentAction(
  * `previous` — the form's last accepted city and first category: when the
  * save moves the card to another address, the server drops the page at the
  * old one too (it builds that address itself, of this card's own slug). In
- * the query, not the body: the body goes to the API verbatim.
+ * the query, not the body: the body goes to the API verbatim. `drop: false` —
+ * the save sends only what the server holds already (the autosave as the form
+ * opens): the page is not dropped for it. It can only spare a drop.
  */
 export function updateEstablishmentAction(
   id: string,
   payload: UpdateEstablishmentPayload,
   previous?: { city?: string | null; category?: string | null } | null,
+  { drop = true }: { drop?: boolean } = {},
 ): Promise<WriteResult> {
   const query = new URLSearchParams();
   if (previous?.city) query.set('prevCity', previous.city);
   if (previous?.category) query.set('prevCategory', previous.category);
+  if (!drop) query.set('drop', '0');
   const qs = query.toString();
   return postPartner<WriteResult>(
     `${BASE}/${encodeURIComponent(id)}/update${qs ? `?${qs}` : ''}`,

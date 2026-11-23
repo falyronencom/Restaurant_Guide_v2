@@ -251,7 +251,7 @@ describe('happy path — handlers forward to operations and return the envelope'
     const payload = { name: 'X' };
     const res = await updatePost(makeRequest(SAME, payload), ctx('e9'));
     expect(await res.json()).toEqual({ ok: true, status: 'draft' });
-    expect(updateEstablishmentAction).toHaveBeenCalledWith('e9', payload);
+    expect(updateEstablishmentAction).toHaveBeenCalledWith('e9', payload, null, { drop: true });
   });
 
   it('submit forwards the [id] param', async () => {
@@ -293,7 +293,16 @@ describe('happy path — handlers forward to operations and return the envelope'
     const payload = { name: 'X' };
     const url = `http://localhost:3000/api/partner/establishments/e9/update?prevCity=${encodeURIComponent('Минск')}&prevCategory=${encodeURIComponent('Кафе')}`;
     await updatePost(makeRequest(SAME, payload, url), ctx('e9'));
-    expect(updateEstablishmentAction).toHaveBeenCalledWith('e9', payload, { city: 'Минск', category: 'Кафе' });
+    expect(updateEstablishmentAction).toHaveBeenCalledWith('e9', payload, { city: 'Минск', category: 'Кафе' }, { drop: true });
+  });
+
+  it('update with drop=0 (the form sent nothing new) passes «no drop» on; any other value drops', async () => {
+    (updateEstablishmentAction as jest.Mock).mockResolvedValue({ ok: true, status: 'active' });
+    const payload = { name: 'X' };
+    await updatePost(makeRequest(SAME, payload, 'http://localhost:3000/api/partner/establishments/e9/update?drop=0'), ctx('e9'));
+    expect(updateEstablishmentAction).toHaveBeenLastCalledWith('e9', payload, null, { drop: false });
+    await updatePost(makeRequest(SAME, payload, 'http://localhost:3000/api/partner/establishments/e9/update?drop=no'), ctx('e9'));
+    expect(updateEstablishmentAction).toHaveBeenLastCalledWith('e9', payload, null, { drop: true });
   });
 
   it('menu-items forwards the [id] param', async () => {

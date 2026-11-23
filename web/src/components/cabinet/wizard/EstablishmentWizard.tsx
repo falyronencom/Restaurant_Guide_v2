@@ -84,6 +84,8 @@ type Props =
       onResumed?: (resumed: { publicPath?: string }) => void;
       /** Inside the card's header (components/cabinet/card/CardShell): no back link and title of its own. */
       embedded?: boolean;
+      /** A save began (the card's header waits for it before its next load). */
+      onSave?: (save: Promise<void>) => void;
     };
 
 type KeptDraft = { form?: Partial<WizardFormState>; draftId?: string | null };
@@ -95,6 +97,17 @@ const AUTOSAVE_MS = 800;
  * the ownership check (403 without a role — deleted, or another account's).
  * The role gate's 403 (details.your_role — a stale token) is not «gone».
  */
+/**
+ * The edit's PUT would send only what the server holds: the same body as the
+ * form the server last accepted would make.
+ */
+function sendsNothingNew(
+  payload: ReturnType<typeof toUpdatePayload>,
+  saved: WizardFormState | null,
+): boolean {
+  return saved !== null && JSON.stringify(payload) === JSON.stringify(toUpdatePayload(saved, saved));
+}
+
 function draftGone(r: Refusal): boolean {
   return (
     r.code === 'ESTABLISHMENT_NOT_FOUND' ||
@@ -110,6 +123,7 @@ export function EstablishmentWizard(props: Props) {
     props.mode === 'edit' ? props.establishmentId : undefined;
   const onResumed = props.mode === 'edit' ? props.onResumed : undefined;
   const embedded = props.mode === 'edit' && props.embedded === true;
+  const onSave = props.mode === 'edit' ? props.onSave : undefined;
 
   const router = useRouter();
   const { applySession, user, status } = useAuth();
@@ -164,6 +178,11 @@ export function EstablishmentWizard(props: Props) {
   useEffect(() => {
     formRef.current = form;
   }, [form]);
+
+  const onSaveRef = useRef(onSave);
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
 
   const persistLocal = useCallback(
     (f: WizardFormState, id: string | null) => {
@@ -291,14 +310,19 @@ export function EstablishmentWizard(props: Props) {
           setSaveState('saving');
           setError(null);
           // Edit: the address the card had before this save (its page is
-          // dropped there too if the save moves it — lib/partner/card-page).
+          // dropped there too if the save moves it — lib/partner/card-page);
+          // a save that sends only what the server holds (the autosave as the
+          // form opens, or after a resume) does not drop the page.
           const saved = savedRef.current;
+          const payload = toUpdatePayload(f, saved);
           const r = isEdit
-            ? await updateEstablishmentAction(id, toUpdatePayload(f, saved), {
-                city: saved?.city ?? null,
-                category: saved?.categories[0] ?? null,
-              })
-            : await updateEstablishmentAction(id, toUpdatePayload(f, saved));
+            ? await updateEstablishmentAction(
+                id,
+                payload,
+                { city: saved?.city ?? null, category: saved?.categories[0] ?? null },
+                { drop: !sendsNothingNew(payload, saved) },
+              )
+            : await updateEstablishmentAction(id, payload);
           // The form was dropped meanwhile («Начать новое заведение»): this
           // result is not the new form's; an edit of the new form made during
           // the wait is sent by the next turn of the loop.
@@ -349,6 +373,7 @@ export function EstablishmentWizard(props: Props) {
       } while (pendingRef.current && !submittingRef.current);
     })();
     flight.current = run;
+    onSaveRef.current?.(run);
     try {
       await run;
     } finally {

@@ -240,3 +240,153 @@ describe('the pause from the header', () => {
     expect(screen.getByRole('link', { name: /Посмотреть на сайте/ })).toHaveAttribute('href', '/minsk/cafes/kafe-u-mosta');
   });
 });
+
+/** A promise the test resolves by hand — a load or a save still under way. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+/** Let the chains of promises run out (a load waits for a save, then loads). */
+async function settle() {
+  await act(async () => {
+    for (let i = 0; i < 12; i += 1) await Promise.resolve();
+  });
+}
+
+/** The partner goes to a section of the card (the shell stays, the section's page changes). */
+function go(view: ReturnType<typeof render>, section: 'edit' | 'menu') {
+  mockPathname.mockReturnValue(`/cabinet/e1/${section}`);
+  view.rerender(
+    <CardShell id="e1">
+      {section === 'edit' ? <EditWizardLoader id="e1" /> : <p>Меню карточки</p>}
+    </CardShell>,
+  );
+}
+
+const PUBLIC_PATH = '/minsk/cafes/kafe-u-mosta';
+const OLD_PHOTO = 'https://res.cloudinary.com/davrzdre8/image/upload/establishments/old.jpg';
+const NEW_PHOTO = 'https://res.cloudinary.com/davrzdre8/image/upload/establishments/new.jpg';
+
+describe('the form is seeded only from the load of its own view (Phase 4.5, HIGH 1)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  async function tick(ms: number) {
+    await act(async () => {
+      jest.advanceTimersByTime(ms);
+      for (let i = 0; i < 12; i += 1) await Promise.resolve();
+    });
+  }
+
+  it('«Карточка» → «Меню» (its load still under way) → «Карточка»: the form takes the third load; its autosave carries the card as the server holds it, the new photo kept', async () => {
+    const menuLoad = deferred<unknown>();
+    loadMock
+      // The first «Карточка»: the card before the partner's edit.
+      .mockResolvedValueOnce({ ok: true, establishment: detail({ interior_photos: [OLD_PHOTO] }), publicPath: PUBLIC_PATH })
+      // «Меню»: still under way when the partner comes back.
+      .mockReturnValueOnce(menuLoad.promise)
+      // The second «Карточка»: the card as the server holds it after the edit
+      // (and a photo the partner added in the first view).
+      .mockResolvedValueOnce({
+        ok: true,
+        establishment: detail({ description: 'Правка партнёра', interior_photos: [OLD_PHOTO, NEW_PHOTO] }),
+        publicPath: PUBLIC_PATH,
+      });
+    const view = renderCard();
+    await settle();
+    expect(screen.getByLabelText('Описание')).toHaveValue('Уютное кафе');
+
+    // The edit; leaving within the debounce sends it (С2), the save lands.
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Правка партнёра' } });
+    go(view, 'menu');
+    await settle();
+    go(view, 'edit');
+    await settle();
+
+    expect(loadMock).toHaveBeenCalledTimes(3);
+    expect(screen.getByLabelText('Описание')).toHaveValue('Правка партнёра');
+
+    updateMock.mockClear();
+    await tick(800); // the autosave of the form as it opens
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    const [, payload] = updateMock.mock.calls[0];
+    expect(payload.description).toBe('Правка партнёра');
+    expect(payload.interior_photos).toEqual([OLD_PHOTO, NEW_PHOTO]);
+
+    // The «Меню» load landing late seeds nothing.
+    await act(async () => {
+      menuLoad.resolve({ ok: true, establishment: detail(), publicPath: PUBLIC_PATH });
+    });
+    await settle();
+    expect(screen.getByLabelText('Описание')).toHaveValue('Правка партнёра');
+  });
+
+  it('a view\'s load waits for the form\'s save begun before it: the load does not overtake the save', async () => {
+    const save = deferred<unknown>();
+    loadMock.mockResolvedValue({ ok: true, establishment: detail(), publicPath: PUBLIC_PATH });
+    const view = renderCard();
+    await settle();
+
+    updateMock.mockReturnValueOnce(save.promise);
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Правка партнёра' } });
+    go(view, 'menu'); // within the debounce: the edit is sent as the form closes
+    await settle();
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updateMock.mock.calls[0][1].description).toBe('Правка партнёра');
+    expect(loadMock).toHaveBeenCalledTimes(1); // «Меню» waits for the save
+
+    go(view, 'edit');
+    await settle();
+    expect(loadMock).toHaveBeenCalledTimes(1); // and so does «Карточка»
+    expect(screen.queryByLabelText('Описание')).not.toBeInTheDocument();
+
+    loadMock.mockResolvedValue({
+      ok: true,
+      establishment: detail({ description: 'Правка партнёра' }),
+      publicPath: PUBLIC_PATH,
+    });
+    await act(async () => {
+      save.resolve({ ok: true });
+    });
+    await settle();
+    expect(loadMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText('Описание')).toHaveValue('Правка партнёра');
+  });
+});
+
+describe('the header\'s status and a load under way (Phase 4.5, LOW 7)', () => {
+  it('a pause made while «Меню» loads stays in the header when that load — read before the pause — lands', async () => {
+    const menuLoad = deferred<unknown>();
+    loadMock
+      .mockResolvedValueOnce({ ok: true, establishment: detail(), publicPath: PUBLIC_PATH })
+      .mockReturnValueOnce(menuLoad.promise);
+    suspendMock.mockResolvedValue({ ok: true, status: 'suspended' });
+    const view = renderCard();
+    await settle();
+    go(view, 'menu');
+    await settle();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Приостановить показ' }));
+    await settle();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Приостановить' }));
+    await settle();
+    expect(screen.getByText('Приостановлено')).toBeInTheDocument();
+
+    await act(async () => {
+      menuLoad.resolve({ ok: true, establishment: detail(), publicPath: PUBLIC_PATH });
+    });
+    await settle();
+    expect(screen.getByText('Меню карточки')).toBeInTheDocument();
+    expect(screen.getByText('Приостановлено')).toBeInTheDocument();
+    expect(screen.queryByText('Опубликовано')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Посмотреть на сайте/ })).not.toBeInTheDocument();
+  });
+});

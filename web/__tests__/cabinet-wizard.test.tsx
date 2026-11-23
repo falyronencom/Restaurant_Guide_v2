@@ -593,7 +593,32 @@ describe('часть 1 «Кабинета партнёра на сайте»: м
     fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Новое описание' } });
     await tick(800);
 
-    expect(updateMock.mock.calls.at(-1)).toEqual(['e1', expect.anything(), { city: 'Минск', category: 'Кафе' }]);
+    expect(updateMock.mock.calls.at(-1)).toEqual([
+      'e1',
+      expect.anything(),
+      { city: 'Минск', category: 'Кафе' },
+      { drop: true },
+    ]);
+  });
+
+  it('сохранение, которое шлёт только то, что у сервера уже есть, страницу не сбрасывает (Phase 4.5, LOW 4)', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    renderEdit();
+
+    await tick(800); // the opening save: the form as loaded
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(updateMock.mock.calls[0][3]).toEqual({ drop: false });
+
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Новое описание' } });
+    await tick(800);
+    expect(updateMock).toHaveBeenCalledTimes(2);
+    expect(updateMock.mock.calls[1][3]).toEqual({ drop: true });
+
+    // Back to the text the server held before: new to the server again.
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: card().description } });
+    await tick(800);
+    expect(updateMock).toHaveBeenCalledTimes(3);
+    expect(updateMock.mock.calls[2][3]).toEqual({ drop: true });
   });
 
   it('отложенный сброс страницы отдан планировщику; создание черновика подсказку не шлёт', async () => {
