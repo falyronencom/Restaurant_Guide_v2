@@ -42,14 +42,39 @@ export type SlugVerdict =
   | { kind: 'not-found' }
   | { kind: 'redirect'; path: string };
 
-/** slug → the card's own address, from the catalogue. */
-let list: { paths: Map<string, string>; at: number } | null = null;
-let lastReadAt = 0;
-let reading: Promise<void> | null = null;
-let misses = { start: 0, count: 0 };
+/**
+ * The list and the allowance live on globalThis, not in this module. The
+ * site's server bundles the card page's render and the cabinet's Route
+ * Handlers apart, each with its own copy of this module: a list kept in the
+ * module was the page's alone, and the cabinet's noteCardAddress corrected a
+ * copy no page read (seen on the stand, 23.11.2026 — a moved card's new and
+ * old address kept sending the guest to each other). One process, one list.
+ */
+type KnownSlugs = {
+  /** slug → the card's own address, from the catalogue. */
+  list: { paths: Map<string, string>; at: number } | null;
+  lastReadAt: number;
+  reading: Promise<void> | null;
+  /** The cabinet's notes made while a read of the list is under way: laid over what it read. */
+  notedDuringRead: Map<string, string> | null;
+  misses: { start: number; count: number };
+};
+
+const STATE = Symbol.for('nirivio.known-slugs');
+
+function fresh(): KnownSlugs {
+  return { list: null, lastReadAt: 0, reading: null, notedDuringRead: null, misses: { start: 0, count: 0 } };
+}
+
+function state(): KnownSlugs {
+  const store = globalThis as unknown as Record<symbol, KnownSlugs | undefined>;
+  return (store[STATE] ??= fresh());
+}
 
 async function readList(): Promise<void> {
-  lastReadAt = Date.now();
+  const s = state();
+  s.lastReadAt = Date.now();
+  s.notedDuringRead = new Map();
   try {
     const paths = new Map<string, string>();
     for (let page = 1; page <= MAX_PAGES; page += 1) {
@@ -57,22 +82,31 @@ async function readList(): Promise<void> {
       for (const est of establishments) paths.set(est.slug, establishmentAddress(est).path);
       if (!pagination.hasNext) break;
     }
-    list = { paths, at: Date.now() };
+    for (const [slug, path] of s.notedDuringRead ?? []) paths.set(slug, path);
+    s.list = { paths, at: Date.now() };
   } catch {
     // Keep the list we had; without one, every well-formed slug is asked.
+  } finally {
+    s.notedDuringRead = null;
   }
 }
 
 function readListOnce(): Promise<void> {
-  if (!reading) reading = readList().finally(() => { reading = null; });
-  return reading;
+  const s = state();
+  if (!s.reading) {
+    s.reading = readList().finally(() => {
+      s.reading = null;
+    });
+  }
+  return s.reading;
 }
 
 function takeMiss(): boolean {
+  const s = state();
   const now = Date.now();
-  if (now - misses.start >= HOUR_MS) misses = { start: now, count: 0 };
-  misses.count += 1;
-  return misses.count <= MISSES_PER_HOUR;
+  if (now - s.misses.start >= HOUR_MS) s.misses = { start: now, count: 0 };
+  s.misses.count += 1;
+  return s.misses.count <= MISSES_PER_HOUR;
 }
 
 export function hasSlugForm(slug: string): boolean {
@@ -86,24 +120,40 @@ export function hasSlugForm(slug: string): boolean {
  */
 export async function slugVerdict(slug: string, path: string): Promise<SlugVerdict> {
   if (!hasSlugForm(slug)) return { kind: 'not-found' };
+  const s = state();
   const now = Date.now();
-  if (!list || now - list.at >= LIST_TTL_MS) {
-    if (now - lastReadAt >= REFRESH_MIN_MS) await readListOnce();
+  if (!s.list || now - s.list.at >= LIST_TTL_MS) {
+    if (now - s.lastReadAt >= REFRESH_MIN_MS) await readListOnce();
   }
+  const list = s.list;
   if (!list) return { kind: 'ask' };
-  if (!list.paths.has(slug) && Date.now() - lastReadAt >= REFRESH_MIN_MS) {
+  if (!list.paths.has(slug) && Date.now() - s.lastReadAt >= REFRESH_MIN_MS) {
     await readListOnce();
   }
-  const own = list.paths.get(slug);
+  const own = (s.list ?? list).paths.get(slug);
   if (own === path) return { kind: 'ask' };
   if (takeMiss()) return { kind: 'ask' };
   return own ? { kind: 'redirect', path: own } : { kind: 'not-found' };
 }
 
+/**
+ * A card's own address as the API has just answered it to the card's partner
+ * (lib/partner/card-page, after a write from the cabinet): the list learns it
+ * at once. Without this, a card whose save moved it (another city, another
+ * first category) kept its old address here until the list was read anew:
+ * once the hour's asks were spent the new address redirected to the old one,
+ * and the old one — dropped by the save — to the new one. No list yet — no
+ * list to correct: every well-formed slug is asked about.
+ */
+export function noteCardAddress(slug: string, path: string): void {
+  const s = state();
+  if (!hasSlugForm(slug)) return;
+  s.notedDuringRead?.set(slug, path);
+  s.list?.paths.set(slug, path);
+}
+
 /** Test-only: forget the list and the allowance. */
 export function _resetForTests(): void {
-  list = null;
-  lastReadAt = 0;
-  reading = null;
-  misses = { start: 0, count: 0 };
+  const store = globalThis as unknown as Record<symbol, KnownSlugs | undefined>;
+  store[STATE] = fresh();
 }

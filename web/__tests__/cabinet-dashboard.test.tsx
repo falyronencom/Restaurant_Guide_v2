@@ -21,6 +21,7 @@ import {
   deleteEstablishmentAction,
   loadEstablishments,
   resumeEstablishmentAction,
+  suspendEstablishmentAction,
 } from '@/lib/partner/client';
 import { forgetWizardDraft } from '@/lib/partner/draft-storage';
 
@@ -34,11 +35,13 @@ jest.mock('@/lib/partner/client', () => ({
   loadEstablishments: jest.fn(),
   resumeEstablishmentAction: jest.fn(),
   deleteEstablishmentAction: jest.fn(),
+  suspendEstablishmentAction: jest.fn(),
 }));
 
 const loadMock = loadEstablishments as jest.Mock;
 const resumeMock = resumeEstablishmentAction as jest.Mock;
 const deleteMock = deleteEstablishmentAction as jest.Mock;
+const suspendMock = suspendEstablishmentAction as jest.Mock;
 
 const card = (
   status: EstablishmentStatus,
@@ -141,6 +144,46 @@ describe('С3 — «Возобновить показ» в списке', () => 
     expect(resumeMock).toHaveBeenCalledWith('est-1');
     expect(screen.queryByRole('button', { name: 'Возобновить показ' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /Опубликовано/ })).toHaveTextContent('1');
+  });
+});
+
+describe('«Приостановить показ» в списке (часть 1 «Кабинета партнёра на сайте»)', () => {
+  it('есть только у опубликованной карточки', () => {
+    const active = render(<EstablishmentVignette establishment={card('active')} onDeleted={() => {}} onSuspended={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Приостановить показ' })).toBeInTheDocument();
+    active.unmount();
+
+    for (const status of ['draft', 'pending', 'rejected', 'suspended'] as const) {
+      const view = render(<EstablishmentVignette establishment={card(status)} onDeleted={() => {}} onSuspended={() => {}} />);
+      expect(screen.queryByRole('button', { name: 'Приостановить показ' })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('за окном подтверждения; после паузы карточка переезжает в «Приостановлено» с «Возобновить показ», даже с прежней пометкой модератора', async () => {
+    // A leftover of an earlier moderator's suspension on a published card: the
+    // server drops it on the partner's pause, and so does the list.
+    loadMock.mockResolvedValue({ ok: true, establishments: [card('active', { suspend_reason: 'Старое' })] });
+    suspendMock.mockResolvedValue({ ok: true, status: 'suspended' });
+    render(<CabinetDashboard />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Приостановить показ' }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText('Приостановить показ?')).toBeInTheDocument();
+    expect(suspendMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Приостановить' }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(suspendMock).toHaveBeenCalledWith('est-1');
+    expect(screen.getByRole('tab', { name: /Приостановлено/ })).toHaveTextContent('1');
+    expect(screen.getByRole('button', { name: 'Возобновить показ' })).toBeInTheDocument();
+    expect(screen.queryByText('Приостановлено: Старое')).not.toBeInTheDocument();
   });
 });
 
