@@ -94,8 +94,10 @@ beforeAll(async () => {
   otherPartner = await createUserAndGetTokens({
     email: 'delete-other-partner@test.com', phone: phone(), password: 'Partner123!@#', name: 'Чужой партнёр', role: 'partner',
   });
+  // The fan writes a review — a new one is taken only from a confirmed e-mail.
   fan = await createUserAndGetTokens({
     email: 'delete-fan-user@test.com', phone: phone(), password: 'User123!@#', name: 'Гость', role: 'user',
+    emailVerified: true,
   });
   admin = await createAdminAndGetToken();
 });

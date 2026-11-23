@@ -43,7 +43,8 @@ let establishmentId;
 
 beforeAll(async () => {
   await clearAllData();
-  userToken = (await createUserAndGetTokens(testUsers.regularUser)).accessToken;
+  // The author writes reviews — a new one is taken only from a confirmed e-mail.
+  userToken = (await createUserAndGetTokens({ ...testUsers.regularUser, emailVerified: true })).accessToken;
   const partner = await createUserAndGetTokens(testUsers.partner);
   partnerToken = partner.accessToken;
   const created = await query(

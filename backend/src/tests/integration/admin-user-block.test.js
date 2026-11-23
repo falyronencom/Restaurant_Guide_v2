@@ -44,11 +44,15 @@ const asViewer = (method, url, body) => request(app)[method](`${ADMIN}${url}`)
   .set('Authorization', `Bearer ${viewer.accessToken}`)
   .send(body);
 
-/** Человек, вошедший по паролю: с живыми токенами, как из приложения. */
-const person = async ({ name = 'Иван Тестов', phone = null, role = 'user' } = {}) => {
+/**
+ * Человек, вошедший по паролю: с живыми токенами, как из приложения. Почта не
+ * подтверждена, если не попросить: новый отзыв принимается только с
+ * подтверждённой (reviewService.createReview, EMAIL_NOT_VERIFIED).
+ */
+const person = async ({ name = 'Иван Тестов', phone = null, role = 'user', emailVerified = false } = {}) => {
   const email = `person-${randomUUID()}@test.com`;
   const created = await createUserAndGetTokens({
-    email, phone, password: PASSWORD, name, role, authMethod: 'email',
+    email, phone, password: PASSWORD, name, role, authMethod: 'email', emailVerified,
   });
   return { ...created, email, id: created.user.id };
 };
@@ -368,7 +372,8 @@ describe('POST /admin/users/:id/block и /unblock', () => {
   });
 
   test('отзыв, отправленный в момент блокировки, не остаётся видимым', async () => {
-    const racer = await person({ name: 'Отзыв В Полёте' });
+    // Почта подтверждена: иначе отзыв отказан раньше, чем встанет за блокировкой.
+    const racer = await person({ name: 'Отзыв В Полёте', emailVerified: true });
     const holder = await getClient();
     let outcome;
     try {

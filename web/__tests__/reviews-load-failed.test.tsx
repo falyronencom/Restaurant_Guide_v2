@@ -7,6 +7,10 @@
  * they do not — and never «Пока нет отзывов»: whether there are any is exactly
  * what it does not know. The action and the carousel are mocked (the
  * carousel's own rendering lives in review-carousel.test.tsx).
+ *
+ * «Отзыв без текста» (11.2026): the action brings only the first reviews with
+ * text, so the count the carousel shows is the card's review_count, handed
+ * down by the page as `totalCount` — never the number of loaded reviews.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -18,12 +22,14 @@ jest.mock('@/lib/reviews/actions', () => ({
 jest.mock('@/components/establishment/ReviewCarousel', () => ({
   ReviewCarousel: ({
     reviews,
+    authorOnly,
     totalCount,
   }: {
     reviews: unknown[];
+    authorOnly?: unknown[];
     totalCount: number;
   }) => (
-    <div data-testid="carousel">
+    <div data-testid="carousel" data-author-only={authorOnly?.length ?? 'none'}>
       {reviews.length}/{totalCount}
     </div>
   ),
@@ -33,6 +39,7 @@ import { ReviewsLoadFailed } from '@/components/establishment/ReviewsLoadFailed'
 
 const PROPS = {
   slug: 'kafe-1',
+  totalCount: 9,
   averageRating: 4.5,
   reviewsHref: '/minsk/restaurants/kafe-1/reviews',
   establishmentId: 'est-1',
@@ -47,11 +54,15 @@ beforeEach(() => {
 });
 
 it('loads the reviews itself and then shows the regular carousel', async () => {
-  mockReload.mockResolvedValue({ ok: true, reviews: [REVIEW], total: 9 });
+  // One review with text loaded, nine on the card: '1/9'; one author-only
+  // review of one rating passed on (Trunk's decision 22.11.2026).
+  mockReload.mockResolvedValue({ ok: true, reviews: [REVIEW], authorOnly: [{ id: 'r9' }] });
   render(<ReviewsLoadFailed {...PROPS} />);
 
   expect(screen.getByText('Загружаем отзывы…')).toBeInTheDocument();
-  expect(await screen.findByTestId('carousel')).toHaveTextContent('1/9');
+  const carousel = await screen.findByTestId('carousel');
+  expect(carousel).toHaveTextContent('1/9');
+  expect(carousel).toHaveAttribute('data-author-only', '1');
   expect(mockReload).toHaveBeenCalledWith({
     slug: 'kafe-1',
     detailPath: '/minsk/restaurants/kafe-1',
@@ -82,13 +93,13 @@ it('an unreachable action (network) is the same failure, not a crash', async () 
 it('«Повторить» asks again and shows the reviews once they load', async () => {
   mockReload
     .mockResolvedValueOnce({ ok: false })
-    .mockResolvedValueOnce({ ok: true, reviews: [REVIEW, REVIEW], total: 2 });
+    .mockResolvedValueOnce({ ok: true, reviews: [REVIEW, REVIEW], authorOnly: [] });
   render(<ReviewsLoadFailed {...PROPS} />);
 
   await userEvent.click(await screen.findByRole('button', { name: 'Повторить' }));
 
   await waitFor(() =>
-    expect(screen.getByTestId('carousel')).toHaveTextContent('2/2'),
+    expect(screen.getByTestId('carousel')).toHaveTextContent('2/9'),
   );
   expect(mockReload).toHaveBeenCalledTimes(2);
 });

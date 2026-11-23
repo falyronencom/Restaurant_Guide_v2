@@ -603,7 +603,8 @@ describe('Search System - сортировка по рейтингу: завед
       if (name === TARGET) targetId = inserted.rows[0].id;
     }
     // Верхний beforeEach чистит users — автор и модератор каждый раз новые.
-    reviewerToken = (await createUserAndGetTokens(testUsers.regularUser)).accessToken;
+    // A new review is taken only from a confirmed e-mail.
+    reviewerToken = (await createUserAndGetTokens({ ...testUsers.regularUser, emailVerified: true })).accessToken;
     adminToken = (await createAdminAndGetToken()).accessToken;
   });
 

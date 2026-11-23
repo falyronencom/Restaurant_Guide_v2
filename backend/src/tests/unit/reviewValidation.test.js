@@ -684,6 +684,48 @@ describe('validatePartnerResponse', () => {
     const result = await runValidation(validatePartnerResponse, req);
     expect(result.isEmpty()).toBe(false);
   });
+
+  // Not a text at all — refused before anything reads it, a first reply and
+  // an edit alike (one endpoint). An array went past the length bound and the
+  // мат check (trim and isLength read it element by element, the мат check a
+  // string only) and was stored as a literal «{"…"}»; trim turned an object or
+  // a number into a string, and that was stored (Phase 3.5 review, 23.11.2026).
+  test.each([
+    ['an array with мат inside', ['Официант хууууй забил на нас, спасибо']],
+    ['an empty array', []],
+    ['an object', { text: 'Спасибо за ваш отзыв!' }],
+    ['a number', 1234567890123],
+    ['a boolean', true],
+  ])('refuses a response that is not a text — %s — and leaves it as sent', async (_label, response) => {
+    const req = mockReq({ params: { id: validId }, body: { response } });
+    expect((await runValidation(validatePartnerResponse, req)).array()).toEqual([
+      expect.objectContaining({ path: 'response', msg: 'Response must be text' }),
+    ]);
+    expect(req.body.response).toEqual(response);
+  });
+
+  test('an absent or null response is refused as «required», with one message', async () => {
+    for (const body of [{}, { response: null }]) {
+      const req = mockReq({ params: { id: validId }, body });
+      expect((await runValidation(validatePartnerResponse, req)).array()).toEqual([
+        expect.objectContaining({ path: 'response', msg: 'Response text is required' }),
+      ]);
+    }
+  });
+
+  test('a text response is still trimmed and still checked for мат', async () => {
+    const trimmed = mockReq({ params: { id: validId }, body: { response: '  Спасибо за ваш отзыв!  ' } });
+    expect((await runValidation(validatePartnerResponse, trimmed)).array()).toEqual([]);
+    expect(trimmed.body.response).toBe('Спасибо за ваш отзыв!');
+
+    const profane = mockReq({ params: { id: validId }, body: { response: 'Официант хууууй забил на нас, спасибо' } });
+    expect((await runValidation(validatePartnerResponse, profane)).array()).toEqual([
+      expect.objectContaining({
+        path: 'response',
+        msg: 'Текст содержит нецензурные выражения — уберите их, пожалуйста',
+      }),
+    ]);
+  });
 });
 
 // ─── validateDeletePartnerResponse ──────────────────────────────────────────
