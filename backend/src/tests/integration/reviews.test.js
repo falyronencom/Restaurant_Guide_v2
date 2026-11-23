@@ -1253,6 +1253,70 @@ describe('Reviews System - Partner Responses', () => {
     expect(response.body.data.review).not.toHaveProperty('partner_responder_id');
   });
 
+  // A request past the clients (the partner app and the site send a string).
+  // An array went past the length bound and the мат check and was stored as a
+  // literal «{"…"}»; trim turned an object or a number into a string, and
+  // that was stored (Phase 3.5 review, 23.11.2026). Now refused 422 before
+  // anything reads it, and the review row is not touched — a first reply and
+  // an edit of one alike.
+  const notText = [
+    ['an array, мат inside', ['Официант хууууй забил на нас, спасибо']],
+    ['an empty array', []],
+    ['an object', { text: 'Спасибо за ваш отзыв!' }],
+    ['a number', 1234567890123],
+  ];
+  const replyColumns = async (reviewId) => (await query(
+    'SELECT partner_response, partner_response_at, partner_responder_id, updated_at FROM reviews WHERE id = $1',
+    [reviewId],
+  )).rows;
+  const expectNotTextRefusal = (response) => {
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual([
+      { field: 'response', message: 'Response must be text' },
+    ]);
+  };
+
+  test.each(notText)('a first reply that is not a text — %s — is refused 422, the review row untouched', async (_label, value) => {
+    const reviewId = await createReview(userToken, 'not-text-first');
+    // A moment in the past, so a write in the same millisecond cannot hide.
+    await query("UPDATE reviews SET updated_at = NOW() - INTERVAL '1 hour' WHERE id = $1", [reviewId]);
+    const before = await replyColumns(reviewId);
+    expect(before[0].partner_response).toBeNull();
+
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: value })
+      .expect(422);
+
+    expectNotTextRefusal(response);
+    expect(await replyColumns(reviewId)).toEqual(before);
+  });
+
+  test.each(notText)('an edit that is not a text — %s — is refused 422, the reply stays as it was', async (_label, value) => {
+    const reviewId = await createReview(userToken, 'not-text-edit');
+    await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: responseText })
+      .expect(200);
+    await query(
+      "UPDATE reviews SET updated_at = NOW() - INTERVAL '1 hour', partner_response_at = NOW() - INTERVAL '1 hour' WHERE id = $1",
+      [reviewId],
+    );
+    const before = await replyColumns(reviewId);
+    expect(before[0].partner_response).toBe(responseText);
+
+    const response = await request(app)
+      .post(`/api/v1/reviews/${reviewId}/response`)
+      .set('Authorization', `Bearer ${partnerToken}`)
+      .send({ response: value })
+      .expect(422);
+
+    expectNotTextRefusal(response);
+    expect(await replyColumns(reviewId)).toEqual(before);
+  });
+
   test('should delete partner response', async () => {
     const reviewId = await createReview(userToken, 'delete-response');
 
