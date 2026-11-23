@@ -75,7 +75,12 @@ export function mapCategoryToSchemaSubtype(categoryRaw: string | undefined): str
 export type AggregateRatingSchema = {
   '@type': 'AggregateRating';
   ratingValue: number;
-  reviewCount: number;
+  /**
+   * Every rating behind ratingValue — `review_count` counts a rating without
+   * text as well (thread «Отзыв без текста», 11.2026), so it is
+   * `ratingCount`, not schema.org's `reviewCount` (the written reviews).
+   */
+  ratingCount: number;
   bestRating: 5;
   worstRating: 1;
 };
@@ -97,7 +102,7 @@ export function buildAggregateRating(
     return {
       '@type': 'AggregateRating',
       ratingValue: establishment.average_rating,
-      reviewCount: establishment.review_count,
+      ratingCount: establishment.review_count,
       bestRating: 5,
       worstRating: 1,
     };
