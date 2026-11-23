@@ -537,8 +537,9 @@ const notifyPartnerIfBatchFinished = async (establishmentId, { failedJobId = nul
  * upload batch.
  *
  * A file recognised before is not told: its failed job was a re-read — the
- * partner's restart re-reads every menu file, the operator's
- * scripts/reocr-menus.js re-reads recognised ones after a model change — and
+ * operator's scripts/reocr-menus.js re-reads recognised ones after a model
+ * change, and the partner's restart re-read every menu file until 23.11.2026
+ * (now only files never recognised, partnerMenuItemService.retryOcr) — and
  * a failed re-read leaves the file's dishes as they were (replaceForMedia
  * runs only on success). The menu screen counts such a file as recognised
  * too (partnerMenuItemService.recognitionState), so the partner is not sent

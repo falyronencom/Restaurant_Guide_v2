@@ -4,8 +4,10 @@
  * Перезапуск распознавания, отвеченный сбоем сервера, не тратит один из пяти
  * перезапусков дня (находка Н40, 25.10.2026; ревью по линзе тихих сбоев):
  * приложение повторяет запрос на 5xx трижды, и каждый повтор снова проходит
- * лимитер маршрута. Отказ — нет файлов меню, исчерпанный суточный предел
- * (429), чужая карточка — засчитан, как был.
+ * лимитер маршрута. Не тратит и перезапуск, которому нечего распознавать —
+ * каждый файл меню уже распознан (с 23.11.2026, нитка Н8): кнопка в
+ * приложении видна и у распознанного меню. Отказ — нет файлов меню,
+ * исчерпанный суточный предел (429), чужая карточка — засчитан, как был.
  *
  * Сбой базы до постановки через настоящее приложение не вызвать: сервис
  * подменён, контроллер исполняется целиком.
@@ -14,6 +16,8 @@
 import { jest } from '@jest/globals';
 
 jest.unstable_mockModule('../../services/partnerMenuItemService.js', () => ({
+  // Код отказа «нечего распознавать» — тот, что экспортирует сервис.
+  NOTHING_TO_RECOGNIZE: 'NOTHING_TO_RECOGNIZE',
   retryOcr: jest.fn(),
   listMenuItems: jest.fn(),
   updateMenuItem: jest.fn(),
@@ -69,10 +73,23 @@ test.each([
   expect(giveBackRateLimitSlots).toHaveBeenCalledWith(req);
 });
 
+test('нечего распознавать (409 NOTHING_TO_RECOGNIZE) → отказ уходит дальше как был, перезапуск возвращён', async () => {
+  const refusal = new AppError('Все файлы меню уже распознаны.', 409, 'NOTHING_TO_RECOGNIZE');
+  service.retryOcr.mockRejectedValue(refusal);
+
+  const { req, error } = await run();
+
+  expect(error).toBe(refusal);
+  expect(giveBackRateLimitSlots).toHaveBeenCalledTimes(1);
+  expect(giveBackRateLimitSlots).toHaveBeenCalledWith(req);
+});
+
 test.each([
   ['исчерпан суточный предел распознавания', 429, 'RATE_LIMIT_EXCEEDED'],
   ['нет файлов меню', 400, 'NO_PDF_MENUS'],
   ['не карточка партнёра', 404, 'ESTABLISHMENT_NOT_FOUND'],
+  // Тот же статус, другой код: возврат — по коду, не по статусу.
+  ['иной отказ со статусом 409', 409, 'SOME_OTHER_CONFLICT'],
 ])('отказ: %s (%i) → перезапуск засчитан', async (_case, status, code) => {
   const refusal = new AppError('отказ', status, code);
   service.retryOcr.mockRejectedValue(refusal);

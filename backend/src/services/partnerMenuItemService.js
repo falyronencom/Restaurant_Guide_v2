@@ -14,10 +14,12 @@ import * as MenuItemModel from '../models/menuItemModel.js';
 import * as EstablishmentModel from '../models/establishmentModel.js';
 import * as MediaModel from '../models/mediaModel.js';
 import * as OcrJobModel from '../models/ocrJobModel.js';
-import { MENU_RECOGNITION_REFUSALS } from '../constants/partnerSectionRefusals.js';
+import { ESTABLISHMENT_REFUSALS } from '../constants/establishmentRefusals.js';
+import { MENU_ITEM_REFUSALS, MENU_RECOGNITION_REFUSALS } from '../constants/partnerSectionRefusals.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { findCopies, withGuestHiddenReason } from '../projections/menuItemProjections.js';
 import logger from '../utils/logger.js';
+import { longerThan } from '../utils/textLength.js';
 import { invalidateCache as invalidateBadges } from './badgesService.js';
 import { DailyOcrLimitError, enqueueWithinDailyAllowance } from './ocrAllowance.js';
 import { failureCauseOf, failureTextOf } from './ocr/failureReason.js';
@@ -28,6 +30,50 @@ import { invalidateCache as invalidateHealth } from './qualityHealthService.js';
  * refusal by it.
  */
 const OCR_RESTART_FAILED = 'OCR_RESTART_FAILED';
+
+/**
+ * The code of a restart that finds nothing to recognise: every menu file of
+ * the card has been recognised at least once (retryOcr). Such a refusal does
+ * not spend one of the day's five restarts — the controller gives the slot
+ * back by this code.
+ */
+export const NOTHING_TO_RECOGNIZE = 'NOTHING_TO_RECOGNIZE';
+
+/**
+ * The columns a partner's edit writes (migrations/production_schema.sql,
+ * menu_items): item_name varchar(255) NOT NULL, category_raw varchar(100),
+ * price_byn numeric(10,2). A value past them failed in the database and came
+ * back as 500 «Сбой на сервере» (finding 4 of the discovery for the site's
+ * cabinet, 22.11.2026); the edit refuses it with the partner's text instead.
+ */
+const ITEM_NAME_MAX_CHARS = 255;
+const SECTION_MAX_CHARS = 100;
+// numeric(10,2) rounds to two places, and a price that rounds to
+// 100 000 000,00 does not fit (22003): the least such is 99 999 999,995.
+// node-pg sends a number as its shortest text, so the number of this literal
+// goes as '99999999.995', and every number below it as a text below it —
+// one that rounds to 99 999 999,99 at most.
+const PRICE_TOO_HIGH_FROM = 99999999.995;
+
+/** A price written as text: digits, and a dot with digits after it. */
+const DECIMAL_TEXT = /^\s*\d+(?:\.\d+)?\s*$/;
+
+/**
+ * The price of a partner's edit as a number, or NaN when it is none: a JSON
+ * number, or a plain decimal in a string (the edit took Number(x) before
+ * 23.11.2026, so a client may send «12.50»). Anything else — an empty string,
+ * a comma, an exponent in a string, a flag, an array — is NaN: Number() made 0
+ * of '' and of [], 1 of true, and the database refused them as a 400 in
+ * English.
+ *
+ * @param {*} value - price_byn as the request sent it, not null
+ * @returns {number}
+ */
+const priceOf = (value) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string' && DECIMAL_TEXT.test(value)) return Number(value);
+  return Number.NaN;
+};
 
 /**
  * The state of recognition of an establishment's menu, as the partner's menu
@@ -62,7 +108,8 @@ const OCR_RESTART_FAILED = 'OCR_RESTART_FAILED';
  * `failed` outranks `done` so that one failed file among recognised ones is
  * not hidden by the dishes the others gave; `not_started` stands between
  * them for the same reason, below `failed`, whose advice (restart, or another
- * file) the file without a job needs as well — a restart queues every file.
+ * file) the file without a job needs as well — a restart queues every file
+ * never recognised, and only those (retryOcr).
  * A build of the app that does not know `not_started` reads it as no field
  * at all — the screen it had (models/menu_recognition.dart, fromJson).
  *
@@ -165,11 +212,9 @@ const readHasHiddenItems = async (establishmentId) => {
 export const listMenuItems = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError(
-      'Establishment not found or access denied',
-      404,
-      'ESTABLISHMENT_NOT_FOUND',
-    );
+    // The card's own text, the one the route answers an id not written as the
+    // database writes it (routes/v1/establishmentRoutes.js cardIdMenu).
+    throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 404, 'ESTABLISHMENT_NOT_FOUND');
   }
 
   const [items, recognition, hasHiddenItems] = await Promise.all([
@@ -187,6 +232,19 @@ export const listMenuItems = async (partnerId, establishmentId) => {
  * Side effect: sanity_flag is cleared (partner accepts responsibility for values).
  * is_hidden_by_admin is untouched — only admin can toggle that.
  *
+ * The fields are checked before anything is written (from 23.11.2026, thread
+ * Н8, finding 4: a value past its column failed in the database as a 500),
+ * in the order of the app's form, the first that fails answering:
+ *   item_name    — text, not empty once the spaces round it are cut, at most
+ *                  255 characters as the database counts them; stored cut;
+ *   price_byn    — null (the price removed), or a number from 0 to
+ *                  99 999 999,99 (priceOf: a JSON number or a decimal in a
+ *                  string); stored as the number;
+ *   category_raw — null, or text of at most 100 characters once cut; stored
+ *                  cut, '' included (the app sends it for a section cleared).
+ * A name or a section — 422 VALIDATION_ERROR, a price — 422 INVALID_PRICE, as
+ * before; each with the partner's text (MENU_ITEM_REFUSALS).
+ *
  * @param {string} partnerId - UUID
  * @param {string} menuItemId - UUID
  * @param {Object} updates - { item_name?, price_byn?, category_raw? }
@@ -195,7 +253,7 @@ export const listMenuItems = async (partnerId, establishmentId) => {
 export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   const existing = await MenuItemModel.findById(menuItemId);
   if (!existing) {
-    throw new AppError('Menu item not found', 404, 'MENU_ITEM_NOT_FOUND');
+    throw new AppError(MENU_ITEM_REFUSALS.notFound, 404, 'MENU_ITEM_NOT_FOUND');
   }
 
   const isOwner = await EstablishmentModel.checkOwnership(
@@ -207,11 +265,7 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   // decision from the dish — a re-read carries «Скрыть» over by name
   // (MenuItemModel.replaceForMedia). Answered like a stranger's item.
   if (!isOwner || existing.is_hidden_by_admin === true) {
-    throw new AppError(
-      'Menu item not found or access denied',
-      404,
-      'MENU_ITEM_NOT_FOUND',
-    );
+    throw new AppError(MENU_ITEM_REFUSALS.notFound, 404, 'MENU_ITEM_NOT_FOUND');
   }
 
   const partnerAllowed = ['item_name', 'price_byn', 'category_raw'];
@@ -223,23 +277,37 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
   }
 
   if (Object.keys(filteredUpdates).length === 0) {
-    throw new AppError(
-      'No editable fields provided (item_name, price_byn, category_raw)',
-      400,
-      'NO_FIELDS_TO_UPDATE',
-    );
+    throw new AppError(MENU_ITEM_REFUSALS.noChanges, 400, 'NO_FIELDS_TO_UPDATE');
   }
 
-  // Validate price if provided: must be non-negative number
-  if (filteredUpdates.price_byn !== undefined && filteredUpdates.price_byn !== null) {
-    const price = Number(filteredUpdates.price_byn);
-    if (!Number.isFinite(price) || price < 0) {
-      throw new AppError(
-        'price_byn must be a non-negative number',
-        422,
-        'INVALID_PRICE',
-      );
+  if (filteredUpdates.item_name !== undefined) {
+    const name = typeof filteredUpdates.item_name === 'string' ? filteredUpdates.item_name.trim() : '';
+    if (name === '') {
+      throw new AppError(MENU_ITEM_REFUSALS.nameRequired, 422, 'VALIDATION_ERROR');
     }
+    if (longerThan(name, ITEM_NAME_MAX_CHARS)) {
+      throw new AppError(MENU_ITEM_REFUSALS.nameTooLong, 422, 'VALIDATION_ERROR');
+    }
+    filteredUpdates.item_name = name;
+  }
+
+  if (filteredUpdates.price_byn !== undefined && filteredUpdates.price_byn !== null) {
+    const price = priceOf(filteredUpdates.price_byn);
+    if (!Number.isFinite(price) || price < 0) {
+      throw new AppError(MENU_ITEM_REFUSALS.priceInvalid, 422, 'INVALID_PRICE');
+    }
+    if (price >= PRICE_TOO_HIGH_FROM) {
+      throw new AppError(MENU_ITEM_REFUSALS.priceTooHigh, 422, 'INVALID_PRICE');
+    }
+    filteredUpdates.price_byn = price;
+  }
+
+  if (filteredUpdates.category_raw !== undefined && filteredUpdates.category_raw !== null) {
+    const section = typeof filteredUpdates.category_raw === 'string' ? filteredUpdates.category_raw.trim() : null;
+    if (section === null || longerThan(section, SECTION_MAX_CHARS)) {
+      throw new AppError(MENU_ITEM_REFUSALS.sectionTooLong, 422, 'VALIDATION_ERROR');
+    }
+    filteredUpdates.category_raw = section;
   }
 
   // Partner edit implies they vouch for the values — clear sanity_flag.
@@ -255,8 +323,10 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
     existing.establishment_id,
     { includeHidden: false },
   );
-  // The id as the database writes it: the one in the address may be the same
-  // id in capitals, and the rows are told apart by the stored spelling.
+  // The id as the database writes it — the rows are told apart by the stored
+  // spelling. The route lets only that spelling through (from 23.11.2026,
+  // routes/v1/partnerMenuItemRoutes.js); before, the address could carry the
+  // same id in capitals.
   const rowId = existing.id;
   const copies = findCopies(rowId, visibleRows);
   const reasonBefore = withGuestHiddenReason(visibleRows)
@@ -319,67 +389,86 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
 };
 
 /**
- * Re-run OCR for all OCR-eligible menu media of an establishment owned by the
- * partner: PDF menus plus menu photos (vision_image strategy).
- * A file whose job is pending or processing keeps that job (it counts as
- * queued). A re-read replaces the rows of each file but keeps the
- * moderator's «Скрыть» on dishes read again under the same name
- * (MenuItemModel.replaceForMedia) — a partner cannot bring back a hidden dish
- * by re-running the recognition.
+ * Re-run OCR for the menu files of an establishment owned by the partner that
+ * were never recognised: PDF menus and menu photos (vision_image strategy)
+ * with no job done — the last job failed for good, or there is none (the
+ * menu screen's «не удалось» and «не запущено»). A file recognised once is
+ * left alone, even when a later re-read of it failed: its dishes stand, and a
+ * re-read replaces them from the model's answer (MenuItemModel.replaceForMedia)
+ * — the partner's corrections of names, prices and sections with them, and
+ * the day's pages as well. Decision of the Coordinator 23.11.2026 (Н8, option
+ * «Б»), carrying out his decision of 13.11.2026 (SDL CAT-C-2.14, п. 2г): a
+ * restart does not erase the establishment's corrections. Until then every
+ * menu file was queued, recognised ones last. To read a recognised file
+ * again, the partner deletes it and uploads it anew.
  *
- * Every new job comes out of the partner's daily recognition allowance
+ * A file never recognised whose job is pending or processing — its first
+ * reading going on — keeps that job and counts as queued, as before. Each
+ * file is asked in that order — a job going on, then one done — right before
+ * it is queued: a first reading that ended done after the card's list was
+ * read is seen as done, and its fresh dishes are not read again.
+ *
+ * Nothing to recognise — every menu file recognised, or recognised by the
+ * time its turn came — is refused: 409 NOTHING_TO_RECOGNIZE with the
+ * partner's text; the controller gives the day's restart back. Every new job
+ * comes out of the partner's daily recognition allowance
  * (services/ocrAllowance.js), shared with the card's create, save and upload;
- * the route's own limit (five restarts a day) still holds. Files never
- * recognised are queued first. A restart that the spent allowance leaves with
- * nothing queued is refused — DailyOcrLimitError, 429 with Retry-After until
- * Minsk midnight; one whose every queuing failed — 500 OCR_RESTART_FAILED
- * with the partner's text (the controller gives any 5xx restart back to its
- * daily limit); one that queued part of the files answers how many, as
- * before («запущено N из M»). The files are queued one after another: a
- * reservation waits for Redis at most its deadline (config/redis.js), and
- * queuing them at once would take that many pool connections.
+ * the route's own limit (five restarts a day) still holds. A restart that the
+ * spent allowance leaves with nothing queued is refused — DailyOcrLimitError,
+ * 429 with Retry-After until Minsk midnight; one whose every queuing failed —
+ * 500 OCR_RESTART_FAILED with the partner's text (the controller gives any
+ * 5xx restart back to its daily limit); one that queued part of the files
+ * answers how many, as before («запущено N из M»). The files are queued one
+ * after another: a reservation waits for Redis at most its deadline
+ * (config/redis.js), and queuing them at once would take that many pool
+ * connections.
  *
  * Contract note: the error code NO_PDF_MENUS and the response key totalPdfs
  * predate menu-photo support and are kept verbatim — mobile matches on the
  * code (partner_menu_screen) and renaming would widen the blast radius of
- * this backend-only slice. totalPdfs now carries the eligible-media count.
+ * this backend-only slice. totalPdfs carries the count of all the card's menu
+ * files, recognised ones included (kept so by the directive of thread Н8):
+ * the app shows «Распознавание запущено (N из M)», and so does the site's
+ * cabinet from its part 1.
  *
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
  * @returns {Promise<{enqueuedJobs: number, totalPdfs: number}>}
+ * @throws {AppError} NOTHING_TO_RECOGNIZE when every menu file is recognised
  * @throws {DailyOcrLimitError} When the allowance left nothing queued
  * @throws {AppError} OCR_RESTART_FAILED when every file's queuing failed
  */
 export const retryOcr = async (partnerId, establishmentId) => {
   const isOwner = await EstablishmentModel.checkOwnership(establishmentId, partnerId);
   if (!isOwner) {
-    throw new AppError(
-      'Establishment not found or access denied',
-      404,
-      'ESTABLISHMENT_NOT_FOUND',
-    );
+    // The card's own text, as the route's check of the id answers.
+    throw new AppError(ESTABLISHMENT_REFUSALS.notOwner, 404, 'ESTABLISHMENT_NOT_FOUND');
   }
 
   const eligibleMedia = await MediaModel.getOcrEligibleMedia(establishmentId);
   if (eligibleMedia.length === 0) {
-    throw new AppError(
-      'No menu media (PDF or menu photos) to re-process for this establishment',
-      400,
-      'NO_PDF_MENUS',
-    );
+    throw new AppError(MENU_RECOGNITION_REFUSALS.noMenuFiles, 400, 'NO_PDF_MENUS');
   }
 
-  // Files never recognised first, each group in its own order (the sort is
-  // stable): with a few places left in the allowance, they go to the files
-  // that have no dishes yet, not to re-reading recognised ones.
   const recognised = await OcrJobModel.getMediaIdsWithCompletedJob(establishmentId);
-  const queueOrder = [...eligibleMedia]
-    .sort((a, b) => Number(recognised.has(a.id)) - Number(recognised.has(b.id)));
+  const unrecognised = eligibleMedia.filter((media) => !recognised.has(media.id));
+  if (unrecognised.length === 0) {
+    throw new AppError(MENU_RECOGNITION_REFUSALS.nothingToRecognize, 409, NOTHING_TO_RECOGNIZE);
+  }
 
   let enqueuedJobs = 0;
   let refusal = null;
-  for (const media of queueOrder) {
+  let failures = 0;
+  for (const media of unrecognised) {
     try {
+      // A job going on first, then a job done (the order — the header above).
+      if (await OcrJobModel.findActiveJob(media.id)) {
+        enqueuedJobs += 1;
+        continue;
+      }
+      if (await OcrJobModel.hasCompletedJobForMedia(media.id)) {
+        continue;
+      }
       const result = await enqueueWithinDailyAllowance({
         userId: partnerId,
         establishmentId,
@@ -391,6 +480,7 @@ export const retryOcr = async (partnerId, establishmentId) => {
         refusal = result.refusal;
       }
     } catch (err) {
+      failures += 1;
       logger.error('Failed to enqueue OCR job during retry', {
         error: err.message,
         mediaId: media.id,
@@ -403,6 +493,7 @@ export const retryOcr = async (partnerId, establishmentId) => {
     partnerId,
     establishmentId,
     totalEligibleMedia: eligibleMedia.length,
+    unrecognisedMedia: unrecognised.length,
     enqueuedJobs,
   });
 
@@ -411,10 +502,13 @@ export const retryOcr = async (partnerId, establishmentId) => {
   }
   // Every file's queuing failed (each is logged above): the restart did
   // nothing, and an answer of success let the app say «already running»
-  // (finding Н40 of 25.10.2026). A file whose job is already active counts as
-  // queued, so this is the one way to get here with files to queue.
-  if (enqueuedJobs === 0) {
+  // (finding Н40 of 25.10.2026).
+  if (enqueuedJobs === 0 && failures > 0) {
     throw new AppError(MENU_RECOGNITION_REFUSALS.restartNotQueued, 500, OCR_RESTART_FAILED);
+  }
+  // Each file left was recognised by the time its turn came.
+  if (enqueuedJobs === 0) {
+    throw new AppError(MENU_RECOGNITION_REFUSALS.nothingToRecognize, 409, NOTHING_TO_RECOGNIZE);
   }
 
   return { enqueuedJobs, totalPdfs: eligibleMedia.length };

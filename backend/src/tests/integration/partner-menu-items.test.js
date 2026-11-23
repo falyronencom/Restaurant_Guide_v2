@@ -465,10 +465,10 @@ describe('GET /api/v1/partner/establishments/:id/menu-items — recognition stat
     });
   });
 
-  // The partner's restart re-reads every menu file, the operator's
-  // scripts/reocr-menus.js re-reads recognised ones; a failed re-read keeps
-  // the file's dishes (replaceForMedia runs only on success). Shown as a
-  // failure, it would send the partner to replace a file that works.
+  // The operator's scripts/reocr-menus.js re-reads recognised files (and the
+  // partner's restart did, until 23.11.2026); a failed re-read keeps the
+  // file's dishes (replaceForMedia runs only on success). Shown as a failure,
+  // it would send the partner to replace a file that works.
   test('a recognised file whose re-read failed → done: its dishes stand, nothing to fix', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
@@ -596,10 +596,12 @@ describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several 
     expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
   });
 
-  test('the id in the address in capitals: the same row, its copy too, and the row in the answer', async () => {
-    // The database writes an id in small letters, and the rows are told apart
-    // by that spelling — the one of the address must not decide which row is
-    // the edited one, or the answer is empty and the copy is left behind.
+  test('the id in the address in capitals: refused as a line not there, neither the row nor its copy changes', async () => {
+    // Until 23.11.2026 such an id edited the row (the rows are told apart by
+    // the stored spelling, so the answer and the copy came out right). From
+    // then the route lets through only the id as the database writes it, as
+    // the card's routes do (thread Н8, finding 4); no client writes it
+    // otherwise — the id comes from the list's answer.
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
     const photoId = await seedPhotoMedia(estId, 'menu');
@@ -611,10 +613,18 @@ describe('PATCH /api/v1/partner/menu-items/:id — one menu uploaded as several 
       .patch(`/api/v1/partner/menu-items/${photoLatte.id.toUpperCase()}`)
       .set('Authorization', `Bearer ${partner.accessToken}`)
       .send({ price_byn: 7.5 })
-      .expect(200);
+      .expect(404);
 
-    expect(res.body.data.id).toBe(photoLatte.id);
-    expect(Number(res.body.data.price_byn)).toBe(7.5);
+    expect(res.body.error.code).toBe('MENU_ITEM_NOT_FOUND');
+    expect(Number((await rowOf(photoLatte.id)).price_byn)).toBe(7);
+    expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7);
+
+    // The same id as the database writes it edits the row and its copy.
+    await request(app)
+      .patch(`/api/v1/partner/menu-items/${photoLatte.id}`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .send({ price_byn: 7.5 })
+      .expect(200);
     expect(Number((await rowOf(photoLatte.id)).price_byn)).toBe(7.5);
     expect(Number((await rowOf(pdfLatte.id)).price_byn)).toBe(7.5);
   });
@@ -773,7 +783,7 @@ describe('PATCH /api/v1/partner/menu-items/:id', () => {
 });
 
 describe('POST /api/v1/partner/establishments/:id/retry-ocr', () => {
-  test('enqueues OCR jobs for all PDF menus', async () => {
+  test('enqueues OCR jobs for every PDF menu not recognised yet (none has a job)', async () => {
     const partner = await createPartner();
     const estId = await createEstablishmentFor(partner.user.id);
     await seedPdfMedia(estId);
@@ -855,4 +865,108 @@ describe('POST /api/v1/partner/establishments/:id/retry-ocr', () => {
 
     expect(res.body.error.code).toBe('NO_PDF_MENUS');
   });
+});
+
+describe('POST /api/v1/partner/establishments/:id/retry-ocr — only the files never recognised', () => {
+  // Decision of the Coordinator 23.11.2026 (Н8, option «Б»), carrying out his
+  // decision of 13.11.2026 (SDL CAT-C-2.14, п. 2г): a restart does not erase
+  // the establishment's corrections. A re-read is the one writer that
+  // replaces a file's rows (ocrService.processJob → replaceForMedia), so a
+  // file the restart does not queue keeps its dishes and the partner's
+  // corrections of them; until then the restart queued every menu file.
+  const jobsOfMedia = async (mediaId) => (await query(
+    'SELECT status FROM ocr_jobs WHERE media_id = $1 ORDER BY created_at',
+    [mediaId],
+  )).rows.map((row) => row.status);
+
+  const retry = (partner, estId) => request(app)
+    .post(`/api/v1/partner/establishments/${estId}/retry-ocr`)
+    .set('Authorization', `Bearer ${partner.accessToken}`);
+
+  test('a recognised file is not queued, so nothing will re-read it and the partner\'s correction is left as it is; the failed file and the one never queued are queued', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const recognised = await seedPdfMedia(estId);
+    const failed = await seedPdfMedia(estId);
+    const neverQueued = await seedPhotoMedia(estId, 'menu');
+    const dish = await seedMenuItem(estId, recognised, {
+      itemName: 'Драники',
+      priceByn: 0.3,
+      sanityFlag: { reason: 'price_below_threshold', details: { price: 0.3, threshold: 0.5 } },
+    });
+    await seedJob(estId, recognised, { status: 'done', ageMinutes: 60 });
+    await seedJob(estId, failed, { status: 'failed', errorMessage: 'vision OCR returned empty text', ageMinutes: 30 });
+
+    // The partner corrects the price the model misread — the app's own call.
+    await request(app)
+      .patch(`/api/v1/partner/menu-items/${dish.id}`)
+      .set('Authorization', `Bearer ${partner.accessToken}`)
+      .send({ price_byn: 9.5 })
+      .expect(200);
+
+    const res = await retry(partner, estId).expect(202);
+
+    // totalPdfs — every menu file of the card, the recognised one included.
+    expect(res.body.data).toEqual({ enqueuedJobs: 2, totalPdfs: 3 });
+    expect(await jobsOfMedia(recognised)).toEqual(['done']);
+    expect(await jobsOfMedia(failed)).toEqual(['failed', 'pending']);
+    expect(await jobsOfMedia(neverQueued)).toEqual(['pending']);
+    const { rows } = await query(
+      'SELECT item_name, price_byn, sanity_flag FROM menu_items WHERE id = $1',
+      [dish.id],
+    );
+    expect(rows).toEqual([{ item_name: 'Драники', price_byn: '9.50', sanity_flag: null }]);
+  });
+
+  test('a file recognised once whose re-read failed counts as recognised: alone on the card → 409 NOTHING_TO_RECOGNIZE, nothing queued', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedMenuItem(estId, mediaId, { itemName: 'Борщ' });
+    await seedJob(estId, mediaId, { status: 'done', ageMinutes: 60 });
+    await seedJob(estId, mediaId, { status: 'failed', errorMessage: 'stale processing reaped after 1 hour', ageMinutes: 1 });
+
+    const res = await retry(partner, estId).expect(409);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('NOTHING_TO_RECOGNIZE');
+    expect(await jobsOfMedia(mediaId)).toEqual(['done', 'failed']);
+  });
+
+  // The first reading of a file going on is no refusal: the file counts as
+  // queued, as before — the app shows its button while «Распознаём меню…» too.
+  test('a recognised file beside one whose first reading is going on → 202, the reading counts as queued, no second job', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const recognised = await seedPdfMedia(estId);
+    const reading = await seedPhotoMedia(estId, 'menu');
+    await seedJob(estId, recognised, { status: 'done', ageMinutes: 60 });
+    await seedJob(estId, reading, { status: 'processing' });
+
+    const res = await retry(partner, estId).expect(202);
+
+    expect(res.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 2 });
+    expect(await jobsOfMedia(recognised)).toEqual(['done']);
+    expect(await jobsOfMedia(reading)).toEqual(['processing']);
+  });
+
+  // A recognised file read again by someone else — the operator's
+  // scripts/reocr-menus.js, or a restart made before 23.11.2026 — is not the
+  // restart's either: it is neither queued nor counted as queued.
+  test('a recognised file whose re-read is going on, alone on the card → 409 NOTHING_TO_RECOGNIZE, no second job', async () => {
+    const partner = await createPartner();
+    const estId = await createEstablishmentFor(partner.user.id);
+    const mediaId = await seedPdfMedia(estId);
+    await seedJob(estId, mediaId, { status: 'done', ageMinutes: 60 });
+    await seedJob(estId, mediaId, { status: 'pending' });
+
+    const res = await retry(partner, estId).expect(409);
+
+    expect(res.body.error.code).toBe('NOTHING_TO_RECOGNIZE');
+    expect(await jobsOfMedia(mediaId)).toEqual(['done', 'pending']);
+  });
+
+  // That a refusal of nothing to recognise spends none of the day's five
+  // restarts — integration/daily-ocr-allowance (this file runs without
+  // Redis, and the limiter counts nothing here).
 });

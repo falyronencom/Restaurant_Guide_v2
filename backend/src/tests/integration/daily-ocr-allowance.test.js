@@ -470,7 +470,7 @@ describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', ()
     expect(await counter(partner)).toBe(100);
   });
 
-  test('последнее место — файлу без блюд, а не перечитыванию распознанного (ревью по линзе, п. 5)', async () => {
+  test('последнее место — файлу без блюд; распознанный файл не ставится вовсе (ревью по линзе, п. 5; с 23.11.2026 — нитка Н8)', async () => {
     const partner = await newPartnerWithCard();
     // Распознанный файл — первым по порядку меню.
     const recognised = await insertMenuFile(partner, 'a');
@@ -489,6 +489,42 @@ describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', ()
       [partner.establishmentId],
     );
     expect(pending.rows).toEqual([{ media_id: waiting }]);
+  });
+
+  // С 23.11.2026 (нитка Н8): перезапуск читает заново только файлы, ни разу
+  // не распознанные. Если таких нет — отказ 409, и перезапуска дня он не
+  // тратит: кнопка в приложении видна и у распознанного меню. Настоящий
+  // перезапуск — по-прежнему один из пяти в сутки на учётку, не на карточку.
+  test('нечего распознавать — 409, перезапуск не потрачен; пять настоящих проходят, шестой — 429', async () => {
+    const partner = await newPartnerWithCard();
+    const recognised = await insertMenuFile(partner, 'a');
+    await query(
+      "INSERT INTO ocr_jobs (establishment_id, media_id, status) VALUES ($1, $2, 'done')",
+      [partner.establishmentId, recognised],
+    );
+    const otherCard = { ...partner, establishmentId: (await createTestEstablishment(partner.id)).id };
+    const waiting = await insertMenuFile(otherCard, 'b');
+
+    for (let i = 0; i < 2; i += 1) {
+      const refused = await retryOcr(partner);
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe('NOTHING_TO_RECOGNIZE');
+    }
+    expect(await restartsToday(partner)).toBe(0);
+
+    for (let i = 0; i < 5; i += 1) {
+      expectStatus(await retryOcr(otherCard), 202);
+    }
+    expect(await restartsToday(partner)).toBe(5);
+
+    const sixth = await retryOcr(otherCard);
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+    expect(sixth.body.error.details).toMatchObject({ limit: 5 });
+    // Распознанный файл в очередь не вставал, второй встал один раз: следующие
+    // перезапуски нашли его задание в очереди.
+    expect(await jobsOf(partner.establishmentId)).toEqual([{ media_id: recognised }]);
+    expect(await jobsOf(otherCard.establishmentId)).toEqual([{ media_id: waiting }]);
   });
 
   test('файл, чьё задание уже в очереди, места не тратит: на пределе — 202, счётчик прежний', async () => {
