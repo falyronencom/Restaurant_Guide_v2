@@ -553,6 +553,26 @@ describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', ()
     }
   });
 
+  // С 24.11.2026 (нитка Н8, находка 5): отказ «нет файлов меню» — тот же
+  // случай «распознавать нечего» — перезапуска дня тоже не тратит.
+  test('нет файлов меню — 400 NO_PDF_MENUS, перезапуск не потрачен; с файлом настоящий перезапуск засчитан', async () => {
+    const partner = await newPartnerWithCard();
+
+    for (let i = 0; i < 2; i += 1) {
+      const refused = await retryOcr(partner);
+      expect(refused.status).toBe(400);
+      expect(refused.body.error.code).toBe('NO_PDF_MENUS');
+      expect(refused.body.message).toBe('Сначала добавьте фото меню или PDF.');
+    }
+    expect(await restartsToday(partner)).toBe(0);
+
+    const mediaId = await insertMenuFile(partner, 'a');
+    const queued = expectStatus(await retryOcr(partner), 202);
+    expect(queued.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 1 });
+    expect(await jobsOf(partner.establishmentId)).toEqual([{ media_id: mediaId }]);
+    expect(await restartsToday(partner)).toBe(1);
+  });
+
   test('файл, чьё задание уже в очереди, места не тратит: на пределе — 202, счётчик прежний', async () => {
     const partner = await newPartnerWithCard();
     const mediaId = await insertMenuFile(partner, 'a');
