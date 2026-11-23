@@ -23,6 +23,7 @@ import {
   searchEstablishments,
   addToFavorites,
   createReview,
+  confirmEmail,
   getUserFavorites,
   createEstablishment,
   registerUser as createPartner,
@@ -125,6 +126,22 @@ describe('E2E Journey: New User Complete Flow', () => {
       expect(result.favorite.user_id).toBe(regularUser.user.id);
       expect(result.favorite.establishment_id).toBe(establishment.id);
       expect(result.favorite.created_at).toBeDefined();
+    });
+
+    // A new review is taken only from a confirmed e-mail: the form refuses
+    // before the code (the app and the site lead to the code first), the
+    // code the registration mailed opens it.
+    test('STEP 3a: Before the code the review is refused; the code from the mail confirms the e-mail', async () => {
+      const refused = await createReview(regularUser.accessToken, {
+        establishmentId: establishment.id,
+        rating: 5,
+        content: 'Отзыв до подтверждения почты',
+      });
+      expect(refused.response.status).toBe(422);
+      expect(refused.response.body.error.code).toBe('EMAIL_NOT_VERIFIED');
+
+      const verified = await confirmEmail(regularUser);
+      expect(verified.body.data.user.emailVerified).toBe(true);
     });
 
     test('STEP 4: User visits restaurant and leaves a positive review', async () => {

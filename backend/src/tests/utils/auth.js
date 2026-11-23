@@ -54,7 +54,14 @@ const ARGON2_OPTIONS = {
 /**
  * Create a test user in the database
  *
+ * `emailVerified` is false unless asked: a fresh registration by e-mail is
+ * unconfirmed until its code is entered, and the tests of the code, of the
+ * takeover by Google or Yandex and of the sign-in rest on that. A test that
+ * writes a NEW review asks for true — a new review is taken only from a
+ * confirmed e-mail (reviewService.createReview, EMAIL_NOT_VERIFIED).
+ *
  * @param {Object} userData - User data
+ * @param {boolean} [userData.emailVerified=false] - the stored email_verified
  * @returns {Promise<Object>} Created user object with tokens
  */
 export async function createTestUser(userData) {
@@ -64,7 +71,8 @@ export async function createTestUser(userData) {
     password,
     name,
     role = 'user',
-    authMethod = 'email'
+    authMethod = 'email',
+    emailVerified = false
   } = userData;
 
   // Hash password
@@ -93,7 +101,7 @@ export async function createTestUser(userData) {
     name.trim(),
     role,
     authMethod,
-    false,
+    emailVerified === true,
     false,
     true,
     utcTimestamp(),

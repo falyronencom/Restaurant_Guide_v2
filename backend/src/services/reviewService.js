@@ -77,6 +77,26 @@ export const ESTABLISHMENT_NOT_ACTIVE_TEXT =
   'Это заведение сейчас не показывается в каталоге — оставить отзыв нельзя';
 
 /**
+ * What the guest reads when a new review comes from an e-mail never
+ * confirmed: a new review is taken only from a confirmed e-mail (decision of
+ * the Coordinator 20.11.2026, thread «Отзыв без текста», instead of В4 — the
+ * risk is not padded «fives» but «ones» from rivals and spam; switched on at
+ * once, 22.11.2026). The text names the way in the builds people have: the
+ * app shows the server's Russian text on a 422 (since 17.10.2026; an older
+ * build shows its general «Проверьте правильность заполнения формы»), and
+ * «Профиль» → «Подтвердить email» is there since 28.04.2026. The site and the
+ * new app lead to the code themselves before the form — with their changes of
+ * this thread, which go out before this rule (the site before them answers
+ * this code «Попробуйте позже»). A login through Yandex, or through Google
+ * whose address Google confirmed, confirms the e-mail, and those people never
+ * read the text; a Google account with an unconfirmed address confirms by
+ * code as anyone does. 422, as the other refusals of a review's content — not
+ * 403: a 403 gets a general phrase in those builds instead of this text.
+ */
+export const EMAIL_NOT_VERIFIED_TEXT =
+  'Чтобы оставить отзыв, подтвердите почту: «Профиль» → «Подтвердить email»';
+
+/**
  * The one rule for a review's text on its way to the database, for a new
  * review and for an edit alike: no text — absent, null, empty or nothing but
  * spaces — is NULL in both text columns, never ''; a text is stored trimmed.
@@ -105,6 +125,8 @@ export const storedReviewText = (content) => {
  * 
  * Business rules enforced:
  * - User must exist and be active
+ * - The user's e-mail is confirmed (a new review only; editing and deleting
+ *   one's own review and the owner's reply are not checked)
  * - Establishment must exist and be shown in the catalogue (status 'active')
  * - User can only have one active review per establishment (enforced by unique constraint)
  * - User cannot exceed rate limit of 10 reviews per day
@@ -132,6 +154,13 @@ export const createReview = async (reviewData) => {
   }
   if (!user.is_active) {
     throw new AppError(ACCOUNT_INACTIVE_TEXT, 403, 'USER_INACTIVE');
+  }
+
+  // Step 1b: a new review only from a confirmed e-mail (EMAIL_NOT_VERIFIED_TEXT).
+  // Before the card and the daily quota are looked at: the refusal costs the
+  // guest nothing and tells nothing about the card.
+  if (user.email_verified !== true) {
+    throw new AppError(EMAIL_NOT_VERIFIED_TEXT, 422, 'EMAIL_NOT_VERIFIED');
   }
 
   // Step 2: The establishment exists and the catalogue shows it — status
