@@ -12,9 +12,12 @@ import { authedFetch } from '@/lib/auth/session';
  *
  * Casing (verified against backend validators, reviewValidation.js —
  * a mismatch is a SILENT 422):
- *   CREATE → POST /api/v1/reviews  body { establishmentId, rating, content }
- *     establishmentId: UUID (camelCase) · rating: int 1–5 · content: 1–1000 (trimmed)
+ *   CREATE → POST /api/v1/reviews  body { establishmentId, rating, content? }
+ *     establishmentId: UUID (camelCase) · rating: int 1–5 · content: optional,
+ *     up to 1000 (trimmed). A review of one rating sends no `content` key at
+ *     all (the server also takes '' and null — all become NULL).
  *   UPDATE → PUT /api/v1/reviews/:id  body { rating?, content? } (≥1 required)
+ *     content: '' erases the text — the review keeps only its rating.
  *   DELETE → DELETE /api/v1/reviews/:id  (path param only, no body)
  *
  * Ownership of :id is enforced by the backend SERVICE (no middleware) — 403
@@ -24,7 +27,8 @@ import { authedFetch } from '@/lib/auth/session';
 export type CreateReviewInput = {
   establishmentId: string;
   rating: number;
-  content: string;
+  /** Absent for a review of one rating — the key is then not sent. */
+  content?: string;
 };
 
 /**
@@ -42,6 +46,8 @@ export async function createReview(input: CreateReviewInput): Promise<void> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // camelCase `establishmentId` — backend validator rejects snake_case here.
+    // JSON.stringify drops an undefined `content`: no key for a review
+    // without text.
     body: JSON.stringify({
       establishmentId: input.establishmentId,
       rating: input.rating,
@@ -52,6 +58,7 @@ export async function createReview(input: CreateReviewInput): Promise<void> {
 
 export type UpdateReviewInput = {
   rating?: number;
+  /** '' erases the text: the review keeps only its rating. */
   content?: string;
 };
 
