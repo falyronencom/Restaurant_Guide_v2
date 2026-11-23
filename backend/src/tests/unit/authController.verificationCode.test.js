@@ -28,7 +28,8 @@ const mockCodeModel = {
   reserveCodeWithinLimit: jest.fn(),
   activateReservedCode: jest.fn(),
   deleteReservedCode: jest.fn(),
-  incrementAttempts: jest.fn(),
+  spendCodeAttempt: jest.fn(),
+  MAX_CODE_ATTEMPTS: 5,
   markAsUsed: jest.fn(),
 };
 

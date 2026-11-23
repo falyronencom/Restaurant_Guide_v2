@@ -948,9 +948,10 @@ export async function sendVerificationCode(req, res, next) {
  * Response:
  *  - 200 OK: Verified, returns updated user
  *  - 400 INVALID_REQUEST: Code missing or wrong format
- *  - 401 INVALID_CODE: Code does not match (attempts incremented)
- *  - 410 INVALID_OR_EXPIRED_CODE: No active code or it has expired
- *  - 429 TOO_MANY_ATTEMPTS: Code invalidated after 5 failed attempts
+ *  - 401 INVALID_CODE: Code does not match (an attempt spent; the 5th retires the code)
+ *  - 410 INVALID_OR_EXPIRED_CODE: No active code — expired, used, or its attempts spent
+ *  - 429 TOO_MANY_ATTEMPTS: An active code with no attempts left (only the
+ *    counting before spendCodeAttempt could leave one); it is retired
  */
 export async function verifyEmailCode(req, res, next) {
   try {

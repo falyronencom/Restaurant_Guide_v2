@@ -6,9 +6,11 @@
  *
  * Lifecycle: createCode (registration) or reserveCodeWithinLimit → the email
  * went out: activateReservedCode / did not: deleteReservedCode (resend) →
- * findActiveCodeForUser → markAsUsed (or expire).
- * Anti-bruteforce: incrementAttempts increments per failed verification;
- * service layer enforces max 5 attempts before invalidating the code.
+ * spendCodeAttempt, which retires the code on the right guess or on its last
+ * attempt (or the code expires).
+ * Attempts: spendCodeAttempt spends one and compares the guess in a single
+ * statement — MAX_CODE_ATTEMPTS per code, however many requests arrive
+ * together, with or without Redis.
  */
 
 import pool from '../config/database.js';
@@ -283,35 +285,65 @@ export const deleteReservedCode = async (codeId) => {
   }
 };
 
+/** Attempts a code allows; the attempt that reaches it retires the code. */
+export const MAX_CODE_ATTEMPTS = 5;
+
 /**
- * Increment the attempts counter for a code (anti-bruteforce).
+ * Spend one attempt on the account's active code and compare the guess — in
+ * one statement. The attempt is counted and the guess compared by the same
+ * UPDATE, so a code is compared at most MAX_CODE_ATTEMPTS times however many
+ * requests arrive together, and with or without Redis (the route's limiter).
  *
- * @param {string} codeId
- * @returns {Promise<number>} New attempts value
+ * «Unused» and «attempts left» are the UPDATE's own conditions, not only the
+ * subquery's: a request that waited for another one's row lock rechecks them
+ * on the row as that one left it (READ COMMITTED). The right guess retires
+ * the code in the same statement, and so does the attempt that reaches the
+ * limit: a code is consumed once.
+ *
+ * @param {string} userId
+ * @param {string} code - The guess, 6 digits
+ * @param {number} [maxAttempts=MAX_CODE_ATTEMPTS]
+ * @returns {Promise<{id: string, attempts: number, matched: boolean}|null>}
+ *   matched — the guess was right and this statement consumed the code;
+ *   null — no attempt was spent: no active code, or none left on it
  */
-export const incrementAttempts = async (codeId) => {
+export const spendCodeAttempt = async (userId, code, maxAttempts = MAX_CODE_ATTEMPTS) => {
   const query = `
     UPDATE email_verification_codes
-    SET attempts = attempts + 1
-    WHERE id = $1
-    RETURNING attempts
+    SET attempts = attempts + 1,
+        used_at = CASE
+          WHEN code = $2 OR attempts + 1 >= $3 THEN CURRENT_TIMESTAMP
+          ELSE used_at
+        END
+    WHERE id = (
+            SELECT id
+            FROM email_verification_codes
+            WHERE user_id = $1
+              AND used_at IS NULL
+              AND expires_at > CURRENT_TIMESTAMP
+            ORDER BY created_at DESC
+            LIMIT 1
+          )
+      AND used_at IS NULL
+      AND attempts < $3
+    RETURNING id, attempts, code = $2 AS matched
   `;
 
   try {
-    const result = await pool.query(query, [codeId]);
-    return result.rows[0]?.attempts ?? 0;
+    const result = await pool.query(query, [userId, code, maxAttempts]);
+    return result.rows[0] || null;
   } catch (error) {
-    logger.error('Error incrementing verification attempts', {
+    logger.error('Error spending a verification attempt', {
       error: error.message,
-      codeId,
+      userId,
     });
     throw error;
   }
 };
 
 /**
- * Mark a code as used (consumed by successful verification or
- * forcibly invalidated after attempts exhausted).
+ * Mark a code as used — retires an active code whose attempts ran out
+ * (verifyEmailCode; spendCodeAttempt retires the codes it consumes itself).
  *
  * @param {string} codeId
  * @returns {Promise<boolean>} True if a row was updated

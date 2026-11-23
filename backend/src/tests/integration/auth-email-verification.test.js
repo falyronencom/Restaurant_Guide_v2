@@ -10,7 +10,9 @@
  *   - Manually issue code → row exists in email_verification_codes
  *   - Verify with correct code → users.email_verified becomes true
  *   - Verify with wrong code → INVALID_CODE + attempts increments
- *   - Verify after 5 wrong attempts → TOO_MANY_ATTEMPTS, code invalidated
+ *   - Verify after 5 wrong attempts → the code is retired, the next attempt
+ *     finds no code (INVALID_OR_EXPIRED_CODE); TOO_MANY_ATTEMPTS — an active
+ *     code with no attempts left
  *   - Verify when no active code → INVALID_OR_EXPIRED_CODE
  *   - Already verified → EMAIL_ALREADY_VERIFIED
  *
@@ -50,10 +52,10 @@ jest.unstable_mockModule('resend', () => ({
 
 const request = (await import('supertest')).default;
 const { default: app } = await import('../../server.js');
-const { clearAllData, query } = await import('../utils/database.js');
+const { clearAllData, getClient, query } = await import('../utils/database.js');
 const { default: redisClient, connectRedis } = await import('../../config/redis.js');
 const { _resetForTests: resetMailClient } = await import('../../services/emailService.js');
-const { sendEmailVerificationCode } = await import('../../services/authService.js');
+const { sendEmailVerificationCode, verifyEmailCode } = await import('../../services/authService.js');
 
 const ACCEPTED = () => ({ data: { id: 'msg-1' }, error: null });
 const REFUSED = () => ({ data: null, error: { name: 'application_error', message: 'Service unavailable' } });
@@ -596,7 +598,7 @@ describe('POST /api/v1/auth/verify-email-code', () => {
     expect(response.body.error.code).toBe('INVALID_OR_EXPIRED_CODE');
   });
 
-  test('invalidates code after 5 wrong attempts (TOO_MANY_ATTEMPTS)', async () => {
+  test('five wrong attempts retire the code: the sixth finds no code (410)', async () => {
     const { user, accessToken } = await registerUser();
     await request(app)
       .post('/api/v1/auth/send-verification-code')
@@ -629,6 +631,167 @@ describe('POST /api/v1/auth/verify-email-code', () => {
       [codeRow.id],
     );
     expect(finalRow.rows[0].used_at).not.toBeNull();
+  });
+
+  test('four wrong attempts, then the right code on the fifth confirms the e-mail', async () => {
+    const { user, accessToken } = await registerUser();
+    const codeRow = await getLatestCodeForUser(user.id);
+    const wrongCode = codeRow.code === '000000' ? '111111' : '000000';
+
+    for (let i = 0; i < 4; i += 1) {
+      await request(app)
+        .post('/api/v1/auth/verify-email-code')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ code: wrongCode })
+        .expect(401);
+    }
+    const response = await request(app)
+      .post('/api/v1/auth/verify-email-code')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ code: codeRow.code })
+      .expect(200);
+
+    expect(response.body.data.user.emailVerified).toBe(true);
+    const spent = await getLatestCodeForUser(user.id);
+    expect(spent.attempts).toBe(5);
+    expect(spent.used_at).not.toBeNull();
+  });
+
+  // The attempts are counted by the database, one statement per attempt
+  // (emailVerificationModel.spendCodeAttempt). The service is called
+  // directly, many times at once — up to ten at a time, the pool's size
+  // (config/database.js): no route limiter and no Redis in the way, the
+  // limit holds without them.
+  const answersOf = (outcomes) => outcomes
+    .map((o) => (o.status === 'fulfilled' ? 'VERIFIED' : o.reason.message))
+    .sort();
+  const emailVerifiedOf = async (userId) => (await query(
+    'SELECT email_verified FROM users WHERE id = $1',
+    [userId],
+  )).rows[0].email_verified;
+
+  test('twelve attempts at once: five are spent, seven find no code; the right code after them is refused', async () => {
+    const { user } = await registerUser();
+    const codeRow = await getLatestCodeForUser(user.id);
+    const wrongCode = codeRow.code === '000000' ? '111111' : '000000';
+
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 12 }, () => verifyEmailCode(user.id, wrongCode)),
+    );
+
+    expect(answersOf(outcomes)).toEqual([
+      ...Array(5).fill('INVALID_CODE'),
+      ...Array(7).fill('INVALID_OR_EXPIRED_CODE'),
+    ]);
+    const spent = await getLatestCodeForUser(user.id);
+    expect(spent.attempts).toBe(5);
+    expect(spent.used_at).not.toBeNull();
+
+    await expect(verifyEmailCode(user.id, codeRow.code)).rejects.toThrow('INVALID_OR_EXPIRED_CODE');
+    expect(await emailVerifiedOf(user.id)).toBe(false);
+  });
+
+  test('the right code sent twice at once confirms the e-mail once: the other finds the code spent', async () => {
+    const { user } = await registerUser();
+    const codeRow = await getLatestCodeForUser(user.id);
+
+    const outcomes = await Promise.allSettled([
+      verifyEmailCode(user.id, codeRow.code),
+      verifyEmailCode(user.id, codeRow.code),
+    ]);
+
+    expect(answersOf(outcomes)).toEqual(['INVALID_OR_EXPIRED_CODE', 'VERIFIED']);
+    const used = await getLatestCodeForUser(user.id);
+    expect(used.attempts).toBe(1);
+    expect(used.used_at).not.toBeNull();
+    expect(await emailVerifiedOf(user.id)).toBe(true);
+  });
+
+  // What a request that waited for the code's row rechecks once the other
+  // transaction commits — «unused» and «attempts left» in the UPDATE itself.
+  // The other transaction holds the row; the attempt is seen waiting for it
+  // (pg_stat_activity), and only then does the other one commit. Without
+  // the holding, the two requests may simply run one after another, and
+  // the subquery alone would answer the same.
+  const waitForLockWaiter = async () => {
+    for (let i = 0; i < 250; i += 1) {
+      const { rows } = await query(
+        `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'`,
+      );
+      if (rows[0].n > 0) return rows[0].n;
+      await new Promise((resolve) => { setTimeout(resolve, 20); });
+    }
+    return 0;
+  };
+  const attemptWhileRowHeld = async (userId, code, holdingUpdate) => {
+    const holder = await getClient();
+    let attempt;
+    let waiters = 0;
+    try {
+      await holder.query('BEGIN');
+      await holder.query(holdingUpdate.sql, holdingUpdate.params);
+      attempt = verifyEmailCode(userId, code).then(() => 'VERIFIED', (error) => error.message);
+      waiters = await waitForLockWaiter();
+      await holder.query('COMMIT');
+    } catch (error) {
+      await holder.query('ROLLBACK');
+      throw error;
+    } finally {
+      holder.release();
+    }
+    return { waiters, answer: await attempt };
+  };
+
+  test('the right code waiting while another request consumes it: after that COMMIT it finds the code used (410)', async () => {
+    const { user } = await registerUser();
+    const codeRow = await getLatestCodeForUser(user.id);
+
+    const { waiters, answer } = await attemptWhileRowHeld(user.id, codeRow.code, {
+      sql: 'UPDATE email_verification_codes SET used_at = NOW() WHERE id = $1',
+      params: [codeRow.id],
+    });
+
+    expect(waiters).toBe(1);
+    expect(answer).toBe('INVALID_OR_EXPIRED_CODE');
+    expect((await getLatestCodeForUser(user.id)).attempts).toBe(0);
+    expect(await emailVerifiedOf(user.id)).toBe(false);
+  });
+
+  test('the right code waiting while the last attempt is spent: after that COMMIT it is not compared (429)', async () => {
+    const { user } = await registerUser();
+    const codeRow = await getLatestCodeForUser(user.id);
+
+    const { waiters, answer } = await attemptWhileRowHeld(user.id, codeRow.code, {
+      sql: 'UPDATE email_verification_codes SET attempts = 5 WHERE id = $1',
+      params: [codeRow.id],
+    });
+
+    expect(waiters).toBe(1);
+    expect(answer).toBe('TOO_MANY_ATTEMPTS');
+    expect((await getLatestCodeForUser(user.id)).attempts).toBe(5);
+    expect(await emailVerifiedOf(user.id)).toBe(false);
+  });
+
+  // A code whose attempts ran out while it stayed active — only the counting
+  // before spendCodeAttempt could leave one: no attempt is spent on it, not
+  // even the right code passes, and the code is retired.
+  test('an active code with no attempts left: even the right code is refused 429 TOO_MANY_ATTEMPTS, the code retired', async () => {
+    const { user, accessToken } = await registerUser();
+    const codeRow = await getLatestCodeForUser(user.id);
+    await query('UPDATE email_verification_codes SET attempts = 5 WHERE id = $1', [codeRow.id]);
+
+    const response = await request(app)
+      .post('/api/v1/auth/verify-email-code')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ code: codeRow.code })
+      .expect(429);
+
+    expect(response.body.error.code).toBe('TOO_MANY_ATTEMPTS');
+    const retired = await getLatestCodeForUser(user.id);
+    expect(retired.attempts).toBe(5);
+    expect(retired.used_at).not.toBeNull();
+    expect(await emailVerifiedOf(user.id)).toBe(false);
   });
 
   test('rejects unauthenticated request with 401', async () => {
