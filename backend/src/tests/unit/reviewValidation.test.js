@@ -13,6 +13,7 @@ import {
   validateCreateReview,
   validateGetReview,
   validateGetEstablishmentReviews,
+  validateGetPublicReviews,
   validateGetUserReviews,
   validateUpdateReview,
   validateDeleteReview,
@@ -75,20 +76,71 @@ describe('validateCreateReview', () => {
   });
 
   // ── Content edge cases ──
+  //
+  // A review may be a rating alone (decision of the Coordinator 20.11.2026,
+  // thread «Отзыв без текста»). The bodies are the clients' own: the app's
+  // createReview leaves the key out when there is no text
+  // (mobile/lib/services/reviews_service.dart), the site's form sends its
+  // empty field as '' (web/src/lib/api/endpoints/reviews.ts). Until then both
+  // were refused here — these two tests were «should reject …».
 
-  test('should reject empty content', async () => {
+  test('accepts an empty content — the site sends an empty field as ""', async () => {
     const req = mockReq({ body: { ...validBody, content: '' } });
     const result = await runValidation(validateCreateReview, req);
-    expect(result.isEmpty()).toBe(false);
-    const errors = result.array();
-    expect(errors.some(e => (e.path || e.param) === 'content')).toBe(true);
+    expect(result.array()).toEqual([]);
+    expect(req.body.content).toBe('');
   });
 
-  test('should reject missing content', async () => {
+  test('accepts a review without content — the app leaves the key out', async () => {
     const { content, ...noContent } = validBody;
     const req = mockReq({ body: noContent });
     const result = await runValidation(validateCreateReview, req);
-    expect(result.isEmpty()).toBe(false);
+    expect(result.array()).toEqual([]);
+    expect(req.body).not.toHaveProperty('content');
+  });
+
+  test('accepts content: null and leaves it null', async () => {
+    const req = mockReq({ body: { ...validBody, content: null } });
+    const result = await runValidation(validateCreateReview, req);
+    expect(result.array()).toEqual([]);
+    expect(req.body.content).toBeNull();
+  });
+
+  test('a text of spaces and line breaks trims to "" and passes', async () => {
+    const req = mockReq({ body: { ...validBody, content: '  \n\t  ' } });
+    const result = await runValidation(validateCreateReview, req);
+    expect(result.array()).toEqual([]);
+    expect(req.body.content).toBe('');
+  });
+
+  // Not a text at all — refused before anything reads it. An array went past
+  // the мат check and the length bound (trim and isLength read it element by
+  // element, the мат check a string only) and was stored as a literal
+  // «{"…"}»; the chain before 22.11.2026 did the same (Phase 3.5 review).
+  test.each([
+    ['an array with мат inside', ['Официант хууууй забил на нас']],
+    ['an empty array', []],
+    ['a number', 5],
+    ['an object', { text: 'Отлично' }],
+  ])('refuses content that is not a text — %s', async (_label, content) => {
+    const req = mockReq({ body: { ...validBody, content } });
+    expect((await runValidation(validateCreateReview, req)).array()).toEqual([
+      expect.objectContaining({ path: 'content', msg: 'Review content must be text' }),
+    ]);
+  });
+
+  test('a text is still trimmed and still checked for мат', async () => {
+    const trimmed = mockReq({ body: { ...validBody, content: '  Отличное место  ' } });
+    expect((await runValidation(validateCreateReview, trimmed)).array()).toEqual([]);
+    expect(trimmed.body.content).toBe('Отличное место');
+
+    const profane = mockReq({ body: { ...validBody, content: 'Официант хууууй забил на нас' } });
+    expect((await runValidation(validateCreateReview, profane)).array()).toEqual([
+      expect.objectContaining({
+        path: 'content',
+        msg: 'Текст содержит нецензурные выражения — уберите их, пожалуйста',
+      }),
+    ]);
   });
 
   test('should reject content over 1000 characters', async () => {
@@ -339,6 +391,43 @@ describe('validateGetEstablishmentReviews', () => {
   });
 });
 
+// ─── with_text: «only reviews with a text» on both list paths ───────────────
+//
+// The card's first reviews are those with a text (decision В1 = А). Both
+// lists take `with_text`: the app's GET /establishments/:id/reviews and the
+// site's GET /public/establishments/by-slug/:slug/reviews. The controllers
+// read only the string 'true', so anything but 'true' or 'false' is refused
+// here, a repeated parameter included (qs makes it an array).
+
+describe.each([
+  ['GET /establishments/:id/reviews', validateGetEstablishmentReviews, { id: '550e8400-e29b-41d4-a716-446655440000' }],
+  ['GET /public/establishments/by-slug/:slug/reviews', validateGetPublicReviews, {}],
+])('with_text on %s', (_path, chains, params) => {
+  test.each(['true', 'false'])('accepts with_text=%s', async (value) => {
+    const req = mockReq({ params, query: { with_text: value } });
+    expect((await runValidation(chains, req)).array()).toEqual([]);
+  });
+
+  test('accepts the list without it', async () => {
+    const req = mockReq({ params });
+    expect((await runValidation(chains, req)).array()).toEqual([]);
+  });
+
+  test.each([
+    ['yes', 'yes'],
+    ['1', '1'],
+    ['TRUE', 'TRUE'],
+    ['an empty value', ''],
+    ['a repeated parameter', ['true', 'true']],
+    ['an object (with_text[a]=true)', { a: 'true' }],
+  ])('refuses %s', async (_label, value) => {
+    const req = mockReq({ params, query: { with_text: value } });
+    expect((await runValidation(chains, req)).array()).toEqual([
+      expect.objectContaining({ path: 'with_text', msg: 'with_text must be true or false' }),
+    ]);
+  });
+});
+
 // ─── validateGetUserReviews ─────────────────────────────────────────────────
 
 describe('validateGetUserReviews', () => {
@@ -441,6 +530,44 @@ describe('validateUpdateReview', () => {
     });
     const result = await runValidation(validateUpdateReview, req);
     expect(result.isEmpty()).toBe(true);
+  });
+
+  // Erasing the text is a change: the site's edit form sends both fields,
+  // an erased text as '' (web/src/lib/api/endpoints/reviews.ts). Before
+  // 22.11.2026 an empty content on update was refused (min: 1), null too.
+  test('accepts an erased text sent with the rating, as the site sends it', async () => {
+    const req = mockReq({
+      params: { id: validId },
+      body: { rating: 4, content: '' },
+    });
+    expect((await runValidation(validateUpdateReview, req)).array()).toEqual([]);
+    expect(req.body.content).toBe('');
+  });
+
+  test.each([
+    ['""', ''],
+    ['null', null],
+    ['spaces', '   '],
+  ])('accepts an erased text (%s) without a rating — the key is there', async (_label, content) => {
+    const req = mockReq({
+      params: { id: validId },
+      body: { content },
+    });
+    expect((await runValidation(validateUpdateReview, req)).array()).toEqual([]);
+  });
+
+  test.each([
+    ['an array with мат inside', ['Передумал: хууууй, а не кухня']],
+    ['an empty array', []],
+    ['a number', 5],
+  ])('refuses content that is not a text on update — %s', async (_label, content) => {
+    const req = mockReq({
+      params: { id: validId },
+      body: { rating: 3, content },
+    });
+    expect((await runValidation(validateUpdateReview, req)).array()).toEqual([
+      expect.objectContaining({ path: 'content', msg: 'Review content must be text' }),
+    ]);
   });
 
   test('should reject non-UUID review id', async () => {

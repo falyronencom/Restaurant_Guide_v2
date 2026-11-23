@@ -182,31 +182,64 @@ describe('Reviews System - Create Review', () => {
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  test('should reject missing content', async () => {
+  // A review may be a rating alone (decision of the Coordinator 20.11.2026,
+  // thread «Отзыв без текста»). Until then the first two were «should reject
+  // missing / empty content» — 422. The bodies are the clients' own: the
+  // app's createReview leaves `content` out when the field is empty
+  // (mobile/lib/services/reviews_service.dart), the site's createReview sends
+  // the field as it is, '' when empty (web/src/lib/api/endpoints/reviews.ts).
+  // Whatever «no text» comes, both text columns hold NULL, never '': the lists
+  // that keep only reviews with a text and the counts read one rule.
+  test.each([
+    ['without content — as the app sends it', {}],
+    ['with an empty content — as the site sends it', { content: '' }],
+    ['with a text of spaces and line breaks', { content: '  \n\t  ' }],
+    ['with content: null', { content: null }],
+  ])('a review %s is created, and both text columns are NULL', async (_label, text) => {
     const response = await request(app)
       .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({
-        establishmentId,
-        rating: 5
-      })
-      .expect(422);
+      .send({ establishmentId, rating: 4, ...text })
+      .expect(201);
 
-    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    const { review } = response.body.data;
+    expect(review.rating).toBe(4);
+    expect(review).toHaveProperty('content', null);
+
+    const { rows } = await query('SELECT content, text FROM reviews WHERE id = $1', [review.id]);
+    expect(rows).toEqual([{ content: null, text: null }]);
   });
 
-  test('should reject empty content', async () => {
+  // A request past the clients (both send a string): an array went past the
+  // мат check and the length bound and was published as «{"…"}» — before
+  // 22.11.2026 too (Phase 3.5 review). Now refused, nothing written.
+  test('content as an array, мат inside, is refused 422 and nothing is written', async () => {
     const response = await request(app)
       .post('/api/v1/reviews')
       .set('Authorization', `Bearer ${userToken}`)
-      .send({
-        establishmentId,
-        rating: 5,
-        content: ''
-      })
+      .send({ establishmentId, rating: 1, content: ['Официант хууууй забил на нас'] })
       .expect(422);
 
     expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual([
+      { field: 'content', message: 'Review content must be text' },
+    ]);
+    const { rows } = await query('SELECT count(*)::int AS n FROM reviews');
+    expect(rows[0].n).toBe(0);
+  });
+
+  test('a text is stored trimmed, the same in both text columns', async () => {
+    const response = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId, rating: 5, content: `  ${longContent}  ` })
+      .expect(201);
+
+    const { rows } = await query(
+      'SELECT content, text FROM reviews WHERE id = $1',
+      [response.body.data.review.id]
+    );
+    expect(rows).toEqual([{ content: longContent, text: longContent }]);
   });
 
   test('should reject review without authentication', async () => {
@@ -433,6 +466,29 @@ describe('Reviews System - Establishment Metrics Update', () => {
     expect(result.rows[0].review_count).toBe(2);
   });
 
+  // The rating and «Все отзывы · N» count every review, with a text or
+  // without (plan, «Что не меняется»).
+  test('a review without text counts in the rating and in the number of reviews', async () => {
+    await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ establishmentId, rating: 5, content: `${longContent} with text` })
+      .expect(201);
+    await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${user2Token}`)
+      .send({ establishmentId, rating: 2 })
+      .expect(201);
+
+    const result = await query(
+      'SELECT average_rating, review_count FROM establishments WHERE id = $1',
+      [establishmentId]
+    );
+    // (5 + 2) / 2
+    expect(parseFloat(result.rows[0].average_rating)).toBeCloseTo(3.5);
+    expect(result.rows[0].review_count).toBe(2);
+  });
+
   test('should increment review count correctly', async () => {
     // Create 3 reviews from different users
     await request(app)
@@ -603,6 +659,68 @@ describe('Reviews System - Update Review', () => {
       .expect(403);
 
     expect(response.body.error.code).toBe('UNAUTHORIZED_REVIEW_MODIFICATION');
+  });
+
+  // Erasing the text: the review stays, a rating alone, marked edited. The
+  // site's edit form sends both fields, an erased text as ''
+  // (web/src/lib/api/endpoints/reviews.ts); an edit of the text alone, with
+  // no rating, is no «nothing to change» either. Until 22.11.2026 all four
+  // were 422 (min 1); behind the validator, the service's falsy test would
+  // have answered the three without a rating 400 NO_UPDATE_FIELDS.
+  test.each([
+    ['with the rating, as the site sends it', { rating: 4, content: '' }, 4],
+    ['alone, content ""', { content: '' }, 5],
+    ['alone, content null', { content: null }, 5],
+    ['alone, a text of spaces', { content: '   ' }, 5],
+  ])('erasing the text %s: 200, both text columns NULL, the review edited', async (_label, body, rating) => {
+    const response = await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send(body)
+      .expect(200);
+
+    expect(response.body.data.review).toHaveProperty('content', null);
+    expect(response.body.data.review.is_edited).toBe(true);
+
+    const { rows } = await query(
+      'SELECT rating, content, text, is_edited FROM reviews WHERE id = $1',
+      [reviewId]
+    );
+    expect(rows).toEqual([{ rating, content: null, text: null, is_edited: true }]);
+  });
+
+  test('an edit whose content is an array is refused 422, the text stays', async () => {
+    const response = await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ rating: 1, content: ['Передумал: хууууй, а не кухня'] })
+      .expect(422);
+
+    expect(response.body.error.details).toEqual([
+      { field: 'content', message: 'Review content must be text' },
+    ]);
+    const { rows } = await query('SELECT rating, content, text FROM reviews WHERE id = $1', [reviewId]);
+    expect(rows).toEqual([{
+      rating: 5,
+      content: `${longContent} original`,
+      text: `${longContent} original`,
+    }]);
+  });
+
+  test('a text written into a review of a rating alone is stored in both columns', async () => {
+    await query('UPDATE reviews SET content = NULL, text = NULL WHERE id = $1', [reviewId]);
+
+    await request(app)
+      .put(`/api/v1/reviews/${reviewId}`)
+      .set('Authorization', `Bearer ${userToken}`)
+      .send({ rating: 5, content: `${longContent} added later` })
+      .expect(200);
+
+    const { rows } = await query('SELECT content, text FROM reviews WHERE id = $1', [reviewId]);
+    expect(rows).toEqual([{
+      content: `${longContent} added later`,
+      text: `${longContent} added later`,
+    }]);
   });
 
   test('should recalculate metrics after update', async () => {
@@ -1550,5 +1668,114 @@ describe('Reviews System - Public Projection on Single-Review Detail Endpoint', 
     expect(r.content).toContain('detail-projection-test');
     expect(r.partner_response).toBe(responseText);
     expect(r.partner_response_at).toBeTruthy();
+  });
+});
+
+describe('Reviews System - Only Reviews With a Text (with_text)', () => {
+  // The card shows its first reviews with a text only (decision В1 = А):
+  // GET /establishments/:id/reviews?with_text=true. The page and
+  // pagination.total keep the same reviews; without the parameter the list is
+  // as it was, for the builds that never send it. «Has a text» is the text the
+  // lists show — COALESCE(content, text) — with a character that is not a
+  // space. One row per kind, each by its own author (one review per person
+  // and place):
+  //   with-text — a text in both columns;
+  //   rating-only — NULL in both (a review of a rating alone);
+  //   spaces — a text of spaces, as an older writer could leave it;
+  //   empty — '' in both;
+  //   legacy-text — content NULL, the text only in the old column `text`;
+  //   blank-over-legacy — spaces in content, a text in `text`: the list shows
+  //     the spaces (COALESCE takes content), so it has no text — this row
+  //     tells «what the list shows» from «a text in either column».
+  const kinds = {
+    'with-text': ['Отзыв с текстом про драники', 'Отзыв с текстом про драники'],
+    'rating-only': [null, null],
+    spaces: ['   ', '   '],
+    empty: ['', ''],
+    'legacy-text': [null, 'Текст только в прежнем столбце'],
+    'blank-over-legacy': ['   ', 'Прежний текст, которого список не покажет'],
+  };
+  const idOf = {};
+  const authors = {};
+
+  beforeAll(async () => {
+    for (const kind of Object.keys(kinds)) {
+      const { rows } = await query(
+        `INSERT INTO users (id, email, password_hash, name, role, auth_method)
+         VALUES (gen_random_uuid(), $1, 'hash', $2, 'user', 'email')
+         RETURNING id`,
+        [`with-text-${kind}@test.com`, `Автор ${kind}`]
+      );
+      authors[kind] = rows[0].id;
+    }
+  });
+
+  beforeEach(async () => {
+    let minute = 0;
+    for (const [kind, [content, text]] of Object.entries(kinds)) {
+      minute += 1;
+      const { rows } = await query(
+        `INSERT INTO reviews (id, user_id, establishment_id, rating, content, text, created_at, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, 4, $3, $4, NOW() - make_interval(mins => $5), NOW())
+         RETURNING id`,
+        [authors[kind], establishmentId, content, text, minute]
+      );
+      idOf[kind] = rows[0].id;
+    }
+  });
+
+  const list = (qs = '') => request(app)
+    .get(`/api/v1/establishments/${establishmentId}/reviews${qs}`);
+
+  test('without with_text — every review, as before; a review of a rating alone carries content: null', async () => {
+    const response = await list().expect(200);
+
+    const { reviews, pagination } = response.body.data;
+    // Fixture guard: all six kinds are there for the filter to tell apart.
+    expect(reviews.map((r) => r.id).sort()).toEqual(Object.values(idOf).sort());
+    expect(pagination.total).toBe(6);
+    const ratingOnly = reviews.find((r) => r.id === idOf['rating-only']);
+    expect(ratingOnly).toHaveProperty('content', null);
+  });
+
+  test('with_text=true keeps the reviews with a text — the old column\'s text included — and the total counts them', async () => {
+    const response = await list('?with_text=true').expect(200);
+
+    const { reviews, pagination } = response.body.data;
+    expect(reviews.map((r) => r.id).sort()).toEqual([idOf['with-text'], idOf['legacy-text']].sort());
+    expect(reviews.map((r) => r.content).sort()).toEqual([
+      'Отзыв с текстом про драники',
+      'Текст только в прежнем столбце',
+    ]);
+    expect(pagination.total).toBe(2);
+    expect(pagination.pages).toBe(1);
+  });
+
+  test('with_text=true: the total is the filtered count, not the page — one review a page, two in all', async () => {
+    const response = await list('?with_text=true&limit=1').expect(200);
+
+    const { reviews, pagination } = response.body.data;
+    expect(reviews).toHaveLength(1);
+    expect(pagination).toMatchObject({ total: 2, pages: 2, hasNext: true });
+
+    const second = await list('?with_text=true&limit=1&page=2').expect(200);
+    const both = [...reviews, ...second.body.data.reviews].map((r) => r.id).sort();
+    expect(both).toEqual([idOf['with-text'], idOf['legacy-text']].sort());
+  });
+
+  test('with_text=false — the same list as without it', async () => {
+    const response = await list('?with_text=false').expect(200);
+
+    expect(response.body.data.reviews.map((r) => r.id).sort()).toEqual(Object.values(idOf).sort());
+    expect(response.body.data.pagination.total).toBe(6);
+  });
+
+  test('another value of with_text is refused like the list\'s other parameters: 422 VALIDATION_ERROR', async () => {
+    const response = await list('?with_text=yes').expect(422);
+
+    expect(response.body.error.code).toBe('VALIDATION_ERROR');
+    expect(response.body.error.details).toEqual([
+      { field: 'with_text', message: 'with_text must be true or false' },
+    ]);
   });
 });
