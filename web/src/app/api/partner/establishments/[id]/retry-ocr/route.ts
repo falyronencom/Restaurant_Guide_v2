@@ -4,9 +4,11 @@ import { retryOcrAction } from '@/lib/partner/operations';
 import { assertSameOrigin } from '@/lib/partner/same-origin';
 
 /*
- * Partner cabinet — re-enqueue menu OCR (CAT-C-3.14). Buffered POST Route
- * Handler replacing the retryOcrAction Server Action. Recovery for the
- * PUT-media-sync OCR asymmetry (menu photos added via PUT do not auto-enqueue).
+ * Partner cabinet — «Перезапустить распознавание» of the «Меню» section
+ * (CAT-C-3.14 transport: a buffered POST Route Handler). Every menu file is
+ * read again, the recognised ones too; saving the card queues new menu files
+ * by itself (backend establishmentService media sync). Answers how many files
+ * were queued, or which limit refused (lib/partner/operations retryOcrAction).
  */
 
 export const runtime = 'nodejs';

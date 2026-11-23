@@ -40,13 +40,19 @@ const DEFAULT_TIMEOUT_MS = 10_000;
  *               carries the site's secret when one is set — the site's own
  *               budget for the calls without a visitor. Read nothing from the
  *               request here: headers() would make ISR pages dynamic.
- * @returns The unwrapped `data` field of the success envelope.
+ * @param options.envelope - Return the whole success body instead of its
+ *               `data`: for an answer that puts fields BESIDE `data` — the
+ *               partner's menu sends the list as `data` and the recognition
+ *               state and the hidden-items fact next to it (backend
+ *               partnerMenuItemController.listMenuItems).
+ * @returns The unwrapped `data` field of the success envelope (the whole
+ *          success body with `envelope`).
  * @throws  ApiError on non-success envelope OR HTTP failure OR timeout.
  */
 export async function serverFetch<T>(
   path: string,
   init?: RequestInit,
-  options: { timeoutMs?: number; visitor?: string | null } = {},
+  options: { timeoutMs?: number; visitor?: string | null; envelope?: boolean } = {},
 ): Promise<T> {
   const apiUrl = process.env.API_URL;
   if (!apiUrl) {
@@ -110,7 +116,7 @@ export async function serverFetch<T>(
     );
   }
 
-  return body.data as T;
+  return (options.envelope ? body : body.data) as T;
 }
 
 function isApiResponse(value: unknown): value is ApiResponse<unknown> {

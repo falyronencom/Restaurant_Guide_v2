@@ -5,6 +5,7 @@ import type {
   SessionUser,
 } from '@/lib/api/types';
 import type { Refusal } from '@/lib/partner/errors';
+import type { PartnerMenu, PartnerMenuItem } from '@/lib/partner/menu';
 
 /*
  * Partner cabinet operation result envelopes (CAT-C-3.14).
@@ -43,10 +44,61 @@ export type CreateResult =
     }
   | Failure;
 
+/**
+ * What a cabinet write answers about the card's public page
+ * (lib/partner/card-page.ts): dropped now, or not now — ask refresh-page in
+ * `retryInMs` (the card's interval). Absent — the write does not touch a page
+ * a guest sees.
+ */
+export type PageRefresh = {
+  refreshed: boolean;
+  retryInMs?: number;
+};
+
 export type WriteResult =
-  | { ok: true; status?: EstablishmentStatus; base_score?: number | null }
+  | {
+      ok: true;
+      status?: EstablishmentStatus;
+      base_score?: number | null;
+      page?: PageRefresh;
+      /** The card's public address, after a resume (for «Посмотреть на сайте»). */
+      publicPath?: string;
+    }
   | Failure;
 
 export type LoadDetailResult =
-  | { ok: true; establishment: PartnerEstablishmentDetail }
+  | {
+      ok: true;
+      establishment: PartnerEstablishmentDetail;
+      /** The card's public address — a published card only, built on the site's server. */
+      publicPath?: string;
+    }
+  | Failure;
+
+/** The card's «Меню» section. */
+export type MenuLoadResult =
+  | {
+      ok: true;
+      menu: PartnerMenu;
+      /**
+       * The account's e-mail is not confirmed — asked of the account only when
+       * a state a confirmed e-mail would help shows (T5); absent otherwise.
+       */
+      emailUnconfirmed?: boolean;
+    }
+  | Failure;
+
+/** A menu line written (an edit, «Всё верно»). */
+export type MenuItemWriteResult =
+  | { ok: true; item: PartnerMenuItem; page?: PageRefresh }
+  | Failure;
+
+/** «Перезапустить распознавание». */
+export type RetryOcrResult =
+  | { ok: true; enqueuedJobs: number; totalPdfs: number }
+  | (Failure & { emailUnconfirmed?: boolean });
+
+/** «Обновить страницу карточки» — after a re-recognition, or a deferred drop. */
+export type RefreshPageResult =
+  | { ok: true; page: PageRefresh }
   | Failure;

@@ -11,7 +11,7 @@
  * the create / update / submit / delete paths (manual cross-target sync — no shared
  * package, per constants.ts).
  */
-import { messageForEstablishmentError } from '@/lib/partner/errors';
+import { messageForEstablishmentError, refusalMessage } from '@/lib/partner/errors';
 
 // Codes establishmentService throws on create/update/submit/delete that reach the
 // cabinet UI — each MUST map to a specific message (not the neutral fallback).
@@ -48,6 +48,18 @@ const CABINET_CODES = [
   // the media proxy) — they reach the same cabinet UI.
   'NO_SESSION',
   'SESSION_REFRESH_UNAVAILABLE',
+  // Part 1 of «Кабинет партнёра на сайте» (23.11.2026): the card's menu, its
+  // restart and the pause. The server's texts of the menu codes are English
+  // (backend partnerMenuItemService), so each needs the site's own.
+  'NO_PDF_MENUS', // retryOcr: no menu files
+  'MENU_ITEM_NOT_FOUND', // updateMenuItem: gone, hidden by the moderator, or not the partner's
+  'INVALID_PRICE', // updateMenuItem
+  'NO_FIELDS_TO_UPDATE', // updateMenuItem
+  'INVALID_FORMAT', // errorHandler: a menu item id that is not a UUID (22P02)
+  'OCR_RESTART_FAILED', // retryOcr: every queuing failed
+  'INVALID_STATUS_TRANSITION', // suspendEstablishment: not published
+  'CSRF', // the cabinet's own same-origin guard (lib/partner/same-origin.ts)
+  'PAYLOAD_TOO_LARGE', // the menu line's edit, its body over 16 KB (lib/partner/request-body.ts)
 ];
 
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';
@@ -74,5 +86,21 @@ describe('messageForEstablishmentError — cabinet code coverage (B1 anti-drift)
     expect(messageForEstablishmentError('ESTABLISHMENT_NOT_DELETABLE')).toBe(
       'Удалить можно только черновик или отклонённую карточку, которая ещё не была на сайте. Чтобы убрать эту карточку, напишите в поддержку.',
     );
+  });
+});
+
+describe('T4 and T7б are the site\'s own words, a Russian text of the server notwithstanding (part 1, Trunk\'s queue б)', () => {
+  it.each([
+    ['NO_PDF_MENUS', 'Сначала загрузите файлы меню.', 'Сначала добавьте фото меню или PDF в разделе «Фотографии и меню».'],
+    ['MENU_ITEM_NOT_FOUND', 'Позиция меню не найдена.', 'Позиция не найдена — возможно, меню распознано заново. Список обновлён.'],
+  ])('%s with the server\'s «%s» → the site\'s T-text', (code, serverText, siteText) => {
+    expect(refusalMessage({ code, message: serverText })).toBe(siteText);
+    expect(refusalMessage({ code })).toBe(siteText);
+  });
+
+  it('another code still reads the server\'s Russian text first', () => {
+    expect(
+      refusalMessage({ code: 'INVALID_STATUS_TRANSITION', message: 'Приостановить можно только опубликованное заведение.' }),
+    ).toBe('Приостановить можно только опубликованное заведение.');
   });
 });

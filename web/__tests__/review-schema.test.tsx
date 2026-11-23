@@ -194,10 +194,13 @@ describe('ReviewSchema — aggregateRating gate', () => {
     );
 
     const schema = parseLdJson(container)!;
+    // ratingCount, not reviewCount: review_count counts ratings without text
+    // too (thread «Отзыв без текста», 11.2026) — schema.org's reviewCount is
+    // the written reviews. toEqual: no reviewCount key alongside.
     expect(schema.aggregateRating).toEqual({
       '@type': 'AggregateRating',
       ratingValue: 4.5,
-      reviewCount: 3,
+      ratingCount: 3,
       bestRating: 5,
       worstRating: 1,
     });

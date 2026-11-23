@@ -1,13 +1,21 @@
 import 'server-only';
 
 import { authedFetch } from '@/lib/auth/session';
-import type {
-  CreateEstablishmentPayload,
-  EstablishmentWriteResult,
-  PartnerEstablishmentDetail,
-  PartnerEstablishmentListResponse,
-  UpdateEstablishmentPayload,
+import {
+  ApiError,
+  type CreateEstablishmentPayload,
+  type EstablishmentWriteResult,
+  type PartnerEstablishmentDetail,
+  type PartnerEstablishmentListResponse,
+  type UpdateEstablishmentPayload,
 } from '@/lib/api/types';
+import {
+  menuItemOf,
+  partnerMenuOf,
+  type PartnerMenu,
+  type PartnerMenuItem,
+} from '@/lib/partner/menu';
+import type { MenuItemChanges } from '@/lib/partner/menu-format';
 
 /*
  * Partner establishment endpoints (Phase C Slice 1, Segment B) over
@@ -105,14 +113,76 @@ export async function resumeEstablishment(
 }
 
 /**
- * Re-enqueue OCR for the establishment's menu media — the recovery for the
- * PUT-media-sync asymmetry (menu photos added via PUT do not auto-enqueue OCR;
- * see Segment A Completion Report). POST /:id/retry-ocr.
+ * Read the card's menu again from every menu file — POST /:id/retry-ocr
+ * (backend partnerMenuItemService.retryOcr). Saving the card queues the
+ * recognition of new menu files by itself (backend establishmentService,
+ * media sync); this is the partner's «Перезапустить распознавание»: every
+ * file, the recognised ones too. 202 `data: { enqueuedJobs, totalPdfs }` —
+ * `totalPdfs` counts the menu files of every kind (the name predates menu
+ * photos).
  */
-export async function retryOcr(id: string): Promise<unknown> {
-  return authedFetch(`${BASE}/${encodeURIComponent(id)}/retry-ocr`, {
-    method: 'POST',
-  });
+export async function retryOcr(id: string): Promise<{ enqueuedJobs: number; totalPdfs: number }> {
+  const data = await authedFetch<{ enqueuedJobs?: unknown; totalPdfs?: unknown }>(
+    `${BASE}/${encodeURIComponent(id)}/retry-ocr`,
+    { method: 'POST' },
+  );
+  const count = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return { enqueuedJobs: count(data?.enqueuedJobs), totalPdfs: count(data?.totalPdfs) };
+}
+
+/**
+ * The card's recognised menu — GET /:id/menu-items. The answer puts the
+ * recognition state and the hidden-items fact BESIDE `data`
+ * (backend partnerMenuItemController.listMenuItems), so the whole body is
+ * read (`envelope`), then parsed (lib/partner/menu.ts).
+ */
+export async function listMenuItems(id: string): Promise<PartnerMenu> {
+  const body = await authedFetch<unknown>(
+    `${BASE}/${encodeURIComponent(id)}/menu-items`,
+    undefined,
+    { envelope: true },
+  );
+  return partnerMenuOf(body);
+}
+
+/**
+ * Edit one menu line — PATCH /api/v1/partner/menu-items/:id with the changed
+ * fields only. The server writes the line and its copies in the other menu
+ * files at once, clears their marks, and answers with the line alone
+ * (`data`: the row as the list has it) — the copies come with a re-read.
+ */
+export async function updateMenuItem(
+  itemId: string,
+  changes: MenuItemChanges,
+): Promise<PartnerMenuItem> {
+  const row = await authedFetch<unknown>(
+    `/api/v1/partner/menu-items/${encodeURIComponent(itemId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(changes),
+    },
+  );
+  // `data: null` — the line was replaced by a re-recognition between the read
+  // and the write (backend partnerMenuItemService.updateMenuItem): gone, as
+  // MENU_ITEM_NOT_FOUND says — the section says so (T7b) and reads the menu
+  // anew (Phase 4.5, LOW 6).
+  if (row === null) throw new ApiError(404, 'Menu item not found', 'MENU_ITEM_NOT_FOUND');
+  const item = menuItemOf(row);
+  if (!item) throw new ApiError(502, 'Unexpected menu item in the answer', 'UNEXPECTED_ANSWER');
+  return item;
+}
+
+/** Pause a published card (active → suspended) — POST /:id/suspend. */
+export async function suspendEstablishment(
+  id: string,
+): Promise<EstablishmentWriteResult> {
+  const data = await authedFetch<{ establishment: EstablishmentWriteResult }>(
+    `${BASE}/${encodeURIComponent(id)}/suspend`,
+    { method: 'POST' },
+  );
+  return data.establishment;
 }
 
 /** Permanently delete an establishment (backend cascades media). Owner-checked. */

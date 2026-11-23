@@ -423,6 +423,7 @@ async function fetchWithBearer<T>(
   path: string,
   init: RequestInit | undefined,
   accessToken: string,
+  options: AuthedFetchOptions,
 ): Promise<T> {
   return serverFetch<T>(path, {
     ...init,
@@ -430,8 +431,15 @@ async function fetchWithBearer<T>(
       ...(init?.headers ?? {}),
       Authorization: `Bearer ${accessToken}`,
     },
-  }, { visitor: await currentVisitor() });
+  }, { visitor: await currentVisitor(), envelope: options.envelope });
 }
+
+/**
+ * `envelope` — the whole success body instead of its `data` (serverFetch):
+ * the partner's menu answers with fields beside `data`. Passed through as is;
+ * the sign-in handling below does not depend on it.
+ */
+export type AuthedFetchOptions = { envelope?: boolean };
 
 /**
  * Authenticated backend call. Reachable only from Server Actions or Route
@@ -448,6 +456,7 @@ async function fetchWithBearer<T>(
 export async function authedFetch<T>(
   path: string,
   init?: RequestInit,
+  options: AuthedFetchOptions = {},
 ): Promise<T> {
   let accessToken = await getAccessToken();
   let didRefresh = false;
@@ -460,7 +469,7 @@ export async function authedFetch<T>(
   }
 
   try {
-    return await fetchWithBearer<T>(path, init, accessToken);
+    return await fetchWithBearer<T>(path, init, accessToken, options);
   } catch (err) {
     // Refresh AT MOST ONCE per call: if we already refreshed for a missing
     // access token, a follow-up 401 is not retried — avoids burning a second
@@ -469,7 +478,7 @@ export async function authedFetch<T>(
     if (isSessionRefusal(err) && !didRefresh) {
       const refreshed = await refreshCycle();
       if (refreshed.kind === 'ok') {
-        return fetchWithBearer<T>(path, init, refreshed.accessToken);
+        return fetchWithBearer<T>(path, init, refreshed.accessToken, options);
       }
       // The server refused the refresh too (revoked by a password reset or a
       // reuse alarm, account disabled — cookies are already cleared), or there
