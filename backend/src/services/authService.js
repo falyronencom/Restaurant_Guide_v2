@@ -278,7 +278,7 @@ export async function verifyCredentials(credentials, { panelAccounts = true, oth
     // We use a single query that checks both fields for efficiency
     const query = `
       SELECT id, email, phone, password_hash, name, role, auth_method,
-             avatar_url, is_active, last_login_at, created_at
+             avatar_url, is_active, last_login_at, created_at, email_verified
       FROM users
       WHERE (email = $1 OR phone = $2) AND is_active = true
     `;
@@ -1172,7 +1172,7 @@ async function takeOverUnverifiedAccount(existingUser, { provider, providerId, n
            phone = NULL, phone_verified = false
        WHERE id = $6 AND is_active = TRUE
        RETURNING id, email, phone, name, role, auth_method, avatar_url,
-                 oauth_provider_id, is_active, last_login_at, created_at`,
+                 oauth_provider_id, is_active, last_login_at, created_at, email_verified`,
       [provider, providerId, now, name || null, avatarUrl || null, existingUser.id],
     );
     user = updated.rows[0];
@@ -1332,7 +1332,7 @@ export async function authenticateWithOAuth(providerData, { reserveNewAccount })
     // 1. Look up existing OAuth user by provider + providerId
     const oauthLookup = await pool.query(
       `SELECT id, email, phone, name, role, auth_method, avatar_url,
-              oauth_provider_id, is_active, last_login_at, created_at,
+              oauth_provider_id, is_active, last_login_at, created_at, email_verified,
               ${serviceAccountFlagSql('users')} AS is_service_account
        FROM users
        WHERE auth_method = $1 AND oauth_provider_id = $2`,
@@ -1468,7 +1468,7 @@ export async function authenticateWithOAuth(providerData, { reserveNewAccount })
              last_login_at = $3, email_verified = true${avatarClause}
          WHERE id = $${updateFields.length + 1} AND is_active = TRUE
          RETURNING id, email, phone, name, role, auth_method, avatar_url,
-                   oauth_provider_id, is_active, last_login_at, created_at`,
+                   oauth_provider_id, is_active, last_login_at, created_at, email_verified`,
         [...updateFields, existingUser.id],
       );
 
@@ -1508,7 +1508,7 @@ export async function authenticateWithOAuth(providerData, { reserveNewAccount })
         )
         VALUES ($1, $2, NULL, $3, 'user', $4, $5, $6, false, true, $7, $8, $8, $8)
         RETURNING id, email, phone, name, role, auth_method, avatar_url,
-                  oauth_provider_id, is_active, last_login_at, created_at`,
+                  oauth_provider_id, is_active, last_login_at, created_at, email_verified`,
         [
           userId,
           email.toLowerCase().trim(),

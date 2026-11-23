@@ -78,6 +78,32 @@ describe('ReviewCard — sync Server Component', () => {
     rerender(<ReviewCard review={{ ...baseReview, is_edited: true }} />);
     expect(screen.getByText(/изменён/)).toBeInTheDocument();
   });
+
+  // «Отзыв без текста» (11.2026, В2): a review of one rating arrives as
+  // content: null and is listed on «Все отзывы» — name, date, stars and the
+  // establishment's answer; no text line, no empty space, no «без текста».
+  it('a review of one rating (content null): no text line, the answer stays', () => {
+    const { container } = render(
+      <ReviewCard
+        review={{
+          ...baseReview,
+          content: null,
+          partner_response: 'Спасибо за оценку!',
+        }}
+        clamp={false}
+      />,
+    );
+
+    expect(screen.getByText('Алексей')).toBeInTheDocument();
+    expect(container.querySelector('time')).toHaveTextContent('12 мая');
+    expect(screen.getByLabelText('Оценка: 4 из 5')).toBeInTheDocument();
+    expect(screen.getByText('Спасибо за оценку!')).toBeInTheDocument();
+    // The answer's own paragraph is the only one in the card.
+    const paragraphs = container.querySelectorAll('article p');
+    expect(paragraphs).toHaveLength(1);
+    expect(paragraphs[0]).toHaveTextContent('Спасибо за оценку!');
+    expect(container).not.toHaveTextContent(/без текста/i);
+  });
 });
 
 /*

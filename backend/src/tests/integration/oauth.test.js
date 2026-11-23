@@ -295,3 +295,151 @@ describe('password login into an account created through OAuth', () => {
     expect(login.body.data.user.authMethod).toBe('yandex');
   });
 });
+
+describe('POST /api/v1/auth/oauth — the answer says whether the e-mail is confirmed', () => {
+  // The answer to a login through Google or Yandex carries emailVerified as
+  // GET /auth/me does — the stored flag, read back after the login wrote it.
+  // Without it the app took the e-mail for unconfirmed until its next start
+  // (mobile/lib/models/user.dart: no key → false) and, with the rule «a new
+  // review only from a confirmed e-mail», would ask a code of a person whose
+  // address the provider had proven. One test per path of authenticateWithOAuth:
+  // a new account, a second login, a link onto a confirmed e-mail account, a
+  // takeover of an unconfirmed one.
+  const storedFlag = async (email) => (await getUserByEmail(email)).email_verified;
+
+  test('a new Yandex account: true — Yandex proves its address', async () => {
+    mockYandexInfo(yandexBody());
+
+    const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);
+
+    expect(res.body.data.user.emailVerified).toBe(true);
+    expect(await storedFlag('yandex-user@yandex.ru')).toBe(true);
+  });
+
+  test('a new Google account whose address Google confirmed: true', async () => {
+    mockVerifyIdToken.mockResolvedValue({ getPayload: () => oauthProviderResponses.google });
+
+    const res = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
+
+    expect(res.body.data.user.emailVerified).toBe(true);
+    expect(await storedFlag('google-user@gmail.com')).toBe(true);
+  });
+
+  test('a new Google account whose address Google has not confirmed: false, not a fixed true', async () => {
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({ ...oauthProviderResponses.google, email_verified: false }),
+    });
+
+    const res = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
+
+    expect(res.body.data.user.emailVerified).toBe(false);
+    expect(await storedFlag('google-user@gmail.com')).toBe(false);
+  });
+
+  // The stored flag, not the provider's word of this login: a second login
+  // does not re-read it (authenticateWithOAuth, the existing-account path) —
+  // Google says «confirmed» now, the account was made «not confirmed», the
+  // answer says what is stored. A login whose provider and store agree could
+  // not tell the two sources apart (Phase 3.5 review).
+  test('a second login answers the stored flag, not this login\'s word of the provider', async () => {
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({ ...oauthProviderResponses.google, email_verified: false }),
+    });
+    const first = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
+    expect(first.body.data.user.emailVerified).toBe(false);
+
+    mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({ ...oauthProviderResponses.google, email_verified: true }),
+    });
+    const second = await postOAuth({ provider: 'google', token: DUMMY_TOKEN }).expect(200);
+
+    expect(second.body.data.user.id).toBe(first.body.data.user.id);
+    expect(second.body.data.user.emailVerified).toBe(false);
+    expect(await storedFlag('google-user@gmail.com')).toBe(false);
+  });
+
+  test('a second Yandex login: true, as stored at the first one', async () => {
+    mockYandexInfo(yandexBody());
+    await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);
+
+    mockYandexInfo(yandexBody());
+    const second = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);
+
+    expect(second.body.data.user.emailVerified).toBe(true);
+  });
+
+  test.each([
+    ['Google', 'google', () => mockVerifyIdToken.mockResolvedValue({
+      getPayload: () => ({ ...oauthProviderResponses.google, email: 'registered@gmail.com' }),
+    }), 'registered@gmail.com'],
+    ['Yandex', 'yandex', () => mockYandexInfo(yandexBody({ default_email: 'registered@yandex.ru' })), 'registered@yandex.ru'],
+  ])('registered by e-mail, the code never entered — first login through %s with the same address: true', async (_name, provider, arrange, email) => {
+    // createTestUser writes email_verified = false — a registration whose code
+    // was never entered; the provider's proof takes the account over
+    // (authService takeOverUnverifiedAccount) and confirms the address.
+    await createTestUser({ email, password: 'Test123!@#', name: 'Registered', authMethod: 'email' });
+    expect(await storedFlag(email)).toBe(false);
+    arrange();
+
+    const res = await postOAuth({ provider, token: DUMMY_TOKEN }).expect(200);
+
+    expect(res.body.data.user.emailVerified).toBe(true);
+    expect(await storedFlag(email)).toBe(true);
+  });
+
+  test('an e-mail account whose address is already confirmed, linked through Yandex: true', async () => {
+    const shared = await createTestUser({
+      email: 'confirmed@yandex.ru', password: 'Test123!@#', name: 'Confirmed', authMethod: 'email',
+    });
+    await query('UPDATE users SET email_verified = true WHERE id = $1', [shared.id]);
+    mockYandexInfo(yandexBody({ default_email: 'confirmed@yandex.ru' }));
+
+    const res = await postOAuth({ provider: 'yandex', token: DUMMY_TOKEN }).expect(200);
+
+    expect(res.body.data.user.id).toBe(shared.id);
+    expect(res.body.data.user.emailVerified).toBe(true);
+  });
+});
+
+describe('a review right after a login through Google or Yandex — no code asked', () => {
+  // The provider has proven the address: the login confirms the e-mail
+  // (authenticateWithOAuth), and the first review goes through without the
+  // code a registration by e-mail needs — a new review is taken only from a
+  // confirmed e-mail (reviewService.createReview, EMAIL_NOT_VERIFIED).
+  let establishmentId;
+
+  beforeEach(async () => {
+    const { rows: [partner] } = await query(
+      `INSERT INTO users (id, email, password_hash, name, role, auth_method)
+       VALUES (gen_random_uuid(), 'oauth-review-partner@test.com', 'hash', 'Партнёр', 'partner', 'email')
+       RETURNING id`
+    );
+    const { rows: [card] } = await query(
+      `INSERT INTO establishments (
+         id, partner_id, name, slug, description, city, address, latitude, longitude,
+         categories, cuisines, status, review_count, working_hours, price_range, created_at, updated_at
+       ) VALUES (
+         gen_random_uuid(), $1, 'Васильки', gen_random_uuid()::text, 'Кафе', 'Минск', 'ул. Ленина, 1',
+         53.9, 27.5, ARRAY['Кафе'], ARRAY['Европейская'], 'active', 0, '{}'::jsonb, '$$', NOW(), NOW()
+       ) RETURNING id`,
+      [partner.id]
+    );
+    establishmentId = card.id;
+  });
+
+  test.each([
+    ['Yandex', 'yandex', () => mockYandexInfo(yandexBody())],
+    ['Google', 'google', () => mockVerifyIdToken.mockResolvedValue({ getPayload: () => oauthProviderResponses.google })],
+  ])('%s: the token of the login writes a review at once — 201', async (_name, provider, arrange) => {
+    arrange();
+    const login = await postOAuth({ provider, token: DUMMY_TOKEN }).expect(200);
+
+    const res = await request(app)
+      .post('/api/v1/reviews')
+      .set('Authorization', `Bearer ${login.body.data.accessToken}`)
+      .send({ establishmentId, rating: 5, content: 'Вкусно и быстро, приду ещё' })
+      .expect(201);
+
+    expect(res.body.data.review.user_id).toBe(login.body.data.user.id);
+  });
+});

@@ -285,7 +285,10 @@ export async function login(req, res, next) {
     // Generate token pair for authenticated session
     const tokens = await authService.generateTokenPair(user);
     
-    // Return user data with tokens
+    // Return user data with tokens. emailVerified as /auth/me gives it, the
+    // stored flag: without it the app took a confirmed e-mail for unconfirmed
+    // after every password login, until its next start (thread «Отзыв без
+    // текста», 22.11.2026).
     return res.status(200).json({
       success: true,
       data: {
@@ -297,6 +300,7 @@ export async function login(req, res, next) {
           role: user.role,
           authMethod: user.auth_method,
           avatarUrl: user.avatar_url,
+          emailVerified: user.email_verified,
           lastLoginAt: user.last_login_at,
         },
         accessToken: tokens.accessToken,
@@ -796,6 +800,12 @@ export async function oauthLogin(req, res, next) {
       reserveNewAccount: () => spendRouteLimit(req, NEW_ACCOUNTS_DAY_LIMIT),
     });
 
+    // emailVerified as /auth/me gives it — the stored flag, read back after
+    // this login wrote it: a new account takes the provider's (Yandex always,
+    // Google its own `email_verified`), a link or a takeover of an unconfirmed
+    // account sets it true. Without it the app took the e-mail for
+    // unconfirmed until its next start and asked a code of a person whose
+    // address the provider had proven (thread «Отзыв без текста», 21.11.2026).
     return res.status(200).json({
       success: true,
       data: {
@@ -807,6 +817,7 @@ export async function oauthLogin(req, res, next) {
           role: result.user.role,
           authMethod: result.user.auth_method,
           avatarUrl: result.user.avatar_url,
+          emailVerified: result.user.email_verified,
           lastLoginAt: result.user.last_login_at,
         },
         accessToken: result.accessToken,
