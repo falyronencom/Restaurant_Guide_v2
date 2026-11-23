@@ -118,11 +118,13 @@ test('чтение закончилось ровно между двумя во�
   expect(enqueueWithinDailyAllowance).not.toHaveBeenCalled();
 });
 
-test('один файл распознан к своей очереди, другой не распознан — ставится только второй, «1 из 2»', async () => {
+// totalPdfs — файлы, которые перезапуск пытался поставить: распознанный к
+// своей очереди не в счёт (решение Trunk нитки Н8, 23.11.2026).
+test('один файл распознан к своей очереди, другой не распознан — ставится только второй, «1 из 1»', async () => {
   cardFiles('menu-a', 'menu-b');
   filesNow({ done: ['menu-a'] });
 
-  await expect(retryOcr(PARTNER, CARD)).resolves.toEqual({ enqueuedJobs: 1, totalPdfs: 2 });
+  await expect(retryOcr(PARTNER, CARD)).resolves.toEqual({ enqueuedJobs: 1, totalPdfs: 1 });
   expect(enqueueWithinDailyAllowance).toHaveBeenCalledTimes(1);
   expect(enqueueWithinDailyAllowance).toHaveBeenCalledWith({ userId: PARTNER, establishmentId: CARD, mediaId: 'menu-b' });
 });

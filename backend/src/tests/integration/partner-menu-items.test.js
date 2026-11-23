@@ -906,8 +906,10 @@ describe('POST /api/v1/partner/establishments/:id/retry-ocr — only the files n
 
     const res = await retry(partner, estId).expect(202);
 
-    // totalPdfs — every menu file of the card, the recognised one included.
-    expect(res.body.data).toEqual({ enqueuedJobs: 2, totalPdfs: 3 });
+    // totalPdfs — the files this restart tried to queue; the recognised one is
+    // not counted (decision of Trunk of thread Н8, 23.11.2026): «2 из 2», not
+    // «2 из 3», which read as a file that did not start.
+    expect(res.body.data).toEqual({ enqueuedJobs: 2, totalPdfs: 2 });
     expect(await jobsOfMedia(recognised)).toEqual(['done']);
     expect(await jobsOfMedia(failed)).toEqual(['failed', 'pending']);
     expect(await jobsOfMedia(neverQueued)).toEqual(['pending']);
@@ -945,7 +947,7 @@ describe('POST /api/v1/partner/establishments/:id/retry-ocr — only the files n
 
     const res = await retry(partner, estId).expect(202);
 
-    expect(res.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 2 });
+    expect(res.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 1 });
     expect(await jobsOfMedia(recognised)).toEqual(['done']);
     expect(await jobsOfMedia(reading)).toEqual(['processing']);
   });

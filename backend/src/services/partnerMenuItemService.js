@@ -426,10 +426,14 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
  * Contract note: the error code NO_PDF_MENUS and the response key totalPdfs
  * predate menu-photo support and are kept verbatim — mobile matches on the
  * code (partner_menu_screen) and renaming would widen the blast radius of
- * this backend-only slice. totalPdfs carries the count of all the card's menu
- * files, recognised ones included (kept so by the directive of thread Н8):
- * the app shows «Распознавание запущено (N из M)», and so does the site's
- * cabinet from its part 1.
+ * this backend-only slice. totalPdfs carries the count of the files this
+ * restart tried to queue — the menu files never recognised, less any found
+ * recognised by its turn; recognised files are not counted (decision of Trunk
+ * of thread Н8, 23.11.2026; until then — every menu file of the card). The app
+ * shows «Распознавание запущено (N из M)», and so does the site's cabinet from
+ * its part 1: on a card with two recognised files and one failed, «1 из 3»
+ * read as two files that did not start; now it is «1 из 1». The name stays,
+ * the wire is the same.
  *
  * @param {string} partnerId - UUID
  * @param {string} establishmentId - UUID
@@ -459,6 +463,8 @@ export const retryOcr = async (partnerId, establishmentId) => {
   let enqueuedJobs = 0;
   let refusal = null;
   let failures = 0;
+  // Files found recognised by their turn: not tried, not counted in totalPdfs.
+  let recognisedMeanwhile = 0;
   for (const media of unrecognised) {
     try {
       // A job going on first, then a job done (the order — the header above).
@@ -467,6 +473,7 @@ export const retryOcr = async (partnerId, establishmentId) => {
         continue;
       }
       if (await OcrJobModel.hasCompletedJobForMedia(media.id)) {
+        recognisedMeanwhile += 1;
         continue;
       }
       const result = await enqueueWithinDailyAllowance({
@@ -494,6 +501,7 @@ export const retryOcr = async (partnerId, establishmentId) => {
     establishmentId,
     totalEligibleMedia: eligibleMedia.length,
     unrecognisedMedia: unrecognised.length,
+    recognisedMeanwhile,
     enqueuedJobs,
   });
 
@@ -511,5 +519,5 @@ export const retryOcr = async (partnerId, establishmentId) => {
     throw new AppError(MENU_RECOGNITION_REFUSALS.nothingToRecognize, 409, NOTHING_TO_RECOGNIZE);
   }
 
-  return { enqueuedJobs, totalPdfs: eligibleMedia.length };
+  return { enqueuedJobs, totalPdfs: unrecognised.length - recognisedMeanwhile };
 };

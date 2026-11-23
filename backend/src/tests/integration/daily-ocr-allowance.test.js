@@ -483,7 +483,9 @@ describe('перезапуск (POST /partner/establishments/:id/retry-ocr)', ()
 
     const res = await retryOcr(partner).expect(202);
 
-    expect(res.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 2 });
+    // totalPdfs — файлы, которые перезапуск пытался поставить: распознанный
+    // не в счёт (решение Trunk нитки Н8, 23.11.2026; до того — «1 из 2»).
+    expect(res.body.data).toEqual({ enqueuedJobs: 1, totalPdfs: 1 });
     const pending = await query(
       "SELECT media_id FROM ocr_jobs WHERE establishment_id = $1 AND status = 'pending'",
       [partner.establishmentId],
