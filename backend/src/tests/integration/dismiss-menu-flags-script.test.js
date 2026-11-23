@@ -15,7 +15,7 @@
  * Ожидаемые значения — литералы: сырники и чай из волны 28.09.
  */
 
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { readFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -509,13 +509,10 @@ describe('scripts/dismiss-menu-flags — на базе', () => {
 describe('scripts/dismiss-menu-flags — запуск index.js (локальная база)', () => {
   /**
    * Процесс наследует DB_* теста — значит, пишет в ту же тестовую базу.
-   * spawnSync держит цикл событий jest, но соединений пула в это время никто
-   * не ждёт.
+   * runScript (spawnSync с пределом) держит цикл событий jest, но соединений
+   * пула в это время никто не ждёт.
    */
-  const run = (...args) => spawnSync(process.execPath, [CLI, ...args], {
-    env: process.env,
-    encoding: 'utf8',
-  });
+  const run = (...args) => runScript(CLI, args, { env: process.env });
 
   test('ошибка в команде — код 2 до подключения к базе', () => {
     const cases = [
