@@ -67,7 +67,8 @@ export const findActiveJob = async (mediaId, client = pool) => {
  *
  * Called directly only by the allowance (services/ocrAllowance.js — every
  * job a partner's request queues) and by the moderator's approval
- * (adminService); tests/unit/ocrEnqueueDoors.test.js holds that list.
+ * (adminService); tests/unit/ocrEnqueueDoors.test.js holds that list. Outside
+ * the application, the seed import calls it too (scripts/seed-import).
  *
  * `countedFor` — the account whose day of recognition this job's pages come
  * out of (services/ocrAllowance.js). The number of pages of a PDF is known only

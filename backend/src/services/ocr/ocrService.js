@@ -784,7 +784,11 @@ export const processJob = async (jobId, { signal } = {}) => {
 
     // The failure was not written: the job was no longer this attempt's — done
     // already (a COMMIT whose answer was lost), or settled by another writer.
-    // Its row says what it is; no notice from here.
+    // Its row says what it is. Done by this very attempt, the file is
+    // recognised: the partner hears it as after any success (Phase 4.5 review
+    // of thread Н8). Otherwise no notice from here. The «Система» entries of
+    // rows hidden by a decision of another file are not written in that case
+    // — the rows stay hidden, the journal misses when (a lost answer is rare).
     if (!failedJob) {
       logger.warn('OCR job: the failure was not written — the attempt no longer held its job', {
         jobId,
@@ -792,6 +796,21 @@ export const processJob = async (jobId, { signal } = {}) => {
         attempts: job.attempts,
         error: error.message,
       });
+      const settled = await ocrJobModel.getJobStatus(jobId)
+        .catch((readError) => {
+          logger.error('OCR job: the row of a job settled elsewhere could not be read', {
+            jobId,
+            error: readError.message,
+          });
+          return null;
+        });
+      if (settled?.status === 'done' && settled.attempts === job.attempts) {
+        await notifyPartnerIfBatchFinished(job.establishment_id)
+          .catch((err) => logger.error('notifyMenuParsed failed after a write whose answer was lost', {
+            error: err.message,
+            establishmentId: job.establishment_id,
+          }));
+      }
     }
 
     // A permanent failure settles this job too: if it was the last active one,

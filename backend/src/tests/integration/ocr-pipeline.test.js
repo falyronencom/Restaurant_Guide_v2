@@ -1094,6 +1094,37 @@ describe('OCR pipeline integration', () => {
       // Not back in the queue, and recognised for every reader of «recognised».
       expect(await ocrJobModel.pickNextPending()).toBeNull();
       expect(await ocrJobModel.hasCompletedJobForMedia(mediaId)).toBe(true);
+      // The partner hears it as after any success (Phase 4.5 review).
+      expect(await partnerNotifications()).toHaveLength(1);
+    });
+
+    test('a newer attempt recognised the file while the old one was failing → the old one\'s failure writes nothing and tells nothing', async () => {
+      const { mediaId, picked } = await pickedRead(BORSHCH);
+      const failing = failingFetch();
+      // The newer attempt's outcome lands at the old one's first call: dishes and done.
+      global.fetch = jest.fn(async (...args) => {
+        const took = await pool.query(
+          `UPDATE ocr_jobs SET status = 'done', attempts = $2, completed_at = NOW()
+           WHERE id = $1 AND attempts = $3 RETURNING id`,
+          [picked.id, picked.attempts + 1, picked.attempts],
+        );
+        if (took.rowCount === 1) {
+          await menuItemModel.createMany({
+            establishmentId: establishment.id,
+            mediaId,
+            items: [{ item_name: 'Борщ', price_byn: 12, category_raw: 'Супы', confidence: 0.95, position: 0 }],
+          });
+        }
+        return failing(...args);
+      });
+
+      expect((await ocrService.processJob(picked.id)).success).toBe(false);
+
+      expect(await ocrJobModel.getJobStatus(picked.id)).toMatchObject({ status: 'done', attempts: 2 });
+      expect(await dishesOf(mediaId)).toEqual(['Борщ']);
+      // The newer attempt tells its own outcome; the old one adds nothing.
+      expect(await partnerNotifications()).toEqual([]);
+      expect(await failureNotices()).toEqual([]);
     });
 
     test('an outcome is written only by the attempt that holds the job: another attempt\'s number writes nothing, and a job done stays done', async () => {
