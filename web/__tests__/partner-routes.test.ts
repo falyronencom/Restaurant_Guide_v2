@@ -26,6 +26,10 @@ jest.mock('@/lib/partner/operations', () => ({
   retryOcrAction: jest.fn(),
   deleteEstablishmentAction: jest.fn(),
   resumeEstablishmentAction: jest.fn(),
+  suspendEstablishmentAction: jest.fn(),
+  loadMenuItemsAction: jest.fn(),
+  updateMenuItemAction: jest.fn(),
+  refreshCardPageAction: jest.fn(),
 }));
 jest.mock('@/lib/partner/media-proxy', () => ({
   proxyMediaUpload: jest.fn(),
@@ -40,6 +44,10 @@ import { POST as resumePost } from '@/app/api/partner/establishments/[id]/resume
 import { POST as retryPost } from '@/app/api/partner/establishments/[id]/retry-ocr/route';
 import { POST as submitPost } from '@/app/api/partner/establishments/[id]/submit/route';
 import { POST as updatePost } from '@/app/api/partner/establishments/[id]/update/route';
+import { POST as menuItemsPost } from '@/app/api/partner/establishments/[id]/menu-items/route';
+import { POST as suspendPost } from '@/app/api/partner/establishments/[id]/suspend/route';
+import { POST as refreshPagePost } from '@/app/api/partner/establishments/[id]/refresh-page/route';
+import { POST as menuItemUpdatePost } from '@/app/api/partner/menu-items/[itemId]/update/route';
 import { POST as mediaTempPost } from '@/app/api/partner/media/route';
 import { proxyMediaUpload } from '@/lib/partner/media-proxy';
 import {
@@ -47,26 +55,32 @@ import {
   deleteEstablishmentAction,
   loadEstablishmentForEdit,
   loadEstablishments,
+  loadMenuItemsAction,
+  refreshCardPageAction,
   resumeEstablishmentAction,
   retryOcrAction,
   submitEstablishmentAction,
+  suspendEstablishmentAction,
   updateEstablishmentAction,
+  updateMenuItemAction,
 } from '@/lib/partner/operations';
 
 const SAME = { origin: 'http://localhost:3000', host: 'localhost:3000' };
 const CROSS = { origin: 'http://evil.example', host: 'localhost:3000' };
 
-function makeRequest(headers: Record<string, string>, body?: unknown): Request {
+function makeRequest(headers: Record<string, string>, body?: unknown, url?: string): Request {
   return {
     headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
     json: async () => {
       if (body === undefined) throw new Error('no body');
       return body;
     },
+    ...(url ? { url } : {}),
   } as unknown as Request;
 }
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+const itemCtx = (itemId: string) => ({ params: Promise.resolve({ itemId }) });
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -74,9 +88,11 @@ beforeEach(() => jest.clearAllMocks());
  * Guard coverage is exhaustive by construction (2026-09-08, honesty-audit
  * finding 4 closed): every partner Route Handler that exists has a cross-origin
  * case below — list, update, delete, create, submit, load, retry-ocr,
- * resume, media-temp and media-attach, ten of ten. Each case is proved able to fail:
+ * resume, media-temp and media-attach, and from part 1 of «Кабинет партнёра на
+ * сайте» (23.11.2026) menu-items, the menu item's update, suspend and
+ * refresh-page — fourteen of fourteen. Each case is proved able to fail:
  * replacing `assertSameOrigin(request)` with `null` in one route file turns
- * exactly that route's case red and leaves the rest green. A tenth handler
+ * exactly that route's case red and leaves the rest green. A fifteenth handler
  * added without its own case here breaks that property silently — the describe
  * would again cover less than its title claims.
  */
@@ -130,6 +146,30 @@ describe('same-origin guard on the partner handlers', () => {
     const res = await resumePost(makeRequest(CROSS), ctx('e9'));
     expect(res.status).toBe(403);
     expect(resumeEstablishmentAction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin menu-items POST (authed read — may rotate the cookie)', async () => {
+    const res = await menuItemsPost(makeRequest(CROSS), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(loadMenuItemsAction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin menu item update POST before the body is read', async () => {
+    const res = await menuItemUpdatePost(makeRequest(CROSS, { price_byn: 1 }), itemCtx('i9'));
+    expect(res.status).toBe(403);
+    expect(updateMenuItemAction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin suspend POST (status write — guard must hold)', async () => {
+    const res = await suspendPost(makeRequest(CROSS), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(suspendEstablishmentAction).not.toHaveBeenCalled();
+  });
+
+  it('blocks a cross-origin refresh-page POST', async () => {
+    const res = await refreshPagePost(makeRequest(CROSS), ctx('e9'));
+    expect(res.status).toBe(403);
+    expect(refreshCardPageAction).not.toHaveBeenCalled();
   });
 
   it('blocks a cross-origin temp media upload with 403 (OSB-P4 parity)', async () => {
@@ -246,5 +286,64 @@ describe('happy path — handlers forward to operations and return the envelope'
     const res = await deletePost(makeRequest(SAME), ctx('e9'));
     expect(await res.json()).toEqual({ ok: true });
     expect(deleteEstablishmentAction).toHaveBeenCalledWith('e9');
+  });
+
+  it('update passes the previous city and category of the query on', async () => {
+    (updateEstablishmentAction as jest.Mock).mockResolvedValue({ ok: true, status: 'active' });
+    const payload = { name: 'X' };
+    const url = `http://localhost:3000/api/partner/establishments/e9/update?prevCity=${encodeURIComponent('Минск')}&prevCategory=${encodeURIComponent('Кафе')}`;
+    await updatePost(makeRequest(SAME, payload, url), ctx('e9'));
+    expect(updateEstablishmentAction).toHaveBeenCalledWith('e9', payload, { city: 'Минск', category: 'Кафе' });
+  });
+
+  it('menu-items forwards the [id] param', async () => {
+    (loadMenuItemsAction as jest.Mock).mockResolvedValue({ ok: true, menu: { items: [] } });
+    const res = await menuItemsPost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true, menu: { items: [] } });
+    expect(loadMenuItemsAction).toHaveBeenCalledWith('e9');
+  });
+
+  it('suspend forwards the [id] param', async () => {
+    (suspendEstablishmentAction as jest.Mock).mockResolvedValue({ ok: true, status: 'suspended' });
+    const res = await suspendPost(makeRequest(SAME), ctx('e9'));
+    expect(await res.json()).toEqual({ ok: true, status: 'suspended' });
+    expect(suspendEstablishmentAction).toHaveBeenCalledWith('e9');
+  });
+
+  it('refresh-page: `final` only from ?final=1', async () => {
+    (refreshCardPageAction as jest.Mock).mockResolvedValue({ ok: true, page: { refreshed: true } });
+    await refreshPagePost(makeRequest(SAME), ctx('e9'));
+    expect(refreshCardPageAction).toHaveBeenLastCalledWith('e9', { final: false });
+    await refreshPagePost(
+      makeRequest(SAME, undefined, 'http://localhost:3000/api/partner/establishments/e9/refresh-page?final=1'),
+      ctx('e9'),
+    );
+    expect(refreshCardPageAction).toHaveBeenLastCalledWith('e9', { final: true });
+  });
+
+  it('a menu item update forwards only the three fields a partner may change, each of its type', async () => {
+    (updateMenuItemAction as jest.Mock).mockResolvedValue({ ok: true });
+    await menuItemUpdatePost(
+      makeRequest(SAME, {
+        item_name: 'Суп',
+        price_byn: null,
+        category_raw: '',
+        is_hidden_by_admin: false,
+        sanity_flag: null,
+        establishment_id: 'other',
+      }),
+      itemCtx('i9'),
+    );
+    expect(updateMenuItemAction).toHaveBeenCalledWith('i9', { item_name: 'Суп', price_byn: null, category_raw: '' });
+
+    await menuItemUpdatePost(makeRequest(SAME, { price_byn: '12', item_name: 5, category_raw: 7 }), itemCtx('i9'));
+    expect(updateMenuItemAction).toHaveBeenLastCalledWith('i9', {});
+  });
+
+  it('a menu item update with a body that is not an object → 400, nothing sent', async () => {
+    const res = await menuItemUpdatePost(makeRequest(SAME, ['x']), itemCtx('i9'));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, code: 'BAD_REQUEST' });
+    expect(updateMenuItemAction).not.toHaveBeenCalled();
   });
 });

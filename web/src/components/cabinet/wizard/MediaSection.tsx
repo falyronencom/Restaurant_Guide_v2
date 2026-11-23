@@ -1,10 +1,13 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { FileText, Star, Upload, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { FORM_MENU_LINK } from '@/lib/partner/cabinet-texts';
+import { cardSectionHref } from '@/lib/partner/card-sections';
 import {
   E1_MIN_PHOTOS,
   MAX_MENU_PDFS,
@@ -21,10 +24,9 @@ import { cn } from '@/lib/utils';
 import { Field, SectionCard } from './primitives';
 import type { SectionProps } from './types';
 
-/** Edit mode passes the establishment id (PDF-add routing) + the OCR-retry handler. */
+/** Edit mode passes the establishment id (PDF-add routing, the link to the card's «Меню»). */
 type MediaSectionProps = SectionProps & {
   establishmentId?: string;
-  onRetryOcr?: () => void;
 };
 
 /*
@@ -39,7 +41,6 @@ export function MediaSection({
   patch,
   disabled,
   establishmentId,
-  onRetryOcr,
 }: MediaSectionProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -276,18 +277,21 @@ export function MediaSection({
       )}
       {error && <p className="text-caption-m text-error-dark">{error}</p>}
 
-      {establishmentId &&
-        onRetryOcr &&
-        (form.menuPhotos.length > 0 || form.menuPdfs.length > 0) && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={onRetryOcr}>
-              Обновить распознавание меню
-            </Button>
-            <span className="text-caption-m text-figma-text-grey">
-              если новые фото меню не распознались
-            </span>
-          </div>
-        )}
+      {/* The recognised dishes and the restart of their recognition live in
+          the card's «Меню» section, with its warning (part 1 of «Кабинет
+          партнёра на сайте», T12) — one place, not two. */}
+      {establishmentId && (
+        <p className="text-caption-m text-figma-text-grey">
+          {FORM_MENU_LINK.before}
+          <Link
+            href={cardSectionHref(establishmentId, 'menu')}
+            className="text-foreground underline underline-offset-2 hover:text-brand-dark"
+          >
+            {FORM_MENU_LINK.link}
+          </Link>
+          {FORM_MENU_LINK.after}
+        </p>
+      )}
     </SectionCard>
   );
 }

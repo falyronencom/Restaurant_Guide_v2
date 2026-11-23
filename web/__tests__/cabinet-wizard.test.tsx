@@ -40,6 +40,7 @@ jest.mock('@/lib/partner/client', () => ({
   resumeEstablishmentAction: jest.fn(),
   retryOcrAction: jest.fn(),
 }));
+jest.mock('@/lib/partner/page-refresh-client', () => ({ followPageRefresh: jest.fn() }));
 
 const updateMock = updateEstablishmentAction as jest.Mock;
 const createMock = createEstablishmentAction as jest.Mock;
@@ -556,5 +557,64 @@ describe('С3 — приостановленную партнёром карто
 
     expect(screen.getByLabelText('Описание')).not.toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Возобновить показ' })).not.toBeInTheDocument();
+  });
+});
+
+describe('часть 1 «Кабинета партнёра на сайте»: меню — в своём разделе, страница карточки — после сохранения', () => {
+  const withMenu = (): WizardFormState => ({
+    ...card(),
+    menuPhotos: [
+      {
+        url: 'https://res.cloudinary.com/davrzdre8/image/upload/establishments/m1.jpg',
+        thumbnail_url: 'https://res.cloudinary.com/davrzdre8/image/upload/establishments/m1.jpg',
+        preview_url: 'https://res.cloudinary.com/davrzdre8/image/upload/establishments/m1.jpg',
+      },
+    ],
+  });
+
+  it('вместо кнопки перезапуска — строка со ссылкой на раздел «Меню» (Т12)', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    render(
+      <EstablishmentWizard mode="edit" establishmentId="e1" initial={withMenu()} status="active" readOnly={false} />,
+    );
+    await tick();
+
+    expect(screen.queryByRole('button', { name: /Обновить распознавание меню/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/обновите страницу через минуту/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '«Меню»' })).toHaveAttribute('href', '/cabinet/e1/menu');
+    expect(screen.getByText(/Распознанные блюда и перезапуск распознавания — в разделе/)).toBeInTheDocument();
+  });
+
+  it('сохранение называет прежние город и первую категорию — последнее принятое состояние формы', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    renderEdit();
+
+    await tick(800); // the opening save
+    fireEvent.change(screen.getByLabelText('Описание'), { target: { value: 'Новое описание' } });
+    await tick(800);
+
+    expect(updateMock.mock.calls.at(-1)).toEqual(['e1', expect.anything(), { city: 'Минск', category: 'Кафе' }]);
+  });
+
+  it('отложенный сброс страницы отдан планировщику; создание черновика подсказку не шлёт', async () => {
+    const { followPageRefresh } = jest.requireMock('@/lib/partner/page-refresh-client') as {
+      followPageRefresh: jest.Mock;
+    };
+    updateMock.mockResolvedValue({ ok: true, page: { refreshed: false, retryInMs: 12_000 } });
+    renderEdit();
+    await tick(800);
+
+    expect(followPageRefresh).toHaveBeenCalledWith('e1', { refreshed: false, retryInMs: 12_000 });
+  });
+
+  it('внутри шапки карточки форма без своего заголовка и ссылки «Кабинет»', async () => {
+    updateMock.mockResolvedValue({ ok: true });
+    render(
+      <EstablishmentWizard mode="edit" embedded establishmentId="e1" initial={card()} status="active" readOnly={false} />,
+    );
+    await tick();
+
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Кабинет' })).not.toBeInTheDocument();
   });
 });

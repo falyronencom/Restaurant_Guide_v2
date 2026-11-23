@@ -12,10 +12,10 @@ import {
   createEstablishmentAction,
   loadEstablishmentForEdit,
   resumeEstablishmentAction,
-  retryOcrAction,
   submitEstablishmentAction,
   updateEstablishmentAction,
 } from '@/lib/partner/client';
+import { followPageRefresh } from '@/lib/partner/page-refresh-client';
 import { clientCompleteness } from '@/lib/partner/completeness';
 import { isCuisineRequired } from '@/lib/partner/constants';
 import { CONTACT_LABELS, acceptedForm, contactErrors } from '@/lib/partner/contacts';
@@ -63,6 +63,13 @@ import { StickySidebar } from './StickySidebar';
  *
  * Autosave (С2): one save at a time; an edit made while a save is under way is
  * sent right after it, and a pending edit is sent when the wizard closes.
+ *
+ * A published card's public page is dropped by the save (part 1 of «Кабинет
+ * партнёра на сайте»): the save names the form's last accepted city and first
+ * category, so a save that moves the card drops the old address too, and a
+ * drop the card's interval deferred is taken later by
+ * lib/partner/page-refresh-client. The menu's recognition is restarted in the
+ * card's «Меню» section, with its warning — not here.
  */
 
 type Props =
@@ -74,7 +81,9 @@ type Props =
       status: EstablishmentStatus;
       readOnly: boolean;
       /** The partner resumed a self-paused card: the loader switches to editing. */
-      onResumed?: () => void;
+      onResumed?: (resumed: { publicPath?: string }) => void;
+      /** Inside the card's header (components/cabinet/card/CardShell): no back link and title of its own. */
+      embedded?: boolean;
     };
 
 type KeptDraft = { form?: Partial<WizardFormState>; draftId?: string | null };
@@ -100,6 +109,7 @@ export function EstablishmentWizard(props: Props) {
   const establishmentId =
     props.mode === 'edit' ? props.establishmentId : undefined;
   const onResumed = props.mode === 'edit' ? props.onResumed : undefined;
+  const embedded = props.mode === 'edit' && props.embedded === true;
 
   const router = useRouter();
   const { applySession, user, status } = useAuth();
@@ -118,7 +128,6 @@ export function EstablishmentWizard(props: Props) {
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   // Create: a kept form was restored — offer to start a new card instead.
   const [restored, setRestored] = useState<{ name: string; onServer: boolean } | null>(
     null,
@@ -281,7 +290,15 @@ export function EstablishmentWizard(props: Props) {
         if (id) {
           setSaveState('saving');
           setError(null);
-          const r = await updateEstablishmentAction(id, toUpdatePayload(f, savedRef.current));
+          // Edit: the address the card had before this save (its page is
+          // dropped there too if the save moves it — lib/partner/card-page).
+          const saved = savedRef.current;
+          const r = isEdit
+            ? await updateEstablishmentAction(id, toUpdatePayload(f, saved), {
+                city: saved?.city ?? null,
+                category: saved?.categories[0] ?? null,
+              })
+            : await updateEstablishmentAction(id, toUpdatePayload(f, saved));
           // The form was dropped meanwhile («Начать новое заведение»): this
           // result is not the new form's; an edit of the new form made during
           // the wait is sent by the next turn of the loop.
@@ -290,6 +307,7 @@ export function EstablishmentWizard(props: Props) {
             savedRef.current = acceptedForm(f, savedRef.current);
             setSaveState('saved');
             if (r.base_score != null) setServerScore(r.base_score);
+            followPageRefresh(id, r.page);
           } else if (!isEdit && draftGone(r)) {
             // The draft was deleted while this page was open — or this tab
             // now runs under another account. The form stays on screen and
@@ -425,25 +443,13 @@ export function EstablishmentWizard(props: Props) {
     }
   }, [e1.passed, form, router, lsKey, isEdit, user?.id]);
 
-  const onRetryOcr = useCallback(async () => {
-    const id = draftIdRef.current;
-    if (!id) return;
-    setNotice(null);
-    const r = await retryOcrAction(id);
-    setNotice(
-      r.ok
-        ? 'Распознавание меню запущено — обновите страницу через минуту.'
-        : refusalMessage(r),
-    );
-  }, []);
-
   const onResume = useCallback(async () => {
     if (!establishmentId) return;
     setResuming(true);
     setResumeError(null);
     const r = await resumeEstablishmentAction(establishmentId);
     setResuming(false);
-    if (r.ok) onResumed?.();
+    if (r.ok) onResumed?.({ publicPath: r.publicPath });
     else setResumeError(refusalMessage(r));
   }, [establishmentId, onResumed]);
 
@@ -462,7 +468,6 @@ export function EstablishmentWizard(props: Props) {
     setRestored(null);
     setSaveState('idle');
     setError(null);
-    setNotice(null);
     setServerScore(null);
   }, [forgetDraftId]);
 
@@ -496,14 +501,18 @@ export function EstablishmentWizard(props: Props) {
 
   return (
     <div className="flex flex-col gap-l">
-      <Link
-        href="/cabinet"
-        className="inline-flex w-fit items-center gap-1 text-body-s text-figma-text-grey transition-colors hover:text-foreground"
-      >
-        <ChevronLeft className="size-4" />
-        Кабинет
-      </Link>
-      <h1 className="font-display text-display-s text-foreground">{title}</h1>
+      {!embedded && (
+        <>
+          <Link
+            href="/cabinet"
+            className="inline-flex w-fit items-center gap-1 text-body-s text-figma-text-grey transition-colors hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+            Кабинет
+          </Link>
+          <h1 className="font-display text-display-s text-foreground">{title}</h1>
+        </>
+      )}
       {readOnly && (
         <div className="flex flex-col gap-s rounded-m border border-border bg-background p-m sm:flex-row sm:items-center sm:justify-between">
           <p className="text-body-s text-figma-text-dark">
@@ -562,7 +571,6 @@ export function EstablishmentWizard(props: Props) {
             patch={patch}
             disabled={inputsDisabled}
             establishmentId={establishmentId}
-            onRetryOcr={isEdit ? onRetryOcr : undefined}
           />
           <AddressSection form={form} patch={patch} disabled={inputsDisabled} />
           <HoursSection form={form} patch={patch} disabled={inputsDisabled} />
@@ -578,7 +586,7 @@ export function EstablishmentWizard(props: Props) {
             onSubmit={onSubmit}
             saveLabel={saveLabel}
             error={error}
-            notice={notice}
+            notice={null}
             cuisineOptional={
               form.categories.length > 0 && !isCuisineRequired(form.categories)
             }

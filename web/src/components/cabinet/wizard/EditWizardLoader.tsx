@@ -11,6 +11,7 @@ import { fromDetail, type WizardFormState } from '@/lib/partner/form';
 import { isAdminSuspended } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
+import { useCabinetCard, type CabinetCard } from '../card/CardShell';
 import { EstablishmentWizard } from './EstablishmentWizard';
 
 /*
@@ -19,8 +20,37 @@ import { EstablishmentWizard } from './EstablishmentWizard';
  * fetch (as the dashboard does) and the wizard is seeded in edit mode.
  * Self-suspended (no
  * suspend_reason) → read-only until the partner resumes it from the wizard.
+ *
+ * Inside the card's header (CardShell, part 1 of «Кабинет партнёра на сайте»)
+ * the card is the header's own load — one load per view of the section — and
+ * a pause or a resume in the header switches the form at once.
  */
 export function EditWizardLoader({ id }: { id: string }) {
+  const shell = useCabinetCard();
+  return shell ? <ShellEditWizard id={id} shell={shell} /> : <SelfLoadedEditWizard id={id} />;
+}
+
+function ShellEditWizard({ id, shell }: { id: string; shell: CabinetCard }) {
+  // The shell renders its section with a fresh load only: seeded once, from it.
+  const [initial] = useState<WizardFormState | null>(() =>
+    shell.state.phase === 'ready' ? fromDetail(shell.state.card) : null,
+  );
+  if (shell.state.phase !== 'ready' || !initial) return <WizardSkeleton />;
+  const { card } = shell.state;
+  return (
+    <EstablishmentWizard
+      mode="edit"
+      embedded
+      establishmentId={id}
+      initial={initial}
+      status={card.status}
+      readOnly={card.status === 'suspended' && !isAdminSuspended(card.moderation_notes)}
+      onResumed={(resumed) => shell.setStatus('active', { publicPath: resumed.publicPath })}
+    />
+  );
+}
+
+function SelfLoadedEditWizard({ id }: { id: string }) {
   const [state, setState] = useState<
     | { phase: 'loading' }
     | { phase: 'error'; code: string }

@@ -2,10 +2,15 @@ import type {
   CreateEstablishmentPayload,
   UpdateEstablishmentPayload,
 } from '@/lib/api/types';
+import type { MenuItemChanges } from '@/lib/partner/menu-format';
 import type {
   CreateResult,
   LoadDetailResult,
   LoadEstablishmentsResult,
+  MenuItemWriteResult,
+  MenuLoadResult,
+  RefreshPageResult,
+  RetryOcrResult,
   WriteResult,
 } from '@/lib/partner/results';
 
@@ -27,10 +32,13 @@ const BASE = '/api/partner/establishments';
 async function postPartner<T extends { ok: boolean }>(
   path: string,
   body?: unknown,
+  { keepalive = false }: { keepalive?: boolean } = {},
 ): Promise<T | { ok: false; code: string }> {
   try {
     const res = await fetch(path, {
       method: 'POST',
+      // A request sent as the page goes away (lib/partner/page-refresh-client).
+      ...(keepalive ? { keepalive: true } : {}),
       ...(body !== undefined
         ? {
             headers: { 'Content-Type': 'application/json' },
@@ -56,12 +64,23 @@ export function createEstablishmentAction(
   return postPartner<CreateResult>(`${BASE}/create`, payload);
 }
 
+/**
+ * `previous` — the form's last accepted city and first category: when the
+ * save moves the card to another address, the server drops the page at the
+ * old one too (it builds that address itself, of this card's own slug). In
+ * the query, not the body: the body goes to the API verbatim.
+ */
 export function updateEstablishmentAction(
   id: string,
   payload: UpdateEstablishmentPayload,
+  previous?: { city?: string | null; category?: string | null } | null,
 ): Promise<WriteResult> {
+  const query = new URLSearchParams();
+  if (previous?.city) query.set('prevCity', previous.city);
+  if (previous?.category) query.set('prevCategory', previous.category);
+  const qs = query.toString();
   return postPartner<WriteResult>(
-    `${BASE}/${encodeURIComponent(id)}/update`,
+    `${BASE}/${encodeURIComponent(id)}/update${qs ? `?${qs}` : ''}`,
     payload,
   );
 }
@@ -78,14 +97,47 @@ export function loadEstablishmentForEdit(
   );
 }
 
-export function retryOcrAction(id: string): Promise<WriteResult> {
-  return postPartner<WriteResult>(
+export function retryOcrAction(id: string): Promise<RetryOcrResult> {
+  return postPartner<RetryOcrResult>(
     `${BASE}/${encodeURIComponent(id)}/retry-ocr`,
   );
 }
 
 export function resumeEstablishmentAction(id: string): Promise<WriteResult> {
   return postPartner<WriteResult>(`${BASE}/${encodeURIComponent(id)}/resume`);
+}
+
+export function suspendEstablishmentAction(id: string): Promise<WriteResult> {
+  return postPartner<WriteResult>(`${BASE}/${encodeURIComponent(id)}/suspend`);
+}
+
+export function loadMenuItems(id: string): Promise<MenuLoadResult> {
+  return postPartner<MenuLoadResult>(`${BASE}/${encodeURIComponent(id)}/menu-items`);
+}
+
+export function updateMenuItemAction(
+  itemId: string,
+  changes: MenuItemChanges,
+): Promise<MenuItemWriteResult> {
+  return postPartner<MenuItemWriteResult>(
+    `/api/partner/menu-items/${encodeURIComponent(itemId)}/update`,
+    changes,
+  );
+}
+
+/**
+ * Drop the card's public page now, if it is published. `final` — the partner
+ * leaves with a drop still deferred: sent `keepalive`, so it outlives the page.
+ */
+export function refreshCardPageAction(
+  id: string,
+  { final = false }: { final?: boolean } = {},
+): Promise<RefreshPageResult> {
+  return postPartner<RefreshPageResult>(
+    `${BASE}/${encodeURIComponent(id)}/refresh-page${final ? '?final=1' : ''}`,
+    undefined,
+    { keepalive: final },
+  );
 }
 
 export function deleteEstablishmentAction(id: string): Promise<WriteResult> {

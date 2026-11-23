@@ -19,7 +19,7 @@ import type {
 } from '@/lib/api/types';
 import { loadEstablishments } from '@/lib/partner/client';
 import { forgetWizardDraft } from '@/lib/partner/draft-storage';
-import { STATUS_LABELS, STATUS_ORDER } from '@/lib/partner/status';
+import { STATUS_LABELS, STATUS_ORDER, notesAfterOwnPause } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
 import { EstablishmentVignette } from './EstablishmentVignette';
@@ -104,6 +104,28 @@ export function CabinetDashboard() {
     setTab('active');
   }, []);
 
+  // A paused card (part 1): to «Приостановлено» in place, as the partner's own
+  // pause — the server drops a moderator's leftover marks on it.
+  const handleSuspended = useCallback((id: string) => {
+    setState((prev) =>
+      prev.phase === 'ready'
+        ? {
+            ...prev,
+            items: prev.items.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    status: 'suspended',
+                    moderation_notes: notesAfterOwnPause(item.moderation_notes),
+                  }
+                : item,
+            ),
+          }
+        : prev,
+    );
+    setTab('suspended');
+  }, []);
+
   return (
     <div className="flex flex-col gap-l">
       <div className="flex items-center justify-between gap-m">
@@ -161,6 +183,7 @@ export function CabinetDashboard() {
                           establishment={e}
                           onDeleted={handleDeleted}
                           onResumed={handleResumed}
+                          onSuspended={handleSuspended}
                         />
                       ))}
                     </div>

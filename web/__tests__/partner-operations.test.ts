@@ -14,11 +14,23 @@ jest.mock('@/lib/api/endpoints/partner', () => ({
   retryOcr: jest.fn(),
   deleteEstablishment: jest.fn(),
   resumeEstablishment: jest.fn(),
+  suspendEstablishment: jest.fn(),
+  listMenuItems: jest.fn(),
+  updateMenuItem: jest.fn(),
 }));
 jest.mock('@/lib/auth/session', () => ({
   getSessionUser: jest.fn(),
   refreshSession: jest.fn(),
 }));
+// The card's public page after a write (part 1 of «Кабинет партнёра на
+// сайте») has its own suite (partner-card-page-ops.test.ts); here it does
+// nothing, and nothing reaches next/cache or the metadata's fetch.
+jest.mock('@/lib/partner/card-page', () => ({
+  cardDropDue: jest.fn(() => null),
+  cardPagePath: jest.fn(async () => null),
+  refreshCardPage: jest.fn(async () => ({ refreshed: false })),
+}));
+jest.mock('@/lib/api/endpoints/profile', () => ({ getMe: jest.fn() }));
 
 import {
   createEstablishment,

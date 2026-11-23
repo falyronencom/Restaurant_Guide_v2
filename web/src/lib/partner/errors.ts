@@ -25,6 +25,12 @@
  */
 
 import { personText } from '@/lib/api/person-text';
+import {
+  MENU_TEXTS,
+  NO_MENU_FILES,
+  recognitionShareSpent,
+  restartsSpent,
+} from '@/lib/partner/cabinet-texts';
 
 const CODE_RU: Record<string, string> = {
   VALIDATION_ERROR: 'Проверьте правильность заполнения полей.',
@@ -92,6 +98,23 @@ const CODE_RU: Record<string, string> = {
   // session may be alive, so not «Сессия истекла».
   SESSION_REFRESH_UNAVAILABLE: 'Сервер временно недоступен. Попробуйте ещё раз.',
   NETWORK: 'Сеть недоступна. Попробуйте позже.',
+  // The card's menu (part 1 of «Кабинет партнёра на сайте», 23.11.2026; the
+  // texts await the Coordinator's word with the rest of lib/partner/
+  // cabinet-texts.ts). The server's texts of these codes are English.
+  // T4 — a restart of a card without menu files (backend retryOcr).
+  NO_PDF_MENUS: NO_MENU_FILES,
+  // T7б — the line is gone: replaced by a re-read, hidden by the moderator,
+  // or not the partner's (backend updateMenuItem answers all three alike).
+  MENU_ITEM_NOT_FOUND: MENU_TEXTS.itemGone,
+  // The site checks the price, the fields and the id itself: these reach the
+  // partner only from a stale page or a hand-made request.
+  INVALID_PRICE: 'Цена указана неверно.',
+  NO_FIELDS_TO_UPDATE: 'Нечего сохранять — ничего не изменилось.',
+  INVALID_FORMAT: 'Не удалось выполнить действие. Обновите страницу и попробуйте ещё раз.',
+  // Every queuing of a restart failed — the server's own Russian text, the same words.
+  OCR_RESTART_FAILED: 'Не удалось запустить распознавание. Попробуйте позже.',
+  // The same-origin guard of the cabinet's Route Handlers (lib/partner/same-origin.ts).
+  CSRF: 'Не удалось выполнить действие. Обновите страницу и попробуйте ещё раз.',
 };
 
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';
@@ -132,11 +155,17 @@ export type Refusal = {
   message?: string;
   fields?: FieldRefusal[];
   retryAfter?: number;
+  /** The moment the limit lets go (`details.reset_at`), when the seconds are not given. */
+  resetAt?: string;
   /** Which limit refused, for RATE_LIMIT_EXCEEDED: the account's daily upload
    *  allowance, the shared ceiling of the accounts without a confirmed e-mail
-   *  (backend services/unconfirmedAllowance.js — details.unconfirmed), or the
-   *  request limiter. */
-  limit?: 'daily_uploads' | 'unconfirmed_uploads' | 'requests';
+   *  (backend services/unconfirmedAllowance.js — details.unconfirmed), the
+   *  request limiter; for a restart of the menu's recognition only (ocrLimitOf)
+   *  — the restarts of the day (`ocr_restarts`) or the day's share of
+   *  recognition (`ocr_allowance`). */
+  limit?: 'daily_uploads' | 'unconfirmed_uploads' | 'requests' | 'ocr_restarts' | 'ocr_allowance';
+  /** How many the limit allows (`details.limit`), for `ocr_restarts`. */
+  limitCount?: number;
   /** FORBIDDEN from the role gate (backend middleware/auth.js authorize): the
    *  role the server saw. Absent on the ownership refusal («не ваша или
    *  удалённая карточка»), which carries no details. */
@@ -149,6 +178,36 @@ export function uploadLimitOf(
 ): 'daily_uploads' | 'unconfirmed_uploads' | 'requests' {
   if (details?.unconfirmed === true) return 'unconfirmed_uploads';
   return details?.files_limit !== undefined ? 'daily_uploads' : 'requests';
+}
+
+/**
+ * Which limit refused a restart of the menu's recognition, from its 429's
+ * details (backend): the route's limit of restarts — `limit` with the
+ * day-long window (middleware/rateLimiter.js sendRateLimitRefusal,
+ * routes/v1/establishmentRoutes.js ocrRestartLimiter); the day's share of
+ * recognition — `jobs_limit` or `pages_limit` (services/ocrAllowance.js
+ * DailyOcrLimitError). Anything else — the request limiter. Read for the
+ * restart only: another daily limiter elsewhere would not be «restarts».
+ */
+export function ocrLimitOf(
+  details: { limit?: unknown; window?: unknown; jobs_limit?: unknown; pages_limit?: unknown } | undefined,
+): { limit: 'ocr_restarts' | 'ocr_allowance' | 'requests'; limitCount?: number } {
+  if (details?.jobs_limit !== undefined || details?.pages_limit !== undefined) {
+    return { limit: 'ocr_allowance' };
+  }
+  if (typeof details?.limit === 'number' && details.window === '86400 seconds') {
+    return { limit: 'ocr_restarts', limitCount: details.limit };
+  }
+  return { limit: 'requests' };
+}
+
+/** Seconds until `resetAt` (ISO), whole and above zero, or undefined. */
+function secondsUntil(resetAt: string | undefined, now = Date.now()): number | undefined {
+  if (!resetAt) return undefined;
+  const at = Date.parse(resetAt);
+  if (!Number.isFinite(at)) return undefined;
+  const seconds = Math.ceil((at - now) / 1000);
+  return seconds > 0 ? seconds : undefined;
 }
 
 /** «3 ч 5 мин», «12 мин», «40 сек» — how long until a limit lets go. */
@@ -165,7 +224,11 @@ export function formatWait(seconds: number): string {
 function ownPhrase(r: Refusal): string | undefined {
   switch (r.code) {
     case 'RATE_LIMIT_EXCEEDED': {
-      const wait = r.retryAfter ? formatWait(r.retryAfter) : null;
+      const seconds = r.retryAfter ?? secondsUntil(r.resetAt);
+      const wait = seconds ? formatWait(seconds) : null;
+      // A restart of the menu's recognition (T2, T3; registry item Н5).
+      if (r.limit === 'ocr_restarts') return restartsSpent(r.limitCount ?? 5, wait);
+      if (r.limit === 'ocr_allowance') return recognitionShareSpent(wait);
       if (r.limit === 'unconfirmed_uploads') {
         // The server's own sentence: confirming the e-mail lifts the ceiling.
         return 'Загрузки для учётных записей без подтверждённой почты на сегодня закончились. '

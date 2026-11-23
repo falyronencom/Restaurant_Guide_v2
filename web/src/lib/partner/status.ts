@@ -16,6 +16,29 @@ export const STATUS_LABELS: Record<EstablishmentStatus, string> = {
   suspended: 'Приостановлено',
 };
 
+/** The status badge's colours — the cabinet's list and the card's header. */
+export const STATUS_BADGE: Record<EstablishmentStatus, string> = {
+  draft: 'bg-gray-200 text-figma-text-dark',
+  pending: 'bg-brand/15 text-brand-dark',
+  active: 'bg-success-status/20 text-success-dark',
+  rejected: 'bg-error/15 text-error-dark',
+  suspended: 'bg-gray-300 text-figma-text-dark',
+};
+
+/**
+ * The notes of a card the partner has just paused: the server drops a
+ * moderator's leftover suspension marks on the partner's pause (backend
+ * establishmentService.suspendEstablishment, utils/moderationNotes.js
+ * MODERATOR_SUSPENSION_KEYS), so the pause reads as the partner's own.
+ */
+export function notesAfterOwnPause(notes: ModerationNotes): ModerationNotes {
+  if (!notes) return notes;
+  const kept = Object.entries(notes).filter(
+    ([key]) => !['suspend_reason', 'suspended_at', 'suspended_from'].includes(key),
+  );
+  return Object.fromEntries(kept);
+}
+
 /** Cabinet tab order — most actionable first. */
 export const STATUS_ORDER: readonly EstablishmentStatus[] = [
   'active',

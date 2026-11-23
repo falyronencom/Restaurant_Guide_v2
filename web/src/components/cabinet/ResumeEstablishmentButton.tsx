@@ -18,7 +18,8 @@ export function ResumeEstablishmentButton({
   onResumed,
 }: {
   establishmentId: string;
-  onResumed: (id: string) => void;
+  /** `publicPath` — the card's public address again (the card's header shows «Посмотреть на сайте»). */
+  onResumed: (id: string, resumed: { publicPath?: string }) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +29,7 @@ export function ResumeEstablishmentButton({
     setError(null);
     const r = await resumeEstablishmentAction(establishmentId);
     setBusy(false);
-    if (r.ok) onResumed(establishmentId);
+    if (r.ok) onResumed(establishmentId, { publicPath: r.publicPath });
     else setError(refusalMessage(r));
   };
 

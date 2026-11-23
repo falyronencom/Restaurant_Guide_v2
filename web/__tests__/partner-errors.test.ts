@@ -48,6 +48,17 @@ const CABINET_CODES = [
   // the media proxy) — they reach the same cabinet UI.
   'NO_SESSION',
   'SESSION_REFRESH_UNAVAILABLE',
+  // Part 1 of «Кабинет партнёра на сайте» (23.11.2026): the card's menu, its
+  // restart and the pause. The server's texts of the menu codes are English
+  // (backend partnerMenuItemService), so each needs the site's own.
+  'NO_PDF_MENUS', // retryOcr: no menu files
+  'MENU_ITEM_NOT_FOUND', // updateMenuItem: gone, hidden by the moderator, or not the partner's
+  'INVALID_PRICE', // updateMenuItem
+  'NO_FIELDS_TO_UPDATE', // updateMenuItem
+  'INVALID_FORMAT', // errorHandler: a menu item id that is not a UUID (22P02)
+  'OCR_RESTART_FAILED', // retryOcr: every queuing failed
+  'INVALID_STATUS_TRANSITION', // suspendEstablishment: not published
+  'CSRF', // the cabinet's own same-origin guard (lib/partner/same-origin.ts)
 ];
 
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';
