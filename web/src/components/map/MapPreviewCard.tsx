@@ -103,10 +103,14 @@ export function MapPreviewCard({
           </div>
         </SmartLink>
 
+        {/* «Закрыть карточку», not «Закрыть»: on the establishment page the
+            card sits inside the map dialog, whose own X is «Закрыть» and
+            closes the whole map — one name for two buttons would not tell a
+            screen reader which is which. */}
         <button
           type="button"
           onClick={onClose}
-          aria-label="Закрыть"
+          aria-label="Закрыть карточку"
           className="absolute right-2 top-2 grid size-7 place-items-center rounded-full bg-white/90 text-[13px] text-foreground shadow"
         >
           ✕

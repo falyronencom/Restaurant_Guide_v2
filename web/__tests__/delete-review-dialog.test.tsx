@@ -48,12 +48,12 @@ it('renders the title and the terminality warning (load-bearing copy)', () => {
 it('renders NO close-X — the only controls are Отмена and Удалить', () => {
   // showCloseButton={false} is a design decision (the approved mock draws no X
   // on the destructive confirm). «Отмена» is a regular DialogClose, so assert
-  // the absence of the X specifically (its sr-only name is "Close"), not of
-  // any [data-slot="dialog-close"].
+  // the absence of the X specifically (its sr-only name is «Закрыть» — was
+  // "Close" until 11.2026), not of any [data-slot="dialog-close"].
   renderDialog();
 
   const dialog = document.querySelector('[data-slot="dialog-content"]')!;
-  expect(screen.queryByRole('button', { name: 'Close' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Закрыть' })).toBeNull();
   expect(
     [...dialog.querySelectorAll('button')].map((b) => b.textContent?.trim()),
   ).toEqual(['Отмена', 'Удалить']);
