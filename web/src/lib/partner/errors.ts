@@ -115,6 +115,8 @@ const CODE_RU: Record<string, string> = {
   OCR_RESTART_FAILED: 'Не удалось запустить распознавание. Попробуйте позже.',
   // The same-origin guard of the cabinet's Route Handlers (lib/partner/same-origin.ts).
   CSRF: 'Не удалось выполнить действие. Обновите страницу и попробуйте ещё раз.',
+  // The menu line's edit with a body over its bound — a hand-made request only.
+  PAYLOAD_TOO_LARGE: 'Не удалось выполнить действие. Обновите страницу и попробуйте ещё раз.',
 };
 
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';

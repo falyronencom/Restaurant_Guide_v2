@@ -92,6 +92,16 @@ describe('serverFetch — the whole success body with `envelope`', () => {
     expect(Array.isArray(data)).toBe(true);
     expect(data).toHaveLength(2);
   });
+
+  it('with `envelope`, a refusal still throws: the whole body is for a success only', async () => {
+    const { serverFetch } = jest.requireActual('@/lib/api/client') as typeof import('@/lib/api/client');
+    answer({ success: false, error: { code: 'FORBIDDEN', message: 'Нет доступа к заведению', statusCode: 403 } });
+
+    await expect(serverFetch('/x', undefined, { envelope: true })).rejects.toMatchObject({
+      statusCode: 403,
+      errorCode: 'FORBIDDEN',
+    });
+  });
 });
 
 describe('authedFetch passes `envelope` to the transport', () => {
@@ -120,6 +130,70 @@ describe('authedFetch passes `envelope` to the transport', () => {
       expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer access-token' }) }),
       expect.objectContaining({ envelope: true }),
     );
+  });
+
+  /** The session's cookies as a jar the refresh may write. */
+  function withSession(serverFetch: jest.Mock) {
+    const jar = new Map<string, string>([
+      ['rg_at', 'access-token'],
+      ['rg_rt', 'refresh-token'],
+    ]);
+    jest.doMock('@/lib/api/client', () => ({ serverFetch }));
+    jest.doMock('@/lib/api/visitor', () => ({ currentVisitor: jest.fn(async () => null) }));
+    jest.doMock('next/headers', () => ({
+      cookies: jest.fn(async () => ({
+        get: (name: string) => (jar.has(name) ? { value: jar.get(name) } : undefined),
+        set: jest.fn((name: string, value: string) => {
+          jar.set(name, value);
+        }),
+        delete: jest.fn((name: string) => {
+          jar.delete(name);
+        }),
+        has: (name: string) => jar.has(name),
+      })),
+    }));
+  }
+
+  it('a call without options passes no `envelope`: every older call keeps reading `data`', async () => {
+    const serverFetch = jest.fn().mockResolvedValue({ establishments: [] });
+    withSession(serverFetch);
+    const { authedFetch } = await import('@/lib/auth/session');
+
+    await authedFetch('/api/v1/partner/establishments');
+
+    expect(serverFetch).toHaveBeenCalledTimes(1);
+    expect(serverFetch.mock.calls[0][2]).toEqual({ visitor: null, envelope: undefined });
+  });
+
+  it('the retry after a refused access token carries `envelope` too', async () => {
+    const MENU = '/api/v1/partner/establishments/e1/menu-items';
+    let menuCalls = 0;
+    const serverFetch = jest.fn(async (path: string, _init?: RequestInit, _options?: unknown) => {
+      if (path === '/api/v1/auth/refresh') {
+        return {
+          accessToken: 'new-access-token',
+          refreshToken: 'new-refresh-token',
+          expiresIn: 3600,
+          user: { id: 'u1', email: 'p@e.by', name: 'П', role: 'partner' },
+        };
+      }
+      menuCalls += 1;
+      if (menuCalls === 1) {
+        const { ApiError } = await import('@/lib/api/types');
+        throw new ApiError(401, 'Token expired', 'TOKEN_EXPIRED');
+      }
+      return CONTROLLER_ANSWER;
+    });
+    withSession(serverFetch);
+    const { authedFetch } = await import('@/lib/auth/session');
+
+    const body = await authedFetch(MENU, undefined, { envelope: true });
+
+    const menu = serverFetch.mock.calls.filter((c) => c[0] === MENU);
+    expect(menu).toHaveLength(2);
+    expect(menu[1][1]).toMatchObject({ headers: { Authorization: 'Bearer new-access-token' } });
+    expect(menu[1][2]).toMatchObject({ envelope: true });
+    expect(body).toBe(CONTROLLER_ANSWER);
   });
 });
 
@@ -189,6 +263,15 @@ describe('endpoints/partner — the menu and its writes', () => {
     await expect(endpoints.updateMenuItem('i1', { price_byn: 14 })).rejects.toMatchObject({
       statusCode: 502,
       errorCode: 'UNEXPECTED_ANSWER',
+    });
+  });
+
+  it('updateMenuItem: `data: null` (the line replaced meanwhile) is MENU_ITEM_NOT_FOUND, not an unexpected answer (Phase 4.5, LOW 6)', async () => {
+    const { endpoints } = await withAuthedFetch(null);
+
+    await expect(endpoints.updateMenuItem('i1', { price_byn: 14 })).rejects.toMatchObject({
+      statusCode: 404,
+      errorCode: 'MENU_ITEM_NOT_FOUND',
     });
   });
 

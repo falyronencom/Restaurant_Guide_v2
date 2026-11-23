@@ -59,6 +59,7 @@ const CABINET_CODES = [
   'OCR_RESTART_FAILED', // retryOcr: every queuing failed
   'INVALID_STATUS_TRANSITION', // suspendEstablishment: not published
   'CSRF', // the cabinet's own same-origin guard (lib/partner/same-origin.ts)
+  'PAYLOAD_TOO_LARGE', // the menu line's edit, its body over 16 KB (lib/partner/request-body.ts)
 ];
 
 const FALLBACK = 'Не удалось выполнить запрос. Попробуйте позже.';

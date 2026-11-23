@@ -164,6 +164,11 @@ export async function updateMenuItem(
       body: JSON.stringify(changes),
     },
   );
+  // `data: null` — the line was replaced by a re-recognition between the read
+  // and the write (backend partnerMenuItemService.updateMenuItem): gone, as
+  // MENU_ITEM_NOT_FOUND says — the section says so (T7b) and reads the menu
+  // anew (Phase 4.5, LOW 6).
+  if (row === null) throw new ApiError(404, 'Menu item not found', 'MENU_ITEM_NOT_FOUND');
   const item = menuItemOf(row);
   if (!item) throw new ApiError(502, 'Unexpected menu item in the answer', 'UNEXPECTED_ANSWER');
   return item;

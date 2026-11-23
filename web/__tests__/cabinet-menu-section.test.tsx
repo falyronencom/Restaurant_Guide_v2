@@ -340,4 +340,69 @@ describe('while the recognition runs', () => {
     await flush();
     expect(loadMock).toHaveBeenCalledTimes(3);
   });
+
+  describe('when the tab is hidden, and after an hour', () => {
+    let visibility: DocumentVisibilityState = 'visible';
+    beforeEach(() => {
+      visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+    });
+    afterEach(() => {
+      delete (document as unknown as { visibilityState?: unknown }).visibilityState;
+      jest.useRealTimers();
+    });
+
+    it('a hidden tab is not read every 30 s; shown again, it is read at once', async () => {
+      jest.useFakeTimers();
+      const processing: MenuRecognition = { status: 'processing', reason: null, cause: null };
+      loadMock.mockResolvedValue(menu([line({})], processing));
+      render(<MenuSection id="e1" />);
+      await flush();
+      expect(loadMock).toHaveBeenCalledTimes(1);
+
+      visibility = 'hidden';
+      await act(async () => {
+        jest.advanceTimersByTime(90_000);
+      });
+      await flush();
+      expect(loadMock).toHaveBeenCalledTimes(1);
+
+      visibility = 'visible';
+      await act(async () => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      await flush();
+      expect(loadMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops after 60 minutes of «processing»: «Обновить» instead, and no more reads', async () => {
+      jest.useFakeTimers();
+      const processing: MenuRecognition = { status: 'processing', reason: null, cause: null };
+      loadMock.mockResolvedValue(menu([line({})], processing));
+      render(<MenuSection id="e1" />);
+      await flush();
+
+      await act(async () => {
+        jest.advanceTimersByTime(60 * 60_000 - 30_000);
+      });
+      await flush();
+      // 1 at the start, then one each 30 s up to (not at) the hour.
+      expect(loadMock).toHaveBeenCalledTimes(1 + 119);
+      expect(screen.queryByText('Не удалось обновить — на экране может быть не последнее состояние.')).not.toBeInTheDocument();
+
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+      });
+      await flush();
+      expect(loadMock).toHaveBeenCalledTimes(120);
+      expect(screen.getByText('Не удалось обновить — на экране может быть не последнее состояние.')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Обновить' })).toBeInTheDocument();
+
+      await act(async () => {
+        jest.advanceTimersByTime(10 * 60_000);
+      });
+      await flush();
+      expect(loadMock).toHaveBeenCalledTimes(120);
+    });
+  });
 });
