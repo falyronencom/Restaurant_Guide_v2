@@ -25,7 +25,8 @@ import {
   cleanDatabase,
   registerUser,
   createEstablishment,
-  createReview
+  createReview,
+  confirmEmail
 } from './helpers.js';
 import { testEstablishments } from '../fixtures/establishments.js';
 import { createAdminAndGetToken } from '../utils/adminTestHelpers.js';
@@ -174,6 +175,9 @@ describe('E2E Journey: Partner Establishment Management', () => {
       });
 
       regularUser = user;
+
+      // A new review is taken only from a confirmed e-mail: the code first
+      await confirmEmail(user);
 
       // Customer leaves positive review
       const result = await createReview(user.accessToken, {

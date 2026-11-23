@@ -28,6 +28,7 @@ import {
   searchEstablishments,
   addToFavorites,
   createReview,
+  confirmEmail,
   getUserFavorites
 } from './helpers.js';
 import { testUsers } from '../fixtures/users.js';
@@ -49,6 +50,8 @@ describe('E2E Journey: Reviews & Favorites Integration', () => {
       name: 'Интеграционный Пользователь',
       phone: '+375291111111'
     });
+    // A new review is taken only from a confirmed e-mail: the code first
+    await confirmEmail(user);
 
     partner = await registerUser({
       ...testUsers.partner,
@@ -299,6 +302,7 @@ describe('E2E Journey: Reviews & Favorites Integration', () => {
         name: 'Второй Пользователь',
         phone: '+375293333333'
       });
+      await confirmEmail(user2);
 
       // Both users favorite same establishment
       await addToFavorites(user.accessToken, establishments[0].id);
