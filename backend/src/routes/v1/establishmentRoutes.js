@@ -34,9 +34,9 @@ import mediaRoutes from './mediaRoutes.js';
  * did not check the id at all, and a non-UUID came back as the database's
  * English 400. Each route refuses such an id as it refuses a card that is gone
  * or not the caller's — the same status and code, the card's text (the menu's
- * service still answers a foreign card in English: the app shows its own
- * phrase there, the site translates by code). The card's media
- * (mediaRoutes.js) has the same check of its own.
+ * service answers a foreign card with that text too, from 23.11.2026; in
+ * English before — the app shows its own phrase there, the site translated
+ * by code). The card's media (mediaRoutes.js) has the same check of its own.
  */
 const canonicalCardId = (message, status, code) => (req, res, next) => (
   isCanonicalUuid(req.params.id) ? next() : next(new AppError(message, status, code))
@@ -271,8 +271,11 @@ router.get(
 /**
  * POST /api/v1/partner/establishments/:id/retry-ocr
  *
- * Re-queue OCR for every PDF menu attached to this establishment.
- * Rate limited to 5 requests per 24h per partner.
+ * Re-queue OCR for the menu files of this establishment (PDFs and menu
+ * photos) never recognised; recognised ones are left alone
+ * (partnerMenuItemService.retryOcr, from 23.11.2026).
+ * Rate limited to 5 requests per 24h per partner; a restart that finds every
+ * file recognised does not count (partnerMenuItemController.retryOcr).
  */
 router.post(
   '/:id/retry-ocr',

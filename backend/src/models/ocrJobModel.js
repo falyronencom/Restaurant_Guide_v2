@@ -367,9 +367,10 @@ export const hasCompletedJobForMedia = async (mediaId) => {
 
 /**
  * The media of an establishment that have a completed (done) OCR job — the
- * files already recognised. The partner's restart queues the others first
- * (partnerMenuItemService.retryOcr), so that a daily allowance with a few
- * places left goes to files never recognised, not to re-reading done ones.
+ * files already recognised. The partner's restart queues only the others
+ * (partnerMenuItemService.retryOcr, from 23.11.2026; before, it queued them
+ * first and the recognised ones after): a re-read replaces a file's dishes,
+ * the partner's corrections with them.
  *
  * @param {string} establishmentId - UUID
  * @returns {Promise<Set<string>>} media ids

@@ -137,8 +137,9 @@ describe('Отказы партнёру вне карточки: тексты', 
     // + 3 брони + 9 вызовов статуса + 11 акций + 1 вызов лимита + 5 медиа
     // карточки + 3 аватара на 20.10.2026, и фраза формы у загрузки и аватара
     // — 45 вечером того же дня; 35 на 19.10.2026, 33 на 18.10.2026, 27 на
-    // 13.10.2026).
-    expect(all.length).toBeGreaterThanOrEqual(45);
+    // 13.10.2026). 51 к 22.11.2026; 60 на 23.11.2026 — 7 правки позиции
+    // меню и 2 перезапуска распознавания (нитка Н8).
+    expect(all.length).toBeGreaterThanOrEqual(60);
 
     const offenders = all
       .filter(([, text]) => typeof text !== 'string' || !/[А-Яа-яЁё]/.test(text) || latinWords(text).length > 0)
@@ -300,6 +301,31 @@ describe('Отказы партнёру вне карточки: исходни�
     // (1 AppError на 20.10.2026; до того — английский текст multer).
     expect(appErrorTexts(route).length).toBeGreaterThanOrEqual(1);
     expect(notFrom('AVATAR_REFUSALS', appErrorTexts(route))).toEqual([]);
+  });
+
+  // Меню партнёра — с 23.11.2026 (нитка Н8, находка 4): список, правка
+  // позиции, перезапуск распознавания. До того — английский, а правка с
+  // длинным названием отвечала 500. Ответы успеха контроллера («Menu item
+  // updated», «Enqueued N OCR job(s)») — не отказы: клиенты пишут свои
+  // фразы успеха, разбор их не касается.
+  it('меню партнёра (partnerMenuItemService.js, partnerMenuItemRoutes.js): каждый отказ — из словарей отказов', () => {
+    const service = source('services/partnerMenuItemService.js');
+    expect(unreadMessageShapes(service)).toEqual([]);
+    expect(messageTexts(service)).toEqual([]);
+    const refusals = appErrorTexts(service);
+    // Сторож разбора: отказы нашлись (14 на 23.11.2026: 8 правки позиции,
+    // 2 чужой карточки, 4 перезапуска).
+    expect(refusals.length).toBeGreaterThanOrEqual(14);
+    expect(notFrom('MENU_ITEM_REFUSALS|MENU_RECOGNITION_REFUSALS|ESTABLISHMENT_REFUSALS', refusals)).toEqual([]);
+
+    // id позиции не так, как его пишет база, — отказ позиции, которой нет
+    // (1 на 23.11.2026).
+    const routes = source('routes/v1/partnerMenuItemRoutes.js');
+    expect(unreadMessageShapes(routes)).toEqual([]);
+    expect(messageTexts(routes)).toEqual([]);
+    const routeRefusals = appErrorTexts(routes);
+    expect(routeRefusals.length).toBeGreaterThanOrEqual(1);
+    expect(notFrom('MENU_ITEM_REFUSALS', routeRefusals)).toEqual([]);
   });
 
   it('брони (bookingService.js): каждый отказ партнёру — из BOOKING_REFUSALS', () => {

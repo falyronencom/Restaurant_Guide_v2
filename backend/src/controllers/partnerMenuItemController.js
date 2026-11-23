@@ -9,6 +9,7 @@
  */
 
 import * as partnerMenuItemService from '../services/partnerMenuItemService.js';
+import { NOTHING_TO_RECOGNIZE } from '../services/partnerMenuItemService.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { giveBackRateLimitSlots } from '../middleware/rateLimiter.js';
 import logger from '../utils/logger.js';
@@ -66,10 +67,13 @@ export const retryOcr = asyncHandler(async (req, res) => {
     // finding Н40 of 25.10.2026) or the database failed before them — is not
     // a restart the partner spent: the day's limit of five restarts
     // (routes/v1/establishmentRoutes.js) gets this one back. The app repeats
-    // a request answered 5xx, and the repeats cost nothing either. A refusal
-    // (no menu files, the spent daily allowance's 429, not the partner's
-    // card) stays counted, as before.
-    if ((error.statusCode ?? 500) >= 500) {
+    // a request answered 5xx, and the repeats cost nothing either. Nor is a
+    // restart that found every menu file recognised (NOTHING_TO_RECOGNIZE,
+    // from 23.11.2026, thread Н8): it queued nothing and read nothing — the
+    // app shows its button on a recognised menu too. Any other refusal (no
+    // menu files, the spent daily allowance's 429, not the partner's card)
+    // stays counted, as before.
+    if ((error.statusCode ?? 500) >= 500 || error.code === NOTHING_TO_RECOGNIZE) {
       await giveBackRateLimitSlots(req);
     }
     throw error;

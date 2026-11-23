@@ -212,15 +212,59 @@ export const MENU_RECOGNITION_FAILURES = Object.freeze({
 /**
  * The partner's restart of the menu's recognition —
  * POST /api/v1/partner/establishments/:id/retry-ocr
- * (services/partnerMenuItemService.js retryOcr). Its other refusals keep
- * their own: a spent daily allowance answers with the limiters' sentence
- * (constants/rateLimitRefusal.js), a card without menu files with the code
- * NO_PDF_MENUS the app has its own text for. Wording proposed by Trunk on
- * 25.10.2026 (directive of session К, finding Н40).
+ * (services/partnerMenuItemService.js retryOcr). A spent daily allowance
+ * answers with the limiters' sentence (constants/rateLimitRefusal.js); a card
+ * that is gone or not the caller's — with the card's own text,
+ * ESTABLISHMENT_REFUSALS.notOwner. `restartNotQueued` — wording proposed by
+ * Trunk on 25.10.2026 (directive of session К, finding Н40). The other two —
+ * from 23.11.2026 (thread Н8; NO_PDF_MENUS answered in English before, and the
+ * app shows its own text by the code, naming its section): proposed by Trunk,
+ * to be approved by the Coordinator. Neither names a section of a screen: the
+ * app calls it «Медиа», the site «Фотографии и меню».
  */
 export const MENU_RECOGNITION_REFUSALS = Object.freeze({
   // Every file's queuing failed: nothing was started.
   restartNotQueued: 'Не удалось запустить распознавание. Попробуйте позже.',
+  // NO_PDF_MENUS: the card has no menu photo and no PDF.
+  noMenuFiles: 'Сначала добавьте фото меню или PDF.',
+  // NOTHING_TO_RECOGNIZE: every menu file has been recognised at least once —
+  // the restart re-reads only files never recognised (decision of the
+  // Coordinator 23.11.2026, Н8, option «Б»), and a file read again would lose
+  // the partner's corrections of its dishes.
+  nothingToRecognize:
+    'Все файлы меню уже распознаны. Чтобы распознать файл заново, удалите его и загрузите ещё раз.',
+});
+
+/**
+ * The partner's edit of a menu line — PATCH /api/v1/partner/menu-items/:id
+ * (services/partnerMenuItemService.js updateMenuItem; the id in the address —
+ * routes/v1/partnerMenuItemRoutes.js). From 23.11.2026 (thread Н8, finding 4
+ * of the discovery for the site's cabinet, part 1): until then the texts were
+ * English, and a name or a section longer than its column, an empty name or a
+ * price past numeric(10,2) came back as 500 «Сбой на сервере». The app shows
+ * its own text on any failed edit; the site shows these. Proposed by Trunk,
+ * «символов» made «знаков» as in the approved texts of this file; to be
+ * approved by the Coordinator.
+ */
+export const MENU_ITEM_REFUSALS = Object.freeze({
+  // No such line, another partner's, one the moderator hid (not the partner's
+  // to edit), one a re-read of its file replaced, or an id not written as the
+  // database writes it — one text for all, as for a stranger's line.
+  notFound: 'Позиция не найдена — возможно, меню распознано заново.',
+  // None of item_name, price_byn, category_raw in the request.
+  noChanges: 'Нет изменений для сохранения.',
+  // Not a number, or below zero.
+  priceInvalid: 'Цена должна быть числом не меньше нуля.',
+  // menu_items.price_byn is numeric(10,2): at most 99 999 999,99.
+  priceTooHigh: 'Цена слишком большая.',
+  // Missing as text, or nothing but spaces.
+  nameRequired: 'Укажите название позиции.',
+  // menu_items.item_name is varchar(255), counted as the database counts.
+  nameTooLong: 'Название позиции — не длиннее 255 знаков.',
+  // menu_items.category_raw is varchar(100), counted as the database counts;
+  // a section sent as anything but text is refused with the same text, as a
+  // photo's caption is (MEDIA_REFUSALS.captionTooLong).
+  sectionTooLong: 'Раздел меню — не длиннее 100 знаков.',
 });
 
 /**
