@@ -9,6 +9,10 @@
  * Retry: markFailed returns job to 'pending' if attempts < max_attempts (default 3),
  *        otherwise transitions to 'failed' permanently; markFailedPermanently
  *        fails it at once (a PDF whose parse broke its limits).
+ * Outcome: markDone, markFailed and markFailedPermanently are written by the
+ *        attempt that holds the job — a row still 'processing' with the
+ *        attempt's number — and leave any other row as it is (thread Н8,
+ *        finding 2): a job done stays done.
  * Reaper: reapStaleProcessingJobs settles 'processing' rows older than
  *         STALE_PROCESSING_INTERVAL — a process that ended mid-attempt never
  *         settles its own row; ocrJobPoller sweeps them. Such a row is failed
@@ -23,10 +27,11 @@ import logger from '../utils/logger.js';
  * The active (pending/processing) job of a media file, the newest one, or null.
  *
  * @param {string} mediaId - UUID of establishment_media row
+ * @param {Object} [client] - A client inside BEGIN (enqueue), or the pool
  * @returns {Promise<Object|null>}
  */
-export const findActiveJob = async (mediaId) => {
-  const result = await pool.query(
+export const findActiveJob = async (mediaId, client = pool) => {
+  const result = await client.query(
     `SELECT * FROM ocr_jobs
      WHERE media_id = $1 AND status IN ('pending', 'processing')
      ORDER BY created_at DESC
@@ -45,9 +50,25 @@ export const findActiveJob = async (mediaId) => {
  * A 'processing' row orphaned by a dead process would satisfy this check forever;
  * the poller's stale sweep (reapStaleProcessingJobs) settles it within about an hour.
  *
+ * One file at a time (thread Н8, finding 1, 23.11.2026): the look for an
+ * active job and the insert are one transaction under a lock of the file
+ * (pg_advisory_xact_lock), so two calls at the same instant — two quick
+ * presses of «Перезапустить распознавание», a restart meeting the card's
+ * save — queue the file once, and the second gets the first's job. Until then
+ * both could find none and both insert: the file was read twice, the second
+ * read replacing the first's dishes with the partner's corrections made in
+ * between, and the day's pages were spent twice. The table holds no rule «one
+ * active job per file» — a partial unique index would be a migration on
+ * production — so the lock holds among the callers of enqueue only: the
+ * operator's scripts that insert rows themselves (scripts/reocr-menus.js,
+ * scripts/requeue-menu-ocr.js) do not take it. A caller that reserved the
+ * day's allowance before (services/ocrAllowance.js) and lost the race keeps
+ * its reservation spent: one job of the day's hundred.
+ *
  * Called directly only by the allowance (services/ocrAllowance.js — every
  * job a partner's request queues) and by the moderator's approval
- * (adminService); tests/unit/ocrEnqueueDoors.test.js holds that list.
+ * (adminService); tests/unit/ocrEnqueueDoors.test.js holds that list. Outside
+ * the application, the seed import calls it too (scripts/seed-import).
  *
  * `countedFor` — the account whose day of recognition this job's pages come
  * out of (services/ocrAllowance.js). The number of pages of a PDF is known only
@@ -64,31 +85,48 @@ export const findActiveJob = async (mediaId) => {
  * @returns {Promise<Object>} Job row (either newly created or pre-existing active)
  */
 export const enqueue = async ({ establishmentId, mediaId, countedFor = null }) => {
-  const existing = await findActiveJob(mediaId);
+  const client = await pool.connect();
+  let broken = null;
+  try {
+    await client.query('BEGIN');
+    // Held to the end of the transaction: a second call for the file waits
+    // here and then finds the job this one inserts.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`ocr_jobs:${mediaId}`]);
 
-  if (existing) {
-    logger.debug('OCR job already active for media, returning existing', {
-      jobId: existing.id,
+    const existing = await findActiveJob(mediaId, client);
+    if (existing) {
+      await client.query('COMMIT');
+      logger.debug('OCR job already active for media, returning existing', {
+        jobId: existing.id,
+        mediaId,
+        status: existing.status,
+      });
+      return existing;
+    }
+
+    const result = await client.query(
+      `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, result_summary)
+       VALUES ($1, $2, 'pending', 0, $3)
+       RETURNING *`,
+      [establishmentId, mediaId, countedFor ? { pages_counted_for: countedFor } : null],
+    );
+    await client.query('COMMIT');
+
+    logger.info('OCR job enqueued', {
+      jobId: result.rows[0].id,
+      establishmentId,
       mediaId,
-      status: existing.status,
     });
-    return existing;
+
+    return result.rows[0];
+  } catch (error) {
+    // The ROLLBACK's own failure does not stand in for the error, and such a
+    // client is not given back to the pool as healthy (menuItemModel inTransaction).
+    await client.query('ROLLBACK').catch((rollbackError) => { broken = rollbackError; });
+    throw error;
+  } finally {
+    client.release(broken ?? undefined);
   }
-
-  const result = await pool.query(
-    `INSERT INTO ocr_jobs (establishment_id, media_id, status, attempts, result_summary)
-     VALUES ($1, $2, 'pending', 0, $3)
-     RETURNING *`,
-    [establishmentId, mediaId, countedFor ? { pages_counted_for: countedFor } : null],
-  );
-
-  logger.info('OCR job enqueued', {
-    jobId: result.rows[0].id,
-    establishmentId,
-    mediaId,
-  });
-
-  return result.rows[0];
 };
 
 /**
@@ -128,22 +166,54 @@ export const pickNextPending = async () => {
 };
 
 /**
- * Mark a job as successfully completed.
+ * The attempt's number, which the writes of an attempt's outcome are fenced
+ * to: attempts of the row pickNextPending returned (ocrService.processJob reads
+ * it at its start). Without it a write would match no row and say nothing, so
+ * its absence is a mistake in the caller, told at once.
+ *
+ * @param {*} attempts
+ * @param {string} writer - The function's name, for the error
+ */
+const requireAttempt = (attempts, writer) => {
+  if (!Number.isInteger(attempts)) {
+    throw new Error(`${writer}: the attempt's number is required (attempts of the picked row)`);
+  }
+};
+
+/**
+ * Mark a job as successfully completed — by the attempt that holds it: a row
+ * still 'processing' whose attempts equal the attempt's number, the fence of
+ * markInterruptedByShutdown and settleAbandonedAttempt. A row that moved on —
+ * failed or sent back to the queue by the stale sweep, picked again by a newer
+ * attempt — is left as it is, and null comes back: the attempt has lost its job.
+ *
+ * ocrService.processJob writes it inside the transaction that writes the
+ * file's dishes (menuItemModel.replaceForMedia, `settle`; thread Н8, finding 2,
+ * 23.11.2026): the dishes and the mark «recognised» land together or not at
+ * all, and null undoes the dishes. Until then the mark was a statement of its
+ * own after the dishes' COMMIT: a failure between the two left a file with
+ * dishes — and the partner's corrections of them — that every reader of
+ * «recognised» (the partner's restart, the moderator's approval, the retry of
+ * the job itself) took for a file never recognised, and read again.
  *
  * @param {string} jobId - UUID
  * @param {Object} resultSummary - Metadata (items_count, confidence_avg, etc.) for admin observability
- * @returns {Promise<Object|null>} Updated job row or null if not found
+ * @param {Object} options
+ * @param {number} options.attempts - The attempt's number (attempts of the picked row)
+ * @param {Object} [options.client] - A client inside BEGIN: the write joins its transaction
+ * @returns {Promise<Object|null>} Updated job row, or null when the attempt no longer holds the job
  */
-export const markDone = async (jobId, resultSummary) => {
-  const result = await pool.query(
+export const markDone = async (jobId, resultSummary, { attempts, client = pool } = {}) => {
+  requireAttempt(attempts, 'markDone');
+  const result = await client.query(
     `UPDATE ocr_jobs
      SET status = 'done',
          result_summary = $2,
          completed_at = NOW(),
          error_message = NULL
-     WHERE id = $1
+     WHERE id = $1 AND status = 'processing' AND attempts = $3
      RETURNING *`,
-    [jobId, resultSummary],
+    [jobId, resultSummary, attempts],
   );
 
   return result.rows[0] || null;
@@ -176,17 +246,27 @@ const SETTLE_FAILED_ATTEMPT_SET = `SET status = CASE
  * Note: attempts counter is incremented in pickNextPending, so by the time markFailed
  * runs, attempts already reflects the current try. The comparison is >= max_attempts.
  *
+ * Fenced to the attempt, as markDone: only a row still 'processing' with the
+ * attempt's number. A job done stays done — a failure told after the dishes
+ * and the mark have landed (a COMMIT whose answer was lost, an error after
+ * it) must not send a recognised file back to the queue to be read again
+ * (thread Н8, finding 2); a row another writer settled meanwhile keeps its
+ * outcome.
+ *
  * @param {string} jobId - UUID
  * @param {string} errorMessage - Human-readable failure reason
- * @returns {Promise<Object|null>} Updated job row or null if not found
+ * @param {Object} options
+ * @param {number} options.attempts - The attempt's number (attempts of the picked row)
+ * @returns {Promise<Object|null>} Updated job row, or null when the attempt no longer holds the job
  */
-export const markFailed = async (jobId, errorMessage) => {
+export const markFailed = async (jobId, errorMessage, { attempts } = {}) => {
+  requireAttempt(attempts, 'markFailed');
   const result = await pool.query(
     `UPDATE ocr_jobs
      ${SETTLE_FAILED_ATTEMPT_SET}
-     WHERE id = $1
+     WHERE id = $1 AND status = 'processing' AND attempts = $3
      RETURNING *`,
-    [jobId, errorMessage],
+    [jobId, errorMessage, attempts],
   );
 
   return result.rows[0] || null;
@@ -198,20 +278,24 @@ export const markFailed = async (jobId, errorMessage) => {
  * (ocrService.processJob), and the same file breaks it on every attempt.
  * attempts stays as counted; completed_at is set, started_at kept, as for a
  * last attempt spent. The partner restarts recognition from the menu screen.
+ * Fenced to the attempt, as markFailed.
  *
  * @param {string} jobId - UUID
  * @param {string} errorMessage - Human-readable failure reason
- * @returns {Promise<Object|null>} Updated job row or null if not found
+ * @param {Object} options
+ * @param {number} options.attempts - The attempt's number (attempts of the picked row)
+ * @returns {Promise<Object|null>} Updated job row, or null when the attempt no longer holds the job
  */
-export const markFailedPermanently = async (jobId, errorMessage) => {
+export const markFailedPermanently = async (jobId, errorMessage, { attempts } = {}) => {
+  requireAttempt(attempts, 'markFailedPermanently');
   const result = await pool.query(
     `UPDATE ocr_jobs
      SET status = 'failed',
          error_message = $2,
          completed_at = NOW()
-     WHERE id = $1
+     WHERE id = $1 AND status = 'processing' AND attempts = $3
      RETURNING *`,
-    [jobId, errorMessage],
+    [jobId, errorMessage, attempts],
   );
 
   return result.rows[0] || null;

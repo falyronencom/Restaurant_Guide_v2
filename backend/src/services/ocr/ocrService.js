@@ -592,10 +592,24 @@ const journalHiddenFromElsewhere = async (rows) => {
 };
 
 /**
+ * Code of the error the write of a file's dishes ends with when the attempt no
+ * longer holds its job (ocrJobModel.markDone found no row of this attempt: the
+ * stale sweep settled it, or a newer attempt picked it): nothing is written,
+ * and the job's row is left to whoever holds it now.
+ */
+const JOB_NOT_HELD = 'OCR_JOB_NOT_HELD';
+
+/**
  * Run the full OCR pipeline for a job. Called by the poller after pickNextPending,
  * or directly in tests.
  *
- * On success: marks job 'done' and persists menu_items.
+ * On success: persists menu_items and marks the job 'done' in one transaction
+ * (thread Н8, finding 2, 23.11.2026) — every reader of «recognised» (the
+ * partner's restart, the moderator's approval, the menu screen) asks for a
+ * done job, so a file with dishes always has one, and its dishes — with the
+ * partner's corrections — are not read again. Every outcome is written by this
+ * attempt only while it still holds the job (ocrJobModel: the row still
+ * 'processing', the attempt's number); an attempt that lost it writes nothing.
  * On any exception: marks job 'failed' (with retry if attempts < max_attempts),
  * with four exceptions by the error's code:
  *   - RECOGNITION_CEILING — on its first attempt the file's pages do not fit what
@@ -677,18 +691,26 @@ export const processJob = async (jobId, { signal } = {}) => {
 
     const flaggedItems = sanityChecker.check(rawItems, previousForThisMedia);
 
-    const { hiddenFromElsewhere } = await menuItemModel.replaceForMedia({
-      establishmentId: job.establishment_id,
-      mediaId: job.media_id,
-      newItems: flaggedItems,
-    });
-    await journalHiddenFromElsewhere(hiddenFromElsewhere);
-
+    // Counted before the write: it needs nothing the write gives back.
     const summary = buildResultSummary(flaggedItems, strategy, {
       visionError, pagesCount, pagesTotal, categoriesCarried,
     });
 
-    await ocrJobModel.markDone(jobId, summary);
+    // The dishes and the job's «done» — one transaction (the header says why).
+    const { hiddenFromElsewhere } = await menuItemModel.replaceForMedia({
+      establishmentId: job.establishment_id,
+      mediaId: job.media_id,
+      newItems: flaggedItems,
+      settle: async (client) => {
+        const done = await ocrJobModel.markDone(jobId, summary, { attempts: job.attempts, client });
+        if (!done) {
+          throw Object.assign(new Error('the attempt no longer holds its job: the dishes are not written'), {
+            code: JOB_NOT_HELD,
+          });
+        }
+      },
+    });
+    await journalHiddenFromElsewhere(hiddenFromElsewhere);
 
     logger.info('OCR job completed', {
       jobId,
@@ -710,10 +732,23 @@ export const processJob = async (jobId, { signal } = {}) => {
 
     return { success: true, jobId, itemCount: flaggedItems.length };
   } catch (error) {
+    if (error.code === JOB_NOT_HELD) {
+      // Nothing was written, and the job's row is no longer this attempt's:
+      // no outcome from here, and no notice.
+      logger.warn('OCR job: the attempt no longer held its job when the dishes were to be written — nothing written', {
+        jobId,
+        mediaId: job.media_id,
+        attempts: job.attempts,
+      });
+      return { success: false, jobId, error: error.message };
+    }
+
+    // The outcome is fenced to this attempt (ocrJobModel), as the done above.
+    const fence = { attempts: job.attempts };
     let failedJob;
     if (error.code === RECOGNITION_CEILING) {
       // takePagesForAttempt has written the line to the log.
-      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
+      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message, fence);
     } else if (error.code === PDF_PARSE_LIMIT) {
       logger.error('OCR job failed for good: the PDF parse broke its limit', {
         jobId,
@@ -722,7 +757,7 @@ export const processJob = async (jobId, { signal } = {}) => {
         error: error.message,
         childStderr: error.stderrHead?.slice(0, 500),
       });
-      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
+      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message, fence);
     } else if (error.code === KEY_REFUSED) {
       logger.error('OCR job failed for good: OpenRouter refused the key — its limit or the balance is spent, or it was revoked', {
         jobId,
@@ -730,21 +765,52 @@ export const processJob = async (jobId, { signal } = {}) => {
         attempts: job.attempts,
         error: error.message,
       });
-      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message);
+      failedJob = await ocrJobModel.markFailedPermanently(jobId, error.message, fence);
     } else if (error.code === PDF_PARSE_ABORTED) {
       logger.warn('OCR job interrupted by shutdown during the PDF parse — settled under the retry rule', {
         jobId,
         attempts: job.attempts,
         maxAttempts: job.max_attempts,
       });
-      failedJob = await ocrJobModel.markFailed(jobId, error.message);
+      failedJob = await ocrJobModel.markFailed(jobId, error.message, fence);
     } else {
       logger.error('OCR job failed', {
         jobId,
         error: error.message,
         stack: error.stack,
       });
-      failedJob = await ocrJobModel.markFailed(jobId, error.message);
+      failedJob = await ocrJobModel.markFailed(jobId, error.message, fence);
+    }
+
+    // The failure was not written: the job was no longer this attempt's — done
+    // already (a COMMIT whose answer was lost), or settled by another writer.
+    // Its row says what it is. Done by this very attempt, the file is
+    // recognised: the partner hears it as after any success (Phase 4.5 review
+    // of thread Н8). Otherwise no notice from here. The «Система» entries of
+    // rows hidden by a decision of another file are not written in that case
+    // — the rows stay hidden, the journal misses when (a lost answer is rare).
+    if (!failedJob) {
+      logger.warn('OCR job: the failure was not written — the attempt no longer held its job', {
+        jobId,
+        mediaId: job.media_id,
+        attempts: job.attempts,
+        error: error.message,
+      });
+      const settled = await ocrJobModel.getJobStatus(jobId)
+        .catch((readError) => {
+          logger.error('OCR job: the row of a job settled elsewhere could not be read', {
+            jobId,
+            error: readError.message,
+          });
+          return null;
+        });
+      if (settled?.status === 'done' && settled.attempts === job.attempts) {
+        await notifyPartnerIfBatchFinished(job.establishment_id)
+          .catch((err) => logger.error('notifyMenuParsed failed after a write whose answer was lost', {
+            error: err.message,
+            establishmentId: job.establishment_id,
+          }));
+      }
     }
 
     // A permanent failure settles this job too: if it was the last active one,

@@ -540,9 +540,10 @@ export const createRateLimiter = ({
 
 /**
  * Give back the slots the limiters of createRateLimiter counted for this
- * request — for a handler that did nothing for the caller and refused it as
- * a server failure, so that the failure does not spend the caller's day: the
- * partner's restart of menu recognition whose every file failed to queue
+ * request — for a handler that did nothing for the caller, so that it does not
+ * spend the caller's day: the partner's restart of menu recognition refused as
+ * a server failure (every file failed to queue) or finding nothing to
+ * recognise — every menu file recognised, or none on the card
  * (controllers/partnerMenuItemController.js).
  * Once per request; Redis unavailable — nothing is given back
  * (config/redis.js decrement). Accepted: an increment that fell back

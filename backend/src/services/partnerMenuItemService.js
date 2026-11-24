@@ -40,6 +40,14 @@ const OCR_RESTART_FAILED = 'OCR_RESTART_FAILED';
 export const NOTHING_TO_RECOGNIZE = 'NOTHING_TO_RECOGNIZE';
 
 /**
+ * The code of a restart on a card with no menu file at all (retryOcr) — the
+ * same «nothing to recognise»: the controller gives the day's restart back by
+ * it too (from 24.11.2026, thread Н8, finding 5). The code predates menu
+ * photos and is kept verbatim (the header of retryOcr says why).
+ */
+export const NO_PDF_MENUS = 'NO_PDF_MENUS';
+
+/**
  * The columns a partner's edit writes (migrations/production_schema.sql,
  * menu_items): item_name varchar(255) NOT NULL, category_raw varchar(100),
  * price_byn numeric(10,2). A value past them failed in the database and came
@@ -334,13 +342,24 @@ export const updateMenuItem = async (partnerId, menuItemId, updates) => {
 
   // The row and its copies change together or not at all (updateByIds): one
   // by one, a failure in the middle left the guest's line with two prices.
-  // Under the establishment's lock, in line with the moderator's «Скрыть».
+  // Under the establishment's lock, in line with the moderator's «Скрыть» and
+  // the write of a recognised file — and checked again there (thread Н8,
+  // finding 3, 23.11.2026): since the row was looked at above, a re-read of
+  // its file may have replaced it, or the moderator may have hidden it. Then
+  // nothing is written, the copies neither, and the partner hears what a row
+  // not there is answered. Until then such an edit answered 200 without the
+  // row, written to the copies alone, or wrote into the hidden row and sent
+  // the moderator's reason back. A copy hidden meanwhile is left out, as the
+  // copies hidden before.
   const written = await MenuItemModel.updateByIds(
     [rowId, ...copies.map(copy => copy.id)],
     filteredUpdates,
-    { lockMenuOf: existing.establishment_id },
+    { lockMenuOf: existing.establishment_id, shownOnly: true, required: rowId },
   );
-  const updated = written.find(row => row.id === rowId) ?? null;
+  if (written === null) {
+    throw new AppError(MENU_ITEM_REFUSALS.notFound, 404, 'MENU_ITEM_NOT_FOUND');
+  }
+  const updated = written.find(row => row.id === rowId);
 
   // Снятый флаг уменьшает hanging_flags — ту самую величину, что стоит бейджем
   // в рейле админки, строкой на дашборде и карточкой «Флаги без реакции». Правит
@@ -451,7 +470,7 @@ export const retryOcr = async (partnerId, establishmentId) => {
 
   const eligibleMedia = await MediaModel.getOcrEligibleMedia(establishmentId);
   if (eligibleMedia.length === 0) {
-    throw new AppError(MENU_RECOGNITION_REFUSALS.noMenuFiles, 400, 'NO_PDF_MENUS');
+    throw new AppError(MENU_RECOGNITION_REFUSALS.noMenuFiles, 400, NO_PDF_MENUS);
   }
 
   const recognised = await OcrJobModel.getMediaIdsWithCompletedJob(establishmentId);

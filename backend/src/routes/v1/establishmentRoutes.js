@@ -274,8 +274,9 @@ router.get(
  * Re-queue OCR for the menu files of this establishment (PDFs and menu
  * photos) never recognised; recognised ones are left alone
  * (partnerMenuItemService.retryOcr, from 23.11.2026).
- * Rate limited to 5 requests per 24h per partner; a restart that finds every
- * file recognised does not count (partnerMenuItemController.retryOcr).
+ * Rate limited to 5 requests per 24h per partner; a restart that finds nothing
+ * to recognise — every file recognised, or no menu file at all — does not
+ * count, nor does a server failure (partnerMenuItemController.retryOcr).
  */
 router.post(
   '/:id/retry-ocr',
