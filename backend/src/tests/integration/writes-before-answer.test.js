@@ -45,12 +45,33 @@ const analyticsInsert = (column) => (text) => text.includes('INSERT INTO establi
 const ocrInsert = (text) => text.includes('INSERT INTO ocr_jobs');
 const scoreWrite = (text) => text.startsWith('UPDATE establishments SET base_score');
 
-/** Пропускает всё, кроме запросов `matches`: с ними поступает `onWrite`. */
-const intercept = (matches, onWrite) => jest.spyOn(pool, 'query').mockImplementation((text, ...rest) => (
-  typeof text === 'string' && matches(text)
-    ? onWrite(() => realQuery(text, ...rest))
-    : realQuery(text, ...rest)
-));
+/**
+ * Пропускает всё, кроме запросов `matches`: с ними поступает `onWrite`. И на
+ * пуле, и на соединении транзакции (pool.connect): постановка задания
+ * распознавания пишет в своей транзакции под замком файла (нитка Н8, находка 1),
+ * подмена одного pool.query её вставки не видит.
+ */
+const intercept = (matches, onWrite) => {
+  const handle = (run, text, rest) => (
+    typeof text === 'string' && matches(text) ? onWrite(() => run(text, ...rest)) : run(text, ...rest)
+  );
+  const connect = pool.connect.bind(pool);
+  jest.spyOn(pool, 'connect').mockImplementation(async (...args) => {
+    // pool.query берёт соединение сам, с обратным вызовом: его не трогаем.
+    if (typeof args[args.length - 1] === 'function') return connect(...args);
+    const client = await connect(...args);
+    if (!jest.isMockFunction(client.query)) {
+      const clientQuery = client.query.bind(client);
+      // С обратным вызовом соединение зовёт сам pool.query (оно вернулось в пул):
+      // этот запрос уже перехвачен на pool.query — второй раз не трогаем.
+      jest.spyOn(client, 'query').mockImplementation((text, ...rest) => (
+        typeof rest[rest.length - 1] === 'function' ? clientQuery(text, ...rest) : handle(clientQuery, text, rest)
+      ));
+    }
+    return client;
+  });
+  return jest.spyOn(pool, 'query').mockImplementation((text, ...rest) => handle(realQuery, text, rest));
+};
 
 /**
  * Держит запись `matches`, пока тест её не отпустит, и проверяет, что ответ всё

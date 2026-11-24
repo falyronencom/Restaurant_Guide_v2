@@ -329,11 +329,28 @@ describe('Media System - Upload Operations', () => {
       const SILENCE_MS = 250;
       const isOcrInsert = (text) => typeof text === 'string' && text.includes('INSERT INTO ocr_jobs');
 
+      // На пуле и на соединении транзакции: вставка задания идёт в транзакции
+      // постановки под замком файла (нитка Н8, находка 1), через pool.connect.
       const interceptOcrInsert = (onWrite) => {
         const realQuery = pool.query.bind(pool);
-        return jest.spyOn(pool, 'query').mockImplementation((text, ...rest) => (
-          isOcrInsert(text) ? onWrite(() => realQuery(text, ...rest)) : realQuery(text, ...rest)
-        ));
+        const handle = (run, text, rest) => (
+          isOcrInsert(text) ? onWrite(() => run(text, ...rest)) : run(text, ...rest)
+        );
+        const connect = pool.connect.bind(pool);
+        jest.spyOn(pool, 'connect').mockImplementation(async (...args) => {
+          // pool.query берёт соединение сам, с обратным вызовом: его не трогаем.
+          if (typeof args[args.length - 1] === 'function') return connect(...args);
+          const client = await connect(...args);
+          if (!jest.isMockFunction(client.query)) {
+            const clientQuery = client.query.bind(client);
+            // С обратным вызовом соединение зовёт сам pool.query: тот уже перехвачен.
+            jest.spyOn(client, 'query').mockImplementation((text, ...rest) => (
+              typeof rest[rest.length - 1] === 'function' ? clientQuery(text, ...rest) : handle(clientQuery, text, rest)
+            ));
+          }
+          return client;
+        });
+        return jest.spyOn(pool, 'query').mockImplementation((text, ...rest) => handle(realQuery, text, rest));
       };
 
       const uploadPhoto = () => request(app)
