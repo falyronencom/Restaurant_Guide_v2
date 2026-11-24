@@ -202,6 +202,26 @@ describe('POST /api/v1/auth/login', () => {
     expect(response.body.data.accessToken).toBeTruthy();
   });
 
+  // The answer says whether the e-mail is confirmed, as GET /auth/me does —
+  // the stored flag. The app reads it from the login answer
+  // (mobile/lib/models/user.dart: no key → false), so without it a person who
+  // had confirmed the e-mail by code read «Подтвердить email» after every
+  // password login, until the app's next start.
+  test('answers emailVerified as stored: false while unconfirmed, true once confirmed', async () => {
+    const login = () => request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: testUsers.regularUser.email, password: testUsers.regularUser.password })
+      .expect(200);
+
+    expect((await login()).body.data.user.emailVerified).toBe(false);
+
+    await query(
+      'UPDATE users SET email_verified = true WHERE email = $1',
+      [testUsers.regularUser.email.toLowerCase()]
+    );
+    expect((await login()).body.data.user.emailVerified).toBe(true);
+  });
+
   test('is case-insensitive for email', async () => {
     const response = await request(app)
       .post('/api/v1/auth/login')

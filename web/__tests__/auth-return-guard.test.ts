@@ -154,3 +154,12 @@ describe('guardReturnTo — property over every character in the risky positions
     expect(rawLeaks.length).toBeGreaterThan(0);
   });
 });
+
+describe('the card\'s sections in the cabinet (part 1 of «Кабинет партнёра на сайте»)', () => {
+  it.each([
+    '/cabinet/0b6f2c1e-4a6d-4c1b-9d55-2f3e8a1b7c90/menu',
+    '/cabinet/0b6f2c1e-4a6d-4c1b-9d55-2f3e8a1b7c90/edit',
+  ])('%s comes back as it is', (path) => {
+    expect(guardReturnTo(path)).toBe(path);
+  });
+});

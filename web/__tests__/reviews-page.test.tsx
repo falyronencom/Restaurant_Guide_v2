@@ -213,6 +213,9 @@ describe('ReviewsPage — getReviews pagination params', () => {
 
     await ReviewsPage({ params: P('page-slug'), searchParams: SP({ page: '2' }) });
 
+    // Exactly these params: the full list asks WITHOUT with_text — it shows
+    // every review, a rating alone included («Отзыв без текста», В1 = А / В2);
+    // only the detail page's first reviews are filtered.
     expect(getReviews).toHaveBeenCalledWith('page-slug', { page: 2, limit: 10 }, { visitor: null });
   });
 

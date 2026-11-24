@@ -30,7 +30,7 @@
  * USER_INACTIVE, путь страницы сайта.
  */
 
-import { spawnSync } from 'child_process';
+import { runScript } from '../utils/runScript.js';
 import { createHmac, randomUUID } from 'crypto';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -649,10 +649,7 @@ describe('Удаление учётки с отзывами просит сай�
 // ============================================================================
 
 describe('scripts/erase-deleted-account-leftovers.js — остатки учёток, удалённых раньше', () => {
-  const sweep = (args = []) => spawnSync(process.execPath, [SWEEP, ...args], {
-    env: { ...process.env },
-    encoding: 'utf8',
-  });
+  const sweep = (args = []) => runScript(SWEEP, args, { env: { ...process.env } });
 
   /**
    * Учётка, удалённая «старым» удалением: удаляем как сейчас, затем

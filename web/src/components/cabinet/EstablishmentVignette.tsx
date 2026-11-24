@@ -8,11 +8,12 @@ import type {
   EstablishmentStatus,
   PartnerEstablishmentListing,
 } from '@/lib/api/types';
-import { STATUS_LABELS, isAdminSuspended } from '@/lib/partner/status';
+import { STATUS_BADGE, STATUS_LABELS, isAdminSuspended } from '@/lib/partner/status';
 import { cn } from '@/lib/utils';
 
 import { DeleteEstablishmentButton } from './DeleteEstablishmentButton';
 import { ResumeEstablishmentButton } from './ResumeEstablishmentButton';
+import { SuspendEstablishmentButton } from './SuspendEstablishmentButton';
 
 /*
  * Cabinet establishment vignette (Phase C Slice 1, Segment B). Renders inside the
@@ -20,16 +21,9 @@ import { ResumeEstablishmentButton } from './ResumeEstablishmentButton';
  * completeness (base_score), rejection notes (rejected) / suspension reason
  * (admin-suspended), and the edit entry. A card the partner paused carries
  * «Возобновить» (С3); a moderator's suspension does not — the partner fixes it
- * and sends it to moderation again.
+ * and sends it to moderation again. A published card carries «Приостановить
+ * показ» (part 1 of «Кабинет партнёра на сайте»).
  */
-
-const STATUS_BADGE: Record<EstablishmentStatus, string> = {
-  draft: 'bg-gray-200 text-figma-text-dark',
-  pending: 'bg-brand/15 text-brand-dark',
-  active: 'bg-success-status/20 text-success-dark',
-  rejected: 'bg-error/15 text-error-dark',
-  suspended: 'bg-gray-300 text-figma-text-dark',
-};
 
 const EDIT_LABEL: Partial<Record<EstablishmentStatus, string>> = {
   draft: 'Продолжить',
@@ -40,10 +34,12 @@ export function EstablishmentVignette({
   establishment: e,
   onDeleted,
   onResumed,
+  onSuspended,
 }: {
   establishment: PartnerEstablishmentListing;
   onDeleted: (id: string) => void;
   onResumed?: (id: string) => void;
+  onSuspended?: (id: string) => void;
 }) {
   const photo = e.primary_photo?.thumbnail_url ?? e.primary_photo?.url ?? null;
   const notes = e.moderation_notes;
@@ -142,6 +138,9 @@ export function EstablishmentVignette({
         <div className="mt-auto flex flex-wrap items-center gap-2 pt-s">
           {selfPaused && onResumed && (
             <ResumeEstablishmentButton establishmentId={e.id} onResumed={onResumed} />
+          )}
+          {e.status === 'active' && onSuspended && (
+            <SuspendEstablishmentButton establishmentId={e.id} onSuspended={onSuspended} />
           )}
           <Link
             href={`/cabinet/${e.id}/edit`}

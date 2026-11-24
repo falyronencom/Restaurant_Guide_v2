@@ -6,8 +6,18 @@ import { useState } from 'react';
 
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { loadProfile } from '@/lib/account/client';
 import type { PublicReview } from '@/lib/api/types';
+import { verifyToReviewText } from '@/lib/reviews/email-gate';
 
+import { VerifyEmailToReview } from './VerifyEmailToReview';
 import { WriteReviewModal } from './WriteReviewModal';
 
 /*
@@ -20,9 +30,18 @@ import { WriteReviewModal } from './WriteReviewModal';
  *     «Ваш отзыв» pill (edit/delete = Slice 2); their card is already listed below.
  *   - anonymous → tap opens Google One Tap (requestLogin, mirror FavoriteButton),
  *     no modal.
- *   - authenticated without a review here → opens the write modal.
+ *   - authenticated without a review here → opens the write modal — once the
+ *     address is confirmed (below).
  * A review by the user beyond the loaded top-5 is not detectable client-side; the
  * create attempt then falls back to a graceful 409 DUPLICATE_REVIEW (Discovery).
+ *
+ * A new review only with a confirmed address (thread «Отзыв без текста», В9):
+ * the tap asks /auth/me (loadProfile — the display cookie carries no
+ * emailVerified) and, for an address not confirmed, opens the В9 words with
+ * «Отправить код» instead of the form. Asked at every tap, never kept: an
+ * address confirmed in the app a minute ago opens the form. If the check
+ * itself fails, the form opens — the server's refusal EMAIL_NOT_VERIFIED shows
+ * the same words there (WriteReviewModal).
  */
 export function WriteReviewCta({
   establishmentId,
@@ -38,10 +57,29 @@ export function WriteReviewCta({
   const { user, isAuthenticated, requestLogin } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [checking, setChecking] = useState(false);
+  // The address the code would go to; non-null — the В9 dialog is open.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
   const hasOwnReview = user
     ? reviews.some((review) => review.author.id === user.id)
     : false;
+
+  async function startReview() {
+    if (checking) return;
+    if (!isAuthenticated) {
+      requestLogin({ fallbackToLoginPage: true });
+      return;
+    }
+    setChecking(true);
+    const profile = await loadProfile();
+    setChecking(false);
+    if (profile.ok && profile.profile.emailVerified !== true) {
+      setUnverifiedEmail(profile.profile.email ?? '');
+      return;
+    }
+    setOpen(true);
+  }
 
   if (hasOwnReview) {
     return (
@@ -56,18 +94,42 @@ export function WriteReviewCta({
       <Button
         type='button'
         size='cta'
-        onClick={() => {
-          if (!isAuthenticated) {
-            requestLogin({ fallbackToLoginPage: true });
-            return;
-          }
-          setOpen(true);
-        }}
+        onClick={startReview}
+        // Not `disabled`: a disabled button drops the focus to the page
+        // (Chrome), and the dialogs could not hand it back on closing.
+        aria-disabled={checking || undefined}
         className='bg-brand text-text-on-primary hover:bg-brand/90'
       >
         <Pencil className='size-4' aria-hidden='true' />
         Оставить отзыв
       </Button>
+      <Dialog
+        open={unverifiedEmail !== null}
+        onOpenChange={(next) => {
+          if (!next) setUnverifiedEmail(null);
+        }}
+      >
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>Ваш отзыв</DialogTitle>
+            {/* The В9 words are the dialog's description, so a screen reader
+                reads them on opening, after the establishment. */}
+            <DialogDescription className='flex flex-col gap-3'>
+              <span>Заведение: «{establishmentName}»</span>
+              <span className='text-body-m text-foreground'>
+                {verifyToReviewText(unverifiedEmail)}
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <VerifyEmailToReview
+            detailPath={detailPath}
+            onAlreadyVerified={() => {
+              setUnverifiedEmail(null);
+              setOpen(true);
+            }}
+          />
+        </DialogContent>
+      </Dialog>
       <WriteReviewModal
         open={open}
         onOpenChange={setOpen}

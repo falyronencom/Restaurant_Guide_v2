@@ -140,6 +140,22 @@ describe('ReviewSchema — review[] emission', () => {
     expect(review[1]).not.toHaveProperty('reviewBody');
     expect((review[1].reviewRating as Record<string, unknown>).ratingValue).toBe(4);
   });
+
+  // «Отзыв без текста» (11.2026): the server sends a review of one rating as
+  // content: null (not '') — it keeps its Review entry and rating, no body.
+  it('a review of one rating (content null, as the server sends it) has no reviewBody', () => {
+    const { container } = render(
+      <ReviewSchema
+        {...baseProps}
+        establishment={baseEstablishment}
+        reviews={[makeReview({ id: 'rev-3', rating: 2, content: null })]}
+      />,
+    );
+
+    const [entry] = parseLdJson(container)!.review as Array<Record<string, unknown>>;
+    expect(entry).not.toHaveProperty('reviewBody');
+    expect((entry.reviewRating as Record<string, unknown>).ratingValue).toBe(2);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -178,10 +194,13 @@ describe('ReviewSchema — aggregateRating gate', () => {
     );
 
     const schema = parseLdJson(container)!;
+    // ratingCount, not reviewCount: review_count counts ratings without text
+    // too (thread «Отзыв без текста», 11.2026) — schema.org's reviewCount is
+    // the written reviews. toEqual: no reviewCount key alongside.
     expect(schema.aggregateRating).toEqual({
       '@type': 'AggregateRating',
       ratingValue: 4.5,
-      reviewCount: 3,
+      ratingCount: 3,
       bestRating: 5,
       worstRating: 1,
     });

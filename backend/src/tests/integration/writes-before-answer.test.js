@@ -127,8 +127,10 @@ const ocrJobsOf = (establishmentId) => countRows(
 
 const phone = () => `+37529${Math.floor(1000000 + Math.random() * 9000000)}`;
 
-const person = (role, name) => createUserAndGetTokens({
-  email: `writes-${randomUUID()}@test.com`, phone: phone(), password: 'Person123!@#', name, role,
+// emailVerified: the guest writes new reviews — taken only from a confirmed
+// e-mail (reviewService.createReview, EMAIL_NOT_VERIFIED).
+const person = (role, name, { emailVerified = false } = {}) => createUserAndGetTokens({
+  email: `writes-${randomUUID()}@test.com`, phone: phone(), password: 'Person123!@#', name, role, emailVerified,
 });
 
 const as = (token, method, url) => request(app)[method](`/api/v1${url}`)
@@ -141,7 +143,7 @@ let est;
 
 beforeAll(async () => {
   partner = await person('partner', 'Партнёр');
-  guest = await person('user', 'Гость');
+  guest = await person('user', 'Гость', { emailVerified: true });
   admin = await createAdminAndGetToken();
 });
 

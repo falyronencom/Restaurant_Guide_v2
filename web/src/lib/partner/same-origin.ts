@@ -25,6 +25,15 @@ function forbidden(): Response {
   });
 }
 
+/** The query of a Route Handler's request; empty when its URL cannot be read. */
+export function searchParamsOf(request: Request): URLSearchParams {
+  try {
+    return new URL(request.url).searchParams;
+  } catch {
+    return new URLSearchParams();
+  }
+}
+
 /**
  * Returns a 403 Response when the request is not same-origin, else null (pass).
  * Apply at the top of every partner Route Handler, before reading the body.
